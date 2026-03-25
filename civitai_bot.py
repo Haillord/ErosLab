@@ -138,51 +138,64 @@ def add_watermark(data, text):
 
 # ==================== CIVITAI API ====================
 def fetch_civitai():
-    # ГЛУБОКИЙ РАНДОМ: меняем период, сортировку и страницу
-    periods = ["Day", "Week", "Month", "Year", "AllTime"]
-    sorts = ["Most Reactions", "Most Comments", "Newest"]
+    # Попытка 1: Рандом для разнообразия
+    periods = ["Day", "Week", "Month"]
+    sorts = ["Most Reactions", "Newest"]
     
-    params = {
-        "limit": 100,
-        "nsfw": "X",
-        "sort": random.choice(sorts),
-        "period": random.choice(periods),
-        "page": random.randint(1, 5) # Смотрим до 1000-го поста
-    }
+    # Сначала пробуем рандомную страницу
+    attempt_params = [
+        {"page": random.randint(1, 5), "period": random.choice(periods), "sort": random.choice(sorts)},
+        {"page": 1, "period": "Day", "sort": "Most Reactions"}, # Запасной вариант №1
+        {"page": 1, "period": "Week", "sort": "Most Reactions"} # Запасной вариант №2 (беспроигрышный)
+    ]
 
-    try:
-        headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
-        r = requests.get("https://civitai.com/api/v1/images", params=params, headers=headers, timeout=25)
-        r.raise_for_status()
-        items = r.json().get("items", [])
+    for p in attempt_params:
+        params = {
+            "limit": 100, # Берем максимум за раз
+            "nsfw": "X",
+            "sort": p["sort"],
+            "period": p["period"],
+            "page": p["page"]
+        }
 
-        result = []
-        for item in items:
-            # Считаем лайки
-            s = item.get("stats", {})
-            likes = s.get("likeCount", 0) + s.get("heartCount", 0) + s.get("thumbsUpCount", 0)
+        try:
+            headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
+            r = requests.get("https://civitai.com/api/v1/images", params=params, headers=headers, timeout=25)
+            r.raise_for_status()
+            items = r.json().get("items", [])
 
-            if likes < MIN_LIKES: continue
-            
-            # Чистим теги
-            raw_tags = [t.get("name", "") if isinstance(t, dict) else str(t) for t in item.get("tags", [])]
-            tags = clean_tags(raw_tags)
-            
-            if has_blacklisted(tags): continue
-            if not is_adult_content(tags, item): continue
+            result = []
+            for item in items:
+                # Считаем лайки
+                s = item.get("stats", {})
+                likes = s.get("likeCount", 0) + s.get("heartCount", 0) + s.get("thumbsUpCount", 0)
+                
+                # Упростим фильтр лайков для теста (поставь 1)
+                if likes < 1: continue
+                
+                raw_tags = [t.get("name", "") if isinstance(t, dict) else str(t) for t in item.get("tags", [])]
+                tags = clean_tags(raw_tags)
+                
+                if has_blacklisted(tags): continue
+                if not is_adult_content(tags, item): continue
 
-            result.append({
-                "id": f"civitai_{item['id']}",
-                "url": item.get("url", ""),
-                "tags": tags[:15] if tags else ["nsfw", "ai", "art"],
-                "likes": likes
-            })
+                result.append({
+                    "id": f"civitai_{item['id']}",
+                    "url": item.get("url", ""),
+                    "tags": tags[:15] if tags else ["nsfw", "ai", "art"],
+                    "likes": likes
+                })
 
-        logger.info(f"Найдено {len(result)} потенциальных постов (Page: {params['page']})")
-        return result
-    except Exception as e:
-        logger.error(f"CivitAI Fetch Error: {e}")
-        return []
+            if result:
+                logger.info(f"Найдено {len(result)} постов на стр {p['page']} ({p['sort']})")
+                return result
+            else:
+                logger.info(f"На стр {p['page']} ничего не подошло, пробую следующий вариант...")
+        except Exception as e:
+            logger.error(f"Ошибка API: {e}")
+            continue
+
+    return []
 
 def fetch_and_pick():
     items = fetch_civitai()
