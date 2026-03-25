@@ -1,5 +1,5 @@
 """
-ErosLab Bot — Только CivitAI (MIN_LIKES = 10)
+ErosLab Bot — CivitAI (взрослый контент 16+, без указания лайков)
 """
 
 import asyncio
@@ -31,15 +31,21 @@ HISTORY_FILE = "posted_ids.json"
 HASHES_FILE  = "posted_hashes.json"
 STATS_FILE   = "stats.json"
 
-BLACKLIST_TAGS = {"gore", "guro", "scat", "vore", "snuff", "necrophilia",
-                  "bestiality", "zoo", "loli", "shota", "child", "minor",
-                  "underage", "infant", "toddler"}
+# Чёрный список — контент, который никогда не постим
+BLACKLIST_TAGS = {
+    "gore", "guro", "scat", "vore", "snuff", "necrophilia",
+    "bestiality", "zoo", "loli", "shota", "child", "minor",
+    "underage", "infant", "toddler"
+}
 
-HASHTAG_STOP_WORDS = {"score", "source", "rating", "version", "step", "steps", "cfg", "seed",
-                      "sampler", "model", "lora", "vae", "clip", "unet", "fp16", "safetensors",
-                      "checkpoint", "embedding", "none", "null", "true", "false", "and", "the",
-                      "for", "with", "masterpiece", "best", "quality", "high", "ultra", "detail",
-                      "detailed", "8k", "4k", "hd", "resolution", "simple", "background"}
+# Стоп-слова для хэштегов
+HASHTAG_STOP_WORDS = {
+    "score", "source", "rating", "version", "step", "steps", "cfg", "seed",
+    "sampler", "model", "lora", "vae", "clip", "unet", "fp16", "safetensors",
+    "checkpoint", "embedding", "none", "null", "true", "false", "and", "the",
+    "for", "with", "masterpiece", "best", "quality", "high", "ultra", "detail",
+    "detailed", "8k", "4k", "hd", "resolution", "simple", "background"
+}
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -78,7 +84,80 @@ def clean_tags(tags):
     return clean
 
 def has_blacklisted(tags):
+    """Проверка на чёрный список (жесть, детское и т.д.)"""
     return bool(set(t.lower() for t in tags) & BLACKLIST_TAGS)
+
+def is_adult_content(tags):
+    """
+    Определяет, является ли контент взрослым (16+)
+    Возвращает True — постим, False — SFW, не постим
+    """
+    # Расширенный список взрослых тегов
+    adult_tags = {
+        # Базовые NSFW/эротика
+        "nsfw", "nsfw_", "explicit", "mature", "adult", "r18", "r18+", "18+",
+        
+        # Эротика / сексуальная привлекательность
+        "sexy", "erotic", "seductive", "alluring", "voluptuous", "curvy", "sensual", "provocative",
+        "lingerie", "bikini", "swimsuit", "underwear", "panties", "bra", "stockings", "garter",
+        "skimpy", "revealing", "lowcut", "plunging", "cleavage", "sideboob", "underboob",
+        
+        # Эччи / лёгкая эротика
+        "lewd", "ecchi", "suggestive", "risque", "naughty", "playful", "teasing", "flirty",
+        
+        # Обнажёнка
+        "nude", "naked", "topless", "bare_chest", "bare_breasts", "exposed", "uncensored",
+        "nudity", "full_nudity", "partial_nudity", "implied_nudity",
+        
+        # Части тела
+        "breasts", "boobs", "tits", "nipples", "areola", "cleavage_focus", "big_breasts", "small_breasts",
+        "butt", "ass", "booty", "buttocks", "pussy", "vagina", "penis", "cock", "dick", "balls",
+        "abs", "muscular", "toned", "athletic", "curves",
+        
+        # Сексуальные действия
+        "sex", "fucking", "intercourse", "penetration", "blowjob", "bj", "oral", "cunnilingus",
+        "handjob", "masturbation", "orgasm", "cum", "creampie", "facial", "cumshot", "splitting",
+        "anal", "ahegao", "facial_expression", "orgasm_face",
+        
+        # BDSM / фетиш
+        "bdsm", "bondage", "shibari", "rope", "restrained", "handcuffs", "blindfold", "gag",
+        "dom", "sub", "dominant", "submissive", "leather", "latex", "pvc", "collar", "leash",
+        "spanking", "whip", "flogger", "choking", "breathplay", "mask", "fetish",
+        
+        # Порно / хардкор
+        "porn", "xxx", "hardcore", "hard", "hentai", "yaoi", "yuri", "futanari", "futa",
+        "tentacles", "gangbang", "threesome", "group", "orgy", "public", "exhibitionism",
+        "voyeurism", "gloryhole", "prostitution",
+        
+        # Специфические / фэнтези
+        "furry", "anthro", "scalie", "monster", "demon", "succubus", "incubus", "alien",
+        "tentacle", "mind_break", "corruption", "impregnation", "pregnancy", "milf", "dilf",
+        
+        # Разное
+        "wet", "sweaty", "glossy", "shiny", "oiled", "tattoo", "piercing", "choker",
+        "barely_clothed", "see_through", "transparent", "wet_shirt", "wrapped_towel",
+        "bedroom_eyes", "come_hither", "inviting", "seductive_look"
+    }
+    
+    # SFW теги (безопасный контент)
+    sfw_tags = {
+        "sfw", "cute", "wholesome", "smile", "happy", "family_friendly",
+        "children", "kid", "family", "dog", "cat", "animal", "landscape",
+        "scenery", "architecture", "food", "meal", "portrait", "realistic"
+    }
+    
+    tags_lower = set(t.lower() for t in tags)
+    
+    # Если есть adult-теги — это взрослый контент
+    if tags_lower & adult_tags:
+        return True
+    
+    # Если есть только sfw-теги и нет adult — это SFW
+    if tags_lower & sfw_tags:
+        return False
+    
+    # Неопределённый случай — пропускаем (лучше больше, чем меньше)
+    return True
 
 def download(url):
     try:
@@ -138,15 +217,16 @@ def add_watermark(data, text):
         return data
 
 def build_caption(item):
+    """Формирует подпись к посту (без указания лайков)"""
     htags = " ".join(f"#{t}" for t in item["tags"]) if item["tags"] else "#nsfw #ai #art"
-    return f"{htags}\n\n❤️ {item['likes']} реакций • {item['source']}\n📢 {WATERMARK_TEXT}"
+    return f"{htags}\n\n📢 {WATERMARK_TEXT}"
 
-# ==================== ТОЛЬКО CIVITAI ====================
+# ==================== CIVITAI API ====================
 def fetch_civitai():
     params = {
         "limit": 100,
-        "nsfw": "X",                    # Mature даёт хороший баланс NSFW
-        "sort": random.choice(["Most Reactions", "Most Comments", "Newest"]),
+        "nsfw": "X",
+        "sort": random.choice(["Most Reactions", "Most Comments"]),
         "period": "AllTime",
     }
 
@@ -168,7 +248,11 @@ def fetch_civitai():
                 continue
 
             tags = clean_tags(_civitai_tags(item))
+            
             if has_blacklisted(tags):
+                continue
+            
+            if not is_adult_content(tags):
                 continue
 
             result.append({
@@ -256,7 +340,7 @@ async def main():
             stats["top_tags"][tag] = stats["top_tags"].get(tag, 0) + 1
 
         save_all()
-        logger.info(f"✅ Опубликовано [{item['source']}] ❤️{item['likes']}")
+        logger.info(f"✅ Опубликовано [{item['source']}]")
 
     except telegram.error.TelegramError as e:
         logger.error(f"Telegram ошибка: {e}")
