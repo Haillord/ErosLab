@@ -22,7 +22,7 @@ TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "@eroslabai")
 CIVITAI_API_KEY     = os.environ.get("CIVITAI_API_KEY", "")
 
 WATERMARK_TEXT      = "@eroslabai"
-MIN_LIKES           = 10
+MIN_LIKES           = 1
 MIN_WIDTH           = 512
 MIN_HEIGHT          = 512
 FETCH_LIMIT         = 80
@@ -147,7 +147,7 @@ def fetch_civitai():
         "limit": 100,
         "nsfw": "X",                    # Mature даёт хороший баланс NSFW
         "sort": random.choice(["Most Reactions", "Most Comments", "Newest"]),
-        "period": random.choice(["AllTime", "Month", "Week", "Day"]),
+        "period": "AllTime",
     }
 
     try:
