@@ -22,7 +22,7 @@ TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "@eroslabai")
 CIVITAI_API_KEY     = os.environ.get("CIVITAI_API_KEY", "")
 
 WATERMARK_TEXT      = "@eroslabai"
-MIN_LIKES           = 10          # ← изменено на 10
+MIN_LIKES           = 10
 MIN_WIDTH           = 512
 MIN_HEIGHT          = 512
 FETCH_LIMIT         = 80
@@ -124,11 +124,11 @@ def add_watermark(data, text):
             font = ImageFont.load_default()
 
         bbox = draw.textbbox((0, 0), text, font=font)
-        tw, th = bbox[2]-bbox[0], bbox[3]-bbox[1]
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         x, y = w - tw - 24, h - th - 24
 
-        draw.text((x+2, y+2), text, font=font, fill=(0,0,0,160))
-        draw.text((x, y), text, font=font, fill=(255,255,255,230))
+        draw.text((x + 2, y + 2), text, font=font, fill=(0, 0, 0, 160))
+        draw.text((x, y), text, font=font, fill=(255, 255, 255, 230))
 
         out = BytesIO()
         Image.alpha_composite(img, layer).convert("RGB").save(out, format="JPEG", quality=92)
@@ -145,14 +145,14 @@ def build_caption(item):
 def fetch_civitai():
     params = {
         "limit": FETCH_LIMIT,
-        "nsfw": "Mature",                    # ← более мягкий фильтр (больше результатов)
+        "nsfw": "Mature",                    # Mature даёт хороший баланс NSFW
         "sort": random.choice(["Most Reactions", "Most Comments", "Newest"]),
         "period": random.choice(["AllTime", "Month", "Week", "Day"]),
     }
 
     try:
         headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
-        r = requests.get("https://civitai.com/api/v1/images", 
+        r = requests.get("https://civitai.com/api/v1/images",
                          params=params, headers=headers, timeout=20)
         r.raise_for_status()
         data = r.json()
@@ -160,11 +160,11 @@ def fetch_civitai():
         result = []
         for item in data.get("items", []):
             stats = item.get("stats", {})
-            likes = (stats.get("likeCount", 0) + 
-                     stats.get("heartCount", 0) + 
+            likes = (stats.get("likeCount", 0) +
+                     stats.get("heartCount", 0) +
                      stats.get("thumbsUpCount", 0))
 
-            if likes < MIN_LIKES:          # теперь 10
+            if likes < MIN_LIKES:
                 continue
 
             tags = clean_tags(_civitai_tags(item))
@@ -194,7 +194,7 @@ def _civitai_tags(item):
     prompt = (item.get("meta") or {}).get("prompt", "")
     if prompt:
         parts = re.split(r"[,|]", prompt)
-        return [re.sub(r"[<>(){}\[\]\\/*\d]+", "", p).strip().lower().replace(" ", "_") 
+        return [re.sub(r"[<>(){}\[\]\\/*\d]+", "", p).strip().lower().replace(" ", "_")
                 for p in parts[:25]]
     return []
 
