@@ -159,12 +159,12 @@ def add_watermark(data, text):
 
 # ==================== CIVITAI API ====================
 def fetch_civitai():
-    """Запрос к API CivitAI - только X и XXX рейтинг"""
+    """Запрос к API CivitAI - только NSFW контент"""
     
     variations = [
-        {"limit": 100, "nsfw": "X", "sort": "Most Reactions", "period": "Day"},
-        {"limit": 100, "nsfw": "X", "sort": "Most Reactions", "period": "Week"},
-        {"limit": 100, "nsfw": "X", "sort": "Newest", "period": "Day"},
+        {"limit": 100, "sort": "Most Reactions", "period": "Day"},
+        {"limit": 100, "sort": "Most Reactions", "period": "Week"},
+        {"limit": 100, "sort": "Newest", "period": "Day"},
     ]
     
     for params in variations:
@@ -175,61 +175,56 @@ def fetch_civitai():
             data = r.json()
             items = data.get("items", [])
             
-            logger.info(f"Got {len(items)} items (nsfw={params['nsfw']}, sort={params['sort']}, period={params['period']})")
+            logger.info(f"Got {len(items)} items (sort={params['sort']}, period={params['period']})")
             
-            erotic_items = []
+            adult_items = []
             for item in items:
                 try:
                     nsfw_level = item.get("nsfwLevel")
                     
-                    # Проверяем рейтинг - берем только X и XXX
-                    is_x_rating = False
-                    if isinstance(nsfw_level, str) and nsfw_level.upper() in ["X", "XXX"]:
-                        is_x_rating = True
-                    elif isinstance(nsfw_level, (int, float)) and nsfw_level >= 4:
-                        is_x_rating = True
+                    # Проверяем рейтинг - берём Soft, Mature, X, XXX
+                    is_adult = False
+                    if isinstance(nsfw_level, str):
+                        if nsfw_level.upper() in ["SOFT", "MATURE", "X", "XXX"]:
+                            is_adult = True
+                    elif isinstance(nsfw_level, (int, float)):
+                        if nsfw_level >= 2:
+                            is_adult = True
                     
-                    if not is_x_rating:
+                    if not is_adult:
                         continue
                     
-                    # Получаем теги из prompt (в meta) с защитой от None
-                    meta = item.get("meta")
-                    prompt = ""
-                    if meta and isinstance(meta, dict):
-                        prompt = meta.get("prompt", "")
+                    # Получаем теги из промпта (просто берём всё)
+                    meta = item.get("meta", {})
+                    prompt = meta.get("prompt", "") if meta else ""
                     
-                    # Парсим теги из промпта
                     raw_tags = []
-                    if prompt and isinstance(prompt, str):
+                    if prompt:
+                        # Разбиваем промпт на теги (по запятым)
                         for tag in prompt.split(","):
                             tag = tag.strip()
-                            if tag and len(tag) > 1:
+                            # Убираем лишние символы
+                            tag = re.sub(r'[\(\)\[\]\{\}]', '', tag)
+                            if tag and len(tag) > 2:
                                 raw_tags.append(tag)
                     
-                    # Если нет промпта, пробуем другие поля
-                    if not raw_tags and meta and isinstance(meta, dict):
-                        resources = meta.get("resources", [])
-                        if resources:
-                            for res in resources:
-                                if res and isinstance(res, dict) and res.get("name"):
-                                    raw_tags.append(res.get("name"))
-                    
+                    # Очищаем теги (убираем стоп-слова и т.д.)
                     tags = clean_tags(raw_tags)
                     
-                    # Проверка на черный список
+                    # Проверка на реально запрещённый контент
                     if has_blacklisted(tags):
                         continue
                     
                     # Получаем лайки
                     stats_data = item.get("stats", {})
                     likes = 0
-                    if stats_data and isinstance(stats_data, dict):
+                    if stats_data:
                         likes = stats_data.get("likeCount", 0) + stats_data.get("heartCount", 0)
                     
                     if likes < MIN_LIKES:
                         continue
                     
-                    erotic_items.append({
+                    adult_items.append({
                         "id": f"civitai_{item['id']}",
                         "url": item.get("url", ""),
                         "tags": tags[:15],
@@ -243,9 +238,9 @@ def fetch_civitai():
                     logger.error(f"Error processing item {item.get('id')}: {e}")
                     continue
             
-            if erotic_items:
-                logger.info(f"Found {len(erotic_items)} X/XXX rated posts")
-                return erotic_items
+            if adult_items:
+                logger.info(f"Found {len(adult_items)} NSFW posts")
+                return adult_items
                 
         except Exception as e:
             logger.error(f"Error with params {params}: {e}")
