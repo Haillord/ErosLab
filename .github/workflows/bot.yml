@@ -30,8 +30,8 @@ jobs:
           pip install requests Pillow python-telegram-bot feedparser
 
       - name: Install ffmpeg
-        run: sudo apt-get install -y --fix-missing ffmpeg
-          
+        uses: FedericoCarboni/setup-ffmpeg@v3
+
       - name: Run ErosLab Bot (CivitAI)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
