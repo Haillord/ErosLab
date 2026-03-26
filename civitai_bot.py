@@ -410,11 +410,56 @@ def fetch_and_pick():
         logger.info("No fresh items")
         return None
 
-    selected = random.choice(fresh)
+    # Взвешенный выбор на основе лайков и популярных тегов
+    selected = weighted_choice(fresh)
+    
     logger.info(
         f"Selected: {selected['id']} "
         f"(rating:{selected['rating']}, likes:{selected['likes']}, tags:{len(selected['tags'])})"
     )
+    return selected
+
+
+def weighted_choice(items):
+    """
+    Выбирает пост с весом:
+    - основа: количество лайков
+    - бонус: +5 за каждый популярный тег (из топ-10 статистики)
+    """
+    if not items:
+        return None
+    
+    # Получаем топ-10 популярных тегов из статистики
+    popular_tags = set()
+    if stats.get("top_tags"):
+        # Берем топ-10 по частоте использования
+        top_10 = sorted(stats["top_tags"].items(), key=lambda x: x[1], reverse=True)[:10]
+        popular_tags = set(tag for tag, _ in top_10)
+        logger.debug(f"Popular tags boost: {popular_tags}")
+    
+    weights = []
+    for item in items:
+        # База — количество лайков (минимум 1)
+        weight = max(1, item["likes"])
+        
+        # Бонус за популярные теги (+5 за каждый совпадающий тег)
+        bonus = 0
+        for tag in item["tags"]:
+            if tag in popular_tags:
+                bonus += 5
+                logger.debug(f"Bonus for {item['id']}: +5 for tag '{tag}'")
+        
+        weight += bonus
+        weights.append(weight)
+    
+    # Выбираем с учетом весов
+    selected = random.choices(items, weights=weights, k=1)[0]
+    
+    logger.info(
+        f"Weighted selection: {selected['id']} "
+        f"(likes:{selected['likes']}, bonus:{bonus}, total_weight:{weight})"
+    )
+    
     return selected
 
 # ==================== MAIN ====================

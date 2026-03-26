@@ -227,18 +227,26 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
     if not tags:
         return fallback_caption(tags, footer)
 
-    prompt = _build_prompt(tags)
+    # Разделяем теги:
+    # raw_tags — полные, грязные (для контекста AI)
+    # safe_tags — чистые (только для хэштегов)
+    raw_tags = tags  # сохраняем оригинальные, без фильтрации
+    safe_tags = _safe_tags(tags)  # чистим только для хэштегов
+
+    # Промпт строится из ПОЛНЫХ тегов — AI должен понимать контекст
+    prompt = _build_prompt(raw_tags)
     if not prompt:
-        return fallback_caption(tags, footer)
+        return fallback_caption(raw_tags, footer)
 
     text = _try_groq(prompt)
     if not text:
         text = _try_pollinations(prompt)
 
     if not text:
-        return fallback_caption(tags, footer)
+        return fallback_caption(raw_tags, footer)
 
     # Добавляем engagement-крючок с вероятностью 20%
     text = maybe_add_engagement(text)
 
-    return _format_caption(text, tags, footer)
+    # В caption идут чистые теги (хэштеги)
+    return _format_caption(text, safe_tags, footer)
