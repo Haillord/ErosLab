@@ -1,5 +1,5 @@
 """
-Генератор описаний: Groq (основной) → Pollinations (запасной) → fallback (только теги)
+Генератор описаний: Groq Vision → Groq (текст) → Pollinations → fallback
 """
 
 import requests
@@ -7,10 +7,14 @@ import logging
 import random
 import urllib.parse
 import os
+from vision_analyzer import VisionAnalyzer
 
 logger = logging.getLogger(__name__)
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+
+# Инициализируем Vision анализатор
+vision = VisionAnalyzer(GROQ_API_KEY) if GROQ_API_KEY else None
 
 # Теги, которые триггерят отказ у AI — скрываем из промпта, но в пост идут все
 NSFW_TRIGGER_TAGS = {
@@ -68,7 +72,7 @@ def _build_prompt(tags):
 
 def _format_caption(ai_text, tags):
     """Форматирует финальный текст поста"""
-    hashtags = " ".join(f"#{t}" for t in tags[:8])
+    hashtags = " ".join(f"#{t}" for t in tags[:8]) if tags else ""
     return (
         f"{ai_text}\n\n"
         f"{hashtags}\n\n"
@@ -92,7 +96,7 @@ def _try_groq(prompt):
                 "Content-Type": "application/json"
             },
             data=json.dumps({
-                "model": "llama-3.3-70b-versatile",  # Обновлённая модель
+                "model": "llama-3.3-70b-versatile",
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 100,
                 "temperature": 0.9
@@ -124,7 +128,6 @@ def _try_groq(prompt):
 
 def _try_pollinations(prompt):
     """Запрос к Pollinations — бесплатный fallback"""
-    # Метод 1: GET
     try:
         encoded = urllib.parse.quote(prompt)
         response = requests.get(
@@ -145,7 +148,6 @@ def _try_pollinations(prompt):
     except Exception as e:
         logger.warning(f"Pollinations GET failed: {e}")
 
-    # Метод 2: POST
     try:
         response = requests.post(
             "https://text.pollinations.ai/",
@@ -174,12 +176,38 @@ def _try_pollinations(prompt):
     return None
 
 
-def generate_caption(tags, rating, likes):
-    """Генерирует описание: 
-       - если есть теги → Groq/Pollinations с тегами
-       - если нет тегов → нейтральное/атмосферное описание (тоже через AI)
+def generate_caption(tags, rating, likes, image_data=None, image_url=None):
     """
-
+    Генерирует описание:
+      1. Если есть image_data и тегов мало (<3) и это картинка — пробуем Groq Vision
+      2. Если теги есть — Groq/Pollinations с тегами
+      3. Если тегов нет — нейтральное описание через AI
+    """
+    
+    # ========== VISION: если тегов мало и это изображение ==========
+    use_vision = (
+        image_data is not None 
+        and image_url 
+        and not image_url.lower().endswith((".mp4", ".webm", ".gif"))
+        and len(tags) < 3  # тегов мало или нет
+        and vision is not None
+    )
+    
+    if use_vision:
+        logger.info(f"Tags count: {len(tags)}, trying Groq Vision...")
+        vision_text = vision.analyze(image_data, language="ru")
+        if vision_text:
+            hashtags = " ".join(f"#{t}" for t in tags[:8]) if tags else ""
+            return (
+                f"👁️ {vision_text}\n\n"
+                f"{hashtags}\n\n"
+                f"📢 @eroslabai"
+            )
+        else:
+            logger.info("Vision failed, falling back to text generation")
+    
+    # ========== ТЕКСТОВАЯ ГЕНЕРАЦИЯ ==========
+    
     # Если тегов нет — используем нейтральный промпт
     if not tags:
         prompt = (
@@ -188,17 +216,13 @@ def generate_caption(tags, rating, likes):
             "Добавь 1-2 эмодзи. Без кавычек."
         )
         
-        # Пробуем Groq → Pollinations
         text = _try_groq(prompt)
         if not text:
             text = _try_pollinations(prompt)
         
         if text:
-            # Если AI сработал — возвращаем описание + теги (пусто) + водяной знак
-            hashtags = ""  # тегов нет
-            return f"{text}\n\n{hashtags}\n\n📢 @eroslabai"
+            return f"{text}\n\n📢 @eroslabai"
         else:
-            # Если AI не сработал — fallback без описания
             return fallback_caption(tags)
 
     # Если теги есть — используем текущую логику
@@ -207,15 +231,11 @@ def generate_caption(tags, rating, likes):
         logger.info("No safe tags for AI, using fallback")
         return fallback_caption(tags)
 
-    # 1. Пробуем Groq
     text = _try_groq(prompt)
-
-    # 2. Если Groq не сработал — пробуем Pollinations
     if not text:
         logger.info("Groq failed, trying Pollinations...")
         text = _try_pollinations(prompt)
 
-    # 3. Если оба не сработали — fallback
     if not text:
         logger.info("All AI failed, using fallback")
         return fallback_caption(tags)
