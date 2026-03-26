@@ -27,9 +27,9 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install requests Pillow python-telegram-bot
+          pip install requests Pillow python-telegram-bot feedparser
           
-      - name: Run ErosLab Bot
+      - name: Run ErosLab Bot (CivitAI)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
@@ -38,33 +38,33 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python civitai_bot.py
         
+      - name: Run Reddit 3D RSS Bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+        run: python reddit_rss_bot.py || echo "Reddit RSS bot failed, continuing..."
+        
       - name: Commit and push updates (with retry)
         if: always()
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Функция для повторных попыток
           for i in {1..3}; do
             echo "🔄 Attempt $i of 3"
             
-            # Скачиваем последние изменения
             git fetch origin main
             git reset --soft origin/main 2>/dev/null || true
             
-            # Добавляем файлы
-            git add posted_ids.json posted_hashes.json stats.json 2>/dev/null || true
+            git add posted_ids.json posted_hashes.json stats.json reddit_rss_posted.json 2>/dev/null || true
             
-            # Проверяем изменения
             if git diff --cached --quiet; then
               echo "📝 No changes to commit"
               exit 0
             fi
             
-            # Коммитим
             git commit -m "📊 Update posted history [skip ci]"
             
-            # Пытаемся запушить
             if git push; then
               echo "✅ Successfully pushed on attempt $i"
               exit 0
