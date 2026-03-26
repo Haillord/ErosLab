@@ -307,7 +307,11 @@ def fetch_civitai():
     variations = [
         {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Day"},
         {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Week"},
+        {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Month"},
         {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Day"},
+        {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Week"},
+        {"limit": 100, "nsfw": "XXX", "sort": "Most Reactions", "period": "Day"},
+        {"limit": 100, "nsfw": "XXX", "sort": "Newest",         "period": "Day"}, 
     ]
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
