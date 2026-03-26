@@ -194,25 +194,33 @@ async def send_with_retry(func, *args, retries=3, **kwargs):
 # ==================== ТЕГИ ====================
 def extract_tags(item):
     """
-    Берём только официальные теги CivitAI — они чистые, короткие,
-    релевантные и уже отсортированы по важности (самые значимые первые).
-    meta.prompt намеренно исключён: он содержит куски предложений,
-    которые ломают хэштеги и дают AI бессмысленный контекст.
+    Сначала берём официальные теги CivitAI.
+    Если их нет (API не вернул) — парсим meta.prompt как fallback.
+    Prompt чистится через clean_tags и HASHTAG_STOP_WORDS,
+    так что мусор вроде "masterpiece, best quality, 8k" отфильтруется.
     """
     raw_tags = []
 
     civitai_tags = item.get("tags", [])
     if civitai_tags:
         for t in civitai_tags:
-            if isinstance(t, dict):
-                name = t.get("name", "")
-            else:
-                name = str(t)
+            name = t.get("name", "") if isinstance(t, dict) else str(t)
             if name:
                 raw_tags.append(name)
         logger.debug(f"CivitAI tags found: {len(raw_tags)}")
-    else:
-        logger.debug("No CivitAI tags for this item")
+
+    # Fallback: парсим prompt если официальных тегов нет
+    if not raw_tags:
+        prompt = item.get("meta", {}).get("prompt", "") if item.get("meta") else ""
+        if prompt:
+            tokens = re.split(r"[,\(\)\[\]|<>]+", prompt)
+            for token in tokens:
+                token = token.strip()
+                if token:
+                    raw_tags.append(token)
+            logger.debug(f"Parsed {len(raw_tags)} tokens from meta.prompt")
+        else:
+            logger.debug("No tags and no prompt available")
 
     return clean_tags(raw_tags)
 
