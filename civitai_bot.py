@@ -37,8 +37,6 @@ STATS_FILE   = "stats.json"
 # Максимум хранимых ID — чтобы файл не рос бесконечно
 MAX_HISTORY_SIZE = 5000
 
-# FIX: исправлена опечатка — "toddler, 1boy," была одной строкой,
-# из-за чего тег 1boy фактически не фильтровался
 BLACKLIST_TAGS = {
     "gore", "guro", "scat", "vore", "snuff", "necrophilia",
     "bestiality", "zoo", "loli", "shota", "child", "minor",
@@ -79,7 +77,6 @@ posted_hashes = set(load_json(HASHES_FILE, []))
 stats         = load_json(STATS_FILE, {"total_posts": 0, "top_tags": {}})
 
 def save_all():
-    # FIX: обрезаем историю до MAX_HISTORY_SIZE, чтобы файл не рос бесконечно
     trimmed_ids    = list(posted_ids)[-MAX_HISTORY_SIZE:]
     trimmed_hashes = list(posted_hashes)[-MAX_HISTORY_SIZE:]
     save_json(HISTORY_FILE, trimmed_ids)
@@ -219,10 +216,33 @@ def extract_tags(item):
 
     return clean_tags(raw_tags)
 
+def fetch_tags_by_post_id(post_id: int, headers: dict) -> list:
+    """
+    Запрашиваем теги через postId — только для одного выбранного поста.
+    Вызывается лениво (lazy), уже после fetch_and_pick(), чтобы не
+    делать лишние запросы для всех кандидатов.
+    """
+    if not post_id:
+        return []
+    try:
+        r = _request_with_backoff(
+            f"https://civitai.com/api/v1/posts/{post_id}",
+            params={},
+            headers=headers
+        )
+        if r:
+            data = r.json()
+            tags = data.get("tags", [])
+            logger.info(f"Fetched {len(tags)} tags from post {post_id}")
+            return tags
+    except Exception as e:
+        logger.warning(f"Could not fetch tags for post {post_id}: {e}")
+    return []
+
 # ==================== CIVITAI API ====================
 def _request_with_backoff(url, params, headers, max_retries=3):
     """
-    FIX: GET-запрос с экспоненциальным backoff при 429/5xx.
+    GET-запрос с экспоненциальным backoff при 429/5xx.
     Защищает от бана при rate limiting со стороны CivitAI.
     """
     for attempt in range(max_retries):
@@ -253,8 +273,10 @@ def _request_with_backoff(url, params, headers, max_retries=3):
 def fetch_civitai():
     """
     Запрос к API CivitAI — только X и XXX рейтинг.
-    FIX: возвращаем результат сразу после первого успешного запроса,
+    Возвращаем результат сразу после первого успешного запроса,
     не продолжая перебирать вариации без нужды.
+    Теги здесь не запрашиваются — они подтягиваются лениво
+    только для выбранного поста в main().
     """
     variations = [
         {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Day"},
@@ -284,7 +306,6 @@ def fetch_civitai():
             )
 
             erotic_items = []
-            _debug_logged = False  # логируем структуру только одного item
             for item in items:
                 try:
                     nsfw_level = item.get("nsfwLevel")
@@ -298,16 +319,7 @@ def fetch_civitai():
                     if not is_x_rating:
                         continue
 
-                    # DEBUG: один раз показываем сырую структуру item чтобы понять где теги
-                    if not _debug_logged:
-                        debug_keys = list(item.keys())
-                        debug_tags = item.get("tags", "KEY_MISSING")
-                        debug_meta_keys = list(item.get("meta", {}).keys()) if item.get("meta") else "NO_META"
-                        logger.info(f"🔍 DEBUG item keys: {debug_keys}")
-                        logger.info(f"🔍 DEBUG tags field: {debug_tags}")
-                        logger.info(f"🔍 DEBUG meta keys: {debug_meta_keys}")
-                        _debug_logged = True
-
+                    # Теги из основного ответа (обычно пустые — подтянем позже для выбранного)
                     tags = extract_tags(item)
 
                     if has_blacklisted(tags):
@@ -325,11 +337,12 @@ def fetch_civitai():
                         continue
 
                     erotic_items.append({
-                        "id":     f"civitai_{item['id']}",
-                        "url":    item.get("url", ""),
-                        "tags":   tags[:15],
-                        "likes":  likes,
-                        "rating": nsfw_level
+                        "id":      f"civitai_{item['id']}",
+                        "url":     item.get("url", ""),
+                        "tags":    tags[:15],
+                        "likes":   likes,
+                        "rating":  nsfw_level,
+                        "post_id": item.get("postId"),   # сохраняем для lazy-fetch тегов
                     })
 
                     logger.debug(
@@ -341,7 +354,6 @@ def fetch_civitai():
                     logger.error(f"Error processing item {item.get('id')}: {e}")
                     continue
 
-            # FIX: нашли посты — сразу возвращаем, не перебираем лишние вариации
             if erotic_items:
                 logger.info(f"Found {len(erotic_items)} X/XXX rated posts")
                 return erotic_items
@@ -401,6 +413,30 @@ async def main():
         if not item:
             logger.info("No more fresh posts available")
             return
+
+        # ── Lazy-fetch тегов — только для выбранного поста ──────────────────
+        # /api/v1/images не возвращает теги в основном ответе,
+        # поэтому запрашиваем их отдельно через postId.
+        # Один запрос на весь запуск — никакого лишнего трафика.
+        if not item["tags"] and item.get("post_id"):
+            headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
+            raw = fetch_tags_by_post_id(item["post_id"], headers)
+            fetched_tags = clean_tags([
+                t.get("name", t) if isinstance(t, dict) else str(t)
+                for t in raw
+            ])
+            if fetched_tags:
+                # Прогоняем через блэклист ещё раз с полными тегами
+                if has_blacklisted(fetched_tags):
+                    logger.warning(f"Blacklisted tags after fetch, skipping {item['id']}")
+                    posted_ids.add(item["id"])
+                    save_all()
+                    continue
+                item["tags"] = fetched_tags[:15]
+                logger.info(f"Tags after lazy-fetch ({len(item['tags'])}): {item['tags']}")
+            else:
+                logger.info("No tags found even after lazy-fetch, proceeding without tags")
+        # ────────────────────────────────────────────────────────────────────
 
         try:
             logger.info(f"Downloading: {item['url']}")
