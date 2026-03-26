@@ -170,7 +170,6 @@ def fetch_civitai():
     for params in variations:
         try:
             headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
-            params["fields"] = "tags,nsfwLevel,stats,url"
             r = requests.get("https://civitai.com/api/v1/images", params=params, headers=headers, timeout=30)
             r.raise_for_status()
             data = r.json()
@@ -192,13 +191,26 @@ def fetch_civitai():
                 if not is_x_rating:
                     continue
                 
-                # Получаем теги
+                # Получаем теги из prompt (в meta)
+                meta = item.get("meta", {})
+                prompt = meta.get("prompt", "")
+                
+                # Парсим теги из промпта (они через запятые)
                 raw_tags = []
-                for tag in item.get("tags", []):
-                    if isinstance(tag, dict):
-                        raw_tags.append(tag.get("name", ""))
-                    else:
-                        raw_tags.append(str(tag))
+                if prompt:
+                    # Разделяем по запятым и чистим
+                    for tag in prompt.split(","):
+                        tag = tag.strip()
+                        if tag and len(tag) > 1:
+                            raw_tags.append(tag)
+                
+                # Если нет промпта, пробуем другие поля
+                if not raw_tags:
+                    # Пробуем получить теги из resources
+                    resources = meta.get("resources", [])
+                    for res in resources:
+                        if res.get("name"):
+                            raw_tags.append(res.get("name"))
                 
                 tags = clean_tags(raw_tags)
                 
