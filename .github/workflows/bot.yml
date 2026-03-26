@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install requests Pillow python-telegram-bot feedparser vk-api
+          pip install requests Pillow python-telegram-bot feedparser
           
       - name: Run ErosLab Bot (CivitAI)
         env:
@@ -36,8 +36,6 @@ jobs:
           CIVITAI_API_KEY: ${{ secrets.CIVITAI_API_KEY }}
           POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          VK_ACCESS_TOKEN: ${{ secrets.VK_ACCESS_TOKEN }}
-          VK_GROUP_ID: ${{ secrets.VK_GROUP_ID }}
         run: python civitai_bot.py
         
       #- name: Run Reddit 3D Parser Bot
