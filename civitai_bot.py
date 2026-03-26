@@ -152,24 +152,27 @@ def add_watermark(data, text):
         return data
 
 def get_video_duration(data: bytes) -> float:
-    """
-    Возвращает длительность видео в секундах.
-    Если не удалось определить — возвращает 0.0.
-    """
+    """Возвращает длительность или 0.0 если видео битое"""
     tmp_path = None
     try:
         with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp:
             tmp.write(data)
             tmp_path = tmp.name
-        cmd = [
-            'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
-            '-of', 'default=noprint_wrappers=1:nokey=1', tmp_path
-        ]
+        
+        # Проверяем, можно ли вообще прочитать
+        cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+               '-of', 'default=noprint_wrappers=1:nokey=1', tmp_path]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        
+        if result.returncode != 0:
+            logger.warning("ffprobe failed to read video")
+            return 0.0
+            
         duration = float(result.stdout.strip())
         return duration
+        
     except Exception as e:
-        logger.error(f"Error getting video duration: {e}")
+        logger.error(f"Error: {e}")
         return 0.0
     finally:
         if tmp_path and os.path.exists(tmp_path):
