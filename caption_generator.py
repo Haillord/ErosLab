@@ -1,15 +1,18 @@
 """
-Генератор описаний через Pollinations.ai (AI, без ключа)
+Генератор описаний: Groq (основной) → Pollinations (запасной) → fallback фраза
 """
 
 import requests
 import logging
 import random
 import urllib.parse
+import os
 
 logger = logging.getLogger(__name__)
 
-# Теги, которые триггерят отказ у Pollinations — скрываем из промпта
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+
+# Теги, которые триггерят отказ у AI — скрываем из промпта, но в пост идут все
 NSFW_TRIGGER_TAGS = {
     "slut", "sex", "nude", "naked", "penis", "vagina", "cock",
     "pussy", "cum", "anal", "blowjob", "nsfw", "explicit", "porn",
@@ -38,46 +41,107 @@ PROMPT_TEMPLATES = [
     ),
 ]
 
-def generate_caption(tags, rating, likes):
-    """Генерирует описание через Pollinations.ai"""
 
-    if not tags:
-        return fallback_caption(tags, rating, likes)
+def _safe_tags(tags):
+    """Убирает теги, которые триггерят отказ AI"""
+    return [t for t in tags if t.lower() not in NSFW_TRIGGER_TAGS]
 
-    # Фильтруем теги для промпта — AI их не увидит, но в пост они пойдут
-    safe_tags = [t for t in tags if t.lower() not in NSFW_TRIGGER_TAGS]
 
-    if not safe_tags:
-        logger.info("No safe tags for AI, using fallback")
-        return fallback_caption(tags, rating, likes)
+def _is_valid_response(text):
+    """Проверяет что AI не отказал и вернул нормальный текст"""
+    bad_phrases = ["I'm sorry", "I can't", "I cannot", "<!DOCTYPE", "<html", "As an AI"]
+    return (
+        bool(text)
+        and len(text) > 5
+        and not any(p in text for p in bad_phrases)
+    )
 
-    tags_str = ", ".join(safe_tags[:8])
-    template = random.choice(PROMPT_TEMPLATES)
-    prompt = template.format(tags=tags_str)
 
-    # Метод 1: GET-запрос
+def _build_prompt(tags):
+    """Собирает промпт из безопасных тегов"""
+    safe = _safe_tags(tags)
+    if not safe:
+        return None
+    tags_str = ", ".join(safe[:8])
+    return random.choice(PROMPT_TEMPLATES).format(tags=tags_str)
+
+
+def _format_caption(ai_text, tags):
+    """Форматирует финальный текст поста"""
+    hashtags = " ".join(f"#{t}" for t in tags[:8])
+    return (
+        f"{ai_text}\n\n"
+        f"{hashtags}\n\n"
+        f"📢 @eroslabai"
+    )
+
+
+def _try_groq(prompt):
+    """Запрос к Groq API — быстро и надёжно"""
+    if not GROQ_API_KEY:
+        logger.info("No GROQ_API_KEY, skipping Groq")
+        return None
+
+    try:
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "llama3-8b-8192",
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 100,
+                "temperature": 0.9
+            },
+            timeout=15
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            text = data["choices"][0]["message"]["content"].strip()
+            if _is_valid_response(text):
+                if len(text) > 250:
+                    text = text[:250] + "..."
+                logger.info("✅ Groq caption generated")
+                return text
+            else:
+                logger.warning(f"Groq bad response: {text[:80]}")
+
+        else:
+            logger.warning(f"Groq status {response.status_code}: {response.text[:100]}")
+
+    except requests.exceptions.Timeout:
+        logger.warning("Groq timeout")
+    except Exception as e:
+        logger.error(f"Groq error: {e}")
+
+    return None
+
+
+def _try_pollinations(prompt):
+    """Запрос к Pollinations — бесплатный fallback"""
+    # Метод 1: GET
     try:
         encoded = urllib.parse.quote(prompt)
         response = requests.get(
             f"https://text.pollinations.ai/{encoded}",
-            timeout=30
+            timeout=20
         )
-
         if response.status_code == 200:
-            ai_text = response.text.strip()
-
-            if _is_valid_response(ai_text):
-                if len(ai_text) > 250:
-                    ai_text = ai_text[:250] + "..."
-                logger.info("AI caption generated successfully (GET)")
-                return _format_caption(ai_text, tags, rating, likes)
+            text = response.text.strip()
+            if _is_valid_response(text):
+                if len(text) > 250:
+                    text = text[:250] + "..."
+                logger.info("✅ Pollinations GET caption generated")
+                return text
             else:
-                logger.warning(f"AI refused: {ai_text[:80]}")
-
+                logger.warning(f"Pollinations GET bad response: {text[:80]}")
     except requests.exceptions.Timeout:
-        logger.warning("GET timeout, trying POST...")
+        logger.warning("Pollinations GET timeout, trying POST...")
     except Exception as e:
-        logger.warning(f"GET failed: {e}, trying POST...")
+        logger.warning(f"Pollinations GET failed: {e}")
 
     # Метод 2: POST
     try:
@@ -89,47 +153,54 @@ def generate_caption(tags, rating, likes):
                 "private": True
             },
             headers={"Content-Type": "application/json"},
-            timeout=30
+            timeout=20
         )
-
         if response.status_code == 200:
-            ai_text = response.text.strip()
-
-            if _is_valid_response(ai_text):
-                if len(ai_text) > 250:
-                    ai_text = ai_text[:250] + "..."
-                logger.info("AI caption generated successfully (POST)")
-                return _format_caption(ai_text, tags, rating, likes)
+            text = response.text.strip()
+            if _is_valid_response(text):
+                if len(text) > 250:
+                    text = text[:250] + "..."
+                logger.info("✅ Pollinations POST caption generated")
+                return text
             else:
-                logger.warning(f"AI refused: {ai_text[:80]}")
-
+                logger.warning(f"Pollinations POST bad response: {text[:80]}")
     except requests.exceptions.Timeout:
-        logger.warning("POST timeout, using fallback")
+        logger.warning("Pollinations POST timeout")
     except Exception as e:
-        logger.error(f"POST failed: {e}")
+        logger.error(f"Pollinations POST failed: {e}")
 
-    return fallback_caption(tags, rating, likes)
-
-
-def _is_valid_response(text):
-    """Проверяет что AI не отказал и вернул нормальный текст"""
-    bad_phrases = ["I'm sorry", "I can't", "I cannot", "<!DOCTYPE", "<html"]
-    return (
-        text
-        and len(text) > 5
-        and not any(p in text for p in bad_phrases)
-    )
+    return None
 
 
-def _format_caption(ai_text, tags, rating, likes):
-    hashtags = " ".join(f"#{t}" for t in tags[:8])
-    return (
-        f"{ai_text}\n\n"
-        f"{hashtags}\n\n"
-        f"📢 @eroslabai"
-    )
+def generate_caption(tags, rating, likes):
+    """Генерирует описание: Groq → Pollinations → fallback фраза"""
 
-def fallback_caption(tags, rating, likes):
+    if not tags:
+        return fallback_caption(tags)
+
+    prompt = _build_prompt(tags)
+    if not prompt:
+        logger.info("No safe tags for AI, using fallback")
+        return fallback_caption(tags)
+
+    # 1. Пробуем Groq
+    text = _try_groq(prompt)
+
+    # 2. Если Groq не сработал — пробуем Pollinations
+    if not text:
+        logger.info("Groq failed, trying Pollinations...")
+        text = _try_pollinations(prompt)
+
+    # 3. Если оба не сработали — fallback фраза
+    if not text:
+        logger.info("All AI failed, using fallback phrase")
+        return fallback_caption(tags)
+
+    return _format_caption(text, tags)
+
+
+def fallback_caption(tags):
+    """Запасной вариант на случай ошибки AI"""
     tags_line = " ".join(f"#{t}" for t in tags[:8]) if tags else ""
 
     phrases = [
