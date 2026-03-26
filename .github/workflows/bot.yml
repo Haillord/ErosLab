@@ -2,29 +2,28 @@ name: ErosLab Bot
 
 on:
   schedule:
-    # Оптимизированный график: каждые 2-3 часа в активное время
-    - cron: '0 */2 * * *'  # Каждые 3 часа
-    # Или если хочешь чаще:
-    # - cron: '0 5,8,11,14,17,20,23 * * *'  # В 5,8,11,14,17,20,23 часов
-  workflow_dispatch:  # Ручной запуск
+    # Каждые 2 часа
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
 
 jobs:
   post:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # Нужно для пуша обновлений
+      contents: write
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1  # Только последний коммит, быстрее
+          fetch-depth: 1
+          token: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'  # Кэшируем зависимости для скорости
+          cache: 'pip'
           
       - name: Install dependencies
         run: |
@@ -38,20 +37,41 @@ jobs:
           CIVITAI_API_KEY: ${{ secrets.CIVITAI_API_KEY }}
         run: python civitai_bot.py
         
-      - name: Commit and push updates
-        if: always()  # Всегда пытаемся сохранить историю, даже если были ошибки
+      - name: Commit and push updates (with retry)
+        if: always()
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Добавляем файлы с историей
-          git add posted_ids.json posted_hashes.json stats.json || true
+          # Функция для повторных попыток
+          for i in {1..3}; do
+            echo "🔄 Attempt $i of 3"
+            
+            # Скачиваем последние изменения
+            git fetch origin main
+            git reset --soft origin/main 2>/dev/null || true
+            
+            # Добавляем файлы
+            git add posted_ids.json posted_hashes.json stats.json 2>/dev/null || true
+            
+            # Проверяем изменения
+            if git diff --cached --quiet; then
+              echo "📝 No changes to commit"
+              exit 0
+            fi
+            
+            # Коммитим
+            git commit -m "📊 Update posted history [skip ci]"
+            
+            # Пытаемся запушить
+            if git push; then
+              echo "✅ Successfully pushed on attempt $i"
+              exit 0
+            else
+              echo "⚠️ Push failed, retrying..."
+              sleep 5
+            fi
+          done
           
-          # Коммитим только если есть изменения
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "Update posted history [skip ci]"
-            git push
-            echo "History updated successfully"
-          fi
+          echo "❌ Failed to push after 3 attempts"
+          exit 1
