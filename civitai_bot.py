@@ -170,6 +170,7 @@ def fetch_civitai():
     for params in variations:
         try:
             headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
+            params["fields"] = "tags,nsfwLevel,stats,url"
             r = requests.get("https://civitai.com/api/v1/images", params=params, headers=headers, timeout=30)
             r.raise_for_status()
             data = r.json()
