@@ -23,19 +23,14 @@ jobs:
         with:
           python-version: '3.11'
           
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           pip install --upgrade pip
           pip install requests Pillow python-telegram-bot feedparser
 
-      - name: Install ffmpeg if not present
+      - name: Verify ffmpeg (pre-installed on runners)
         run: |
-          if ! command -v ffmpeg &> /dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y ffmpeg
-          else
-            echo "✅ ffmpeg already installed: $(ffmpeg -version | head -n1)"
-          fi
+          ffmpeg -version | head -n1 || echo "⚠️ ffmpeg not found"
 
       - name: Run ErosLab Bot (CivitAI)
         env:
@@ -46,13 +41,11 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python civitai_bot.py
         
-      - name: Commit and push updates (with retry)
+      - name: Commit and push updates
         if: always()
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
-          git pull --rebase --no-edit || true
           
           git add posted_ids.json posted_hashes.json stats.json 2>/dev/null || true
           
@@ -64,15 +57,12 @@ jobs:
           git commit -m "📊 Update posted history [skip ci]"
           
           for i in {1..3}; do
-            echo "🔄 Push attempt $i of 3"
             if git push; then
-              echo "✅ Successfully pushed on attempt $i"
+              echo "✅ Successfully pushed"
               exit 0
-            else
-              echo "⚠️ Push failed, retrying..."
-              sleep 5
             fi
+            sleep 5
           done
           
-          echo "❌ Failed to push after 3 attempts"
+          echo "❌ Failed to push"
           exit 1
