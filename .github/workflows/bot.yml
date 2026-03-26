@@ -28,6 +28,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install requests Pillow python-telegram-bot feedparser
+          pip install requests Pillow python-telegram-bot feedparser asyncpraw
           
       - name: Run ErosLab Bot (CivitAI)
         env:
@@ -38,11 +39,11 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python civitai_bot.py
         
-      - name: Run Reddit 3D Parser Bot
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
-        run: python reddit_parser.py || echo "Reddit parser bot failed, continuing..."
+      #- name: Run Reddit 3D Parser Bot
+        #env:
+          #TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          #TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+        #run: python reddit_parser.py || echo "Reddit parser bot failed, continuing..."
         
       - name: Commit and push updates (with retry)
         if: always()
