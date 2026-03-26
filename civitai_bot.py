@@ -10,6 +10,7 @@ import logging
 import os
 import random
 import re
+import time
 import requests
 from io import BytesIO
 from pathlib import Path
@@ -24,21 +25,24 @@ TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "@eroslabai")
 CIVITAI_API_KEY     = os.environ.get("CIVITAI_API_KEY", "")
 
 WATERMARK_TEXT   = "@eroslabai"
-MIN_LIKES        = 20   # Минимум лайков для качественного контента
-MIN_IMAGE_SIZE   = 512  # Минимальный размер изображения
+MIN_LIKES        = 20
+MIN_IMAGE_SIZE   = 512
 
 HISTORY_FILE = "posted_ids.json"
 HASHES_FILE  = "posted_hashes.json"
 STATS_FILE   = "stats.json"
 
-# Черный список тегов (запрещенный контент)
+# Максимум хранимых ID — чтобы файл не рос бесконечно
+MAX_HISTORY_SIZE = 5000
+
+# FIX: исправлена опечатка — "toddler, 1boy," была одной строкой,
+# из-за чего тег 1boy фактически не фильтровался
 BLACKLIST_TAGS = {
     "gore", "guro", "scat", "vore", "snuff", "necrophilia",
     "bestiality", "zoo", "loli", "shota", "child", "minor",
-    "underage", "infant", "toddler, 1boy,"
+    "underage", "infant", "toddler", "1boy",
 }
 
-# Стоп-слова для хэштегов
 HASHTAG_STOP_WORDS = {
     "score", "source", "rating", "version", "step", "steps", "cfg", "seed",
     "sampler", "model", "lora", "vae", "clip", "unet", "fp16", "safetensors",
@@ -56,7 +60,6 @@ logger = logging.getLogger(__name__)
 
 # ==================== ХРАНИЛИЩА ====================
 def load_json(path, default):
-    """Безопасная загрузка JSON"""
     if Path(path).exists():
         try:
             with open(path, "r", encoding="utf-8") as f:
@@ -66,23 +69,23 @@ def load_json(path, default):
     return default
 
 def save_json(path, data):
-    """Сохранение JSON с отступами"""
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 posted_ids    = set(load_json(HISTORY_FILE, []))
 posted_hashes = set(load_json(HASHES_FILE, []))
-stats         = load_json(STATS_FILE, {"total_posts": 0, "sources": {}, "top_tags": {}})
+stats         = load_json(STATS_FILE, {"total_posts": 0, "top_tags": {}})
 
 def save_all():
-    """Сохранение всей истории"""
-    save_json(HISTORY_FILE, list(posted_ids))
-    save_json(HASHES_FILE,  list(posted_hashes))
+    # FIX: обрезаем историю до MAX_HISTORY_SIZE, чтобы файл не рос бесконечно
+    trimmed_ids    = list(posted_ids)[-MAX_HISTORY_SIZE:]
+    trimmed_hashes = list(posted_hashes)[-MAX_HISTORY_SIZE:]
+    save_json(HISTORY_FILE, trimmed_ids)
+    save_json(HASHES_FILE,  trimmed_hashes)
     save_json(STATS_FILE,   stats)
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 def clean_tags(tags):
-    """Очистка и фильтрация тегов для хэштегов"""
     clean, seen = [], set()
     for t in tags:
         t = re.sub(r"[^\w]", "", str(t).strip().lower().replace(" ", "_").replace("-", "_"))
@@ -92,7 +95,6 @@ def clean_tags(tags):
     return clean
 
 def has_blacklisted(tags):
-    """Проверка на запрещенные теги"""
     blacklisted = set(t.lower() for t in tags) & BLACKLIST_TAGS
     if blacklisted:
         logger.debug(f"Blacklisted: {blacklisted}")
@@ -100,7 +102,6 @@ def has_blacklisted(tags):
     return False
 
 def check_media_size(data, url):
-    """Проверка размера медиафайла"""
     try:
         if not url.lower().endswith((".mp4", ".webm", ".gif")):
             img = Image.open(BytesIO(data))
@@ -118,7 +119,6 @@ def check_media_size(data, url):
         return False
 
 def add_watermark(data, text):
-    """Добавление водяного знака (только для изображений)"""
     try:
         img = Image.open(BytesIO(data)).convert("RGBA")
         w, h = img.size
@@ -154,13 +154,8 @@ def add_watermark(data, text):
 
 # ==================== ТЕГИ ====================
 def extract_tags(item):
-    """
-    Извлекает теги из поста CivitAI.
-    Приоритет: item["tags"] (массив объектов) → meta.prompt
-    """
     raw_tags = []
 
-    # 1. Теги из официального поля CivitAI — самый надёжный источник
     civitai_tags = item.get("tags", [])
     if civitai_tags:
         for t in civitai_tags:
@@ -172,7 +167,6 @@ def extract_tags(item):
                 raw_tags.append(name)
         logger.debug(f"CivitAI tags found: {len(raw_tags)}")
 
-    # 2. Теги из AI-промпта (дополнение)
     meta = item.get("meta", {})
     prompt = meta.get("prompt", "") if meta else ""
     if prompt:
@@ -185,25 +179,61 @@ def extract_tags(item):
     return clean_tags(raw_tags)
 
 # ==================== CIVITAI API ====================
-def fetch_civitai():
-    """Запрос к API CivitAI — только X и XXX рейтинг"""
+def _request_with_backoff(url, params, headers, max_retries=3):
+    """
+    FIX: GET-запрос с экспоненциальным backoff при 429/5xx.
+    Защищает от бана при rate limiting со стороны CivitAI.
+    """
+    for attempt in range(max_retries):
+        try:
+            r = requests.get(url, params=params, headers=headers, timeout=30)
+            if r.status_code == 429:
+                wait = 2 ** attempt * 5  # 5s, 10s, 20s
+                logger.warning(f"Rate limited (429), waiting {wait}s before retry {attempt + 1}/{max_retries}")
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+            return r
+        except requests.exceptions.Timeout:
+            logger.warning(f"Timeout on attempt {attempt + 1}/{max_retries}")
+            if attempt < max_retries - 1:
+                time.sleep(3)
+        except requests.exceptions.HTTPError as e:
+            if r.status_code >= 500:
+                logger.warning(f"Server error {r.status_code}, retry {attempt + 1}/{max_retries}")
+                time.sleep(2 ** attempt * 2)
+            else:
+                raise
+        except Exception as e:
+            logger.error(f"Request error: {e}")
+            raise
+    return None
 
+def fetch_civitai():
+    """
+    Запрос к API CivitAI — только X и XXX рейтинг.
+    FIX: возвращаем результат сразу после первого успешного запроса,
+    не продолжая перебирать вариации без нужды.
+    """
     variations = [
         {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Day"},
         {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Week"},
         {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Day"},
     ]
 
+    headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
+
     for params in variations:
         try:
-            headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
-            r = requests.get(
+            r = _request_with_backoff(
                 "https://civitai.com/api/v1/images",
                 params=params,
-                headers=headers,
-                timeout=30
+                headers=headers
             )
-            r.raise_for_status()
+            if r is None:
+                logger.warning(f"No response for params {params}, trying next variation")
+                continue
+
             data = r.json()
             items = data.get("items", [])
 
@@ -217,7 +247,6 @@ def fetch_civitai():
                 try:
                     nsfw_level = item.get("nsfwLevel")
 
-                    # Берём только X и XXX
                     is_x_rating = False
                     if isinstance(nsfw_level, str) and nsfw_level.upper() in ["X", "XXX"]:
                         is_x_rating = True
@@ -227,14 +256,11 @@ def fetch_civitai():
                     if not is_x_rating:
                         continue
 
-                    # Извлекаем теги (исправленная логика)
                     tags = extract_tags(item)
 
-                    # Проверка на запрещённый контент
                     if has_blacklisted(tags):
                         continue
 
-                    # Лайки
                     stats_data = item.get("stats", {})
                     likes = 0
                     if stats_data:
@@ -263,9 +289,12 @@ def fetch_civitai():
                     logger.error(f"Error processing item {item.get('id')}: {e}")
                     continue
 
+            # FIX: нашли посты — сразу возвращаем, не перебираем лишние вариации
             if erotic_items:
                 logger.info(f"Found {len(erotic_items)} X/XXX rated posts")
                 return erotic_items
+
+            logger.info("No suitable posts in this variation, trying next")
 
         except Exception as e:
             logger.error(f"Error with params {params}: {e}")
@@ -274,7 +303,6 @@ def fetch_civitai():
     return []
 
 def fetch_and_pick():
-    """Получение и выбор случайного поста"""
     items = fetch_civitai()
 
     if not items:
@@ -297,7 +325,6 @@ def fetch_and_pick():
 
 # ==================== MAIN ====================
 async def main():
-    """Основная функция"""
     if not TELEGRAM_BOT_TOKEN:
         logger.error("No TELEGRAM_BOT_TOKEN found!")
         return
@@ -323,7 +350,6 @@ async def main():
             logger.info("No more fresh posts available")
             return
 
-        # Скачивание
         try:
             logger.info(f"Downloading: {item['url']}")
             r = requests.get(item["url"], timeout=60)
@@ -336,14 +362,12 @@ async def main():
             save_all()
             continue
 
-        # Проверка размера файла
         if len(data) > MAX_FILE_SIZE:
             logger.warning(f"File too large ({len(data)} bytes > 50MB), skipping")
             posted_ids.add(item["id"])
             save_all()
             continue
 
-        # Проверка размера изображения
         if not item["url"].lower().endswith((".mp4", ".webm", ".gif")):
             if not check_media_size(data, item["url"]):
                 logger.warning("Image size too small, skipping")
@@ -351,7 +375,6 @@ async def main():
                 save_all()
                 continue
 
-        # Проверка на дубликат по хэшу
         img_hash = hashlib.md5(data).hexdigest()
         if img_hash in posted_hashes:
             logger.warning("Duplicate content detected")
@@ -412,7 +435,6 @@ async def main():
         save_all()
         logger.info(f"✅ Successfully posted: {item['id']}")
         logger.info(f"📊 Total posts: {stats['total_posts']}")
-
 
     except Exception as e:
         logger.error(f"Telegram Send Error: {e}")

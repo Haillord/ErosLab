@@ -1,5 +1,5 @@
 """
-Генератор описаний: Groq Vision → Groq (текст) → Pollinations → fallback
+Генератор описаний: Groq → Pollinations → fallback
 Стиль: коротко, сухо, с думерским сарказмом, без лишнего.
 """
 
@@ -22,7 +22,6 @@ NSFW_TRIGGER_TAGS = {
     "spread_legs", "pussy_juice", "uncensored", "censored", "genitals"
 }
 
-# Шаблоны промптов в стиле Nyx (без упоминания личности, только манера)
 PROMPT_TEMPLATES = [
     (
         "Напиши одно короткое, развратное предложение на русском языке для поста "
@@ -43,6 +42,7 @@ PROMPT_TEMPLATES = [
 ]
 
 def _safe_tags(tags):
+    """Убирает NSFW-теги — используется и для промпта, и для хэштегов."""
     return [t for t in tags if t.lower() not in NSFW_TRIGGER_TAGS]
 
 def _is_valid_response(text):
@@ -57,7 +57,9 @@ def _build_prompt(tags):
     return random.choice(PROMPT_TEMPLATES).format(tags=tags_str)
 
 def _format_caption(ai_text, tags, footer):
-    hashtags = " ".join(f"#{t}" for t in tags[:8]) if tags else ""
+    # FIX: фильтруем NSFW-теги и из хэштегов, а не только из промпта
+    safe_tags = _safe_tags(tags)
+    hashtags = " ".join(f"#{t}" for t in safe_tags[:8]) if safe_tags else ""
     return f"{ai_text}\n\n{hashtags}\n\n{footer}"
 
 def _try_groq(prompt):
@@ -72,8 +74,8 @@ def _try_groq(prompt):
             data=json.dumps({
                 "model": "llama-3.3-70b-versatile",
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 70,               # короче, чтобы описания были краткими
-                "temperature": 0.6              # немного ниже для стабильности
+                "max_tokens": 70,
+                "temperature": 0.6
             }),
             timeout=15
         )
@@ -134,15 +136,14 @@ def _try_pollinations(prompt):
     return None
 
 def fallback_caption(tags, footer):
-    tags_line = " ".join(f"#{t}" for t in tags[:8]) if tags else ""
+    safe_tags = _safe_tags(tags)
+    tags_line = " ".join(f"#{t}" for t in safe_tags[:8]) if safe_tags else ""
     return f"{tags_line}\n\n{footer}"
 
 def generate_caption(tags, rating, likes, image_data=None, image_url=None,
                      watermark="📢 @eroslabai", suggestion="💬 Предложка: @Haillord"):
     footer = f"{watermark}\n{suggestion}"
 
-
-    # Если тегов нет — нейтральный промпт (тоже в стиле)
     if not tags:
         prompt = "Коротко, сухо, одно предложение. Просто настроение. Без эмодзи."
         text = _try_groq(prompt)
@@ -153,7 +154,6 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
         else:
             return fallback_caption(tags, footer)
 
-    # Если теги есть
     prompt = _build_prompt(tags)
     if not prompt:
         return fallback_caption(tags, footer)
