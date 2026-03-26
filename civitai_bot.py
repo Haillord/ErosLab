@@ -1,6 +1,7 @@
 ﻿"""
 ErosLab Bot — CivitAI (только X и XXX рейтинг)
 Оптимизирован для GitHub Actions с защитой от повторов.
+Настройки загружаются из config.json
 """
 
 import asyncio
@@ -18,25 +19,44 @@ import telegram
 from telegram import Bot
 from caption_generator import generate_caption
 
+# ==================== ЗАГРУЗКА КОНФИГА ====================
+def load_config():
+    config_path = "config.json"
+    if not os.path.exists(config_path):
+        # Если файла нет — создаём с дефолтными значениями
+        default_config = {
+            "MIN_LIKES": 20,
+            "MIN_IMAGE_SIZE": 512,
+            "WATERMARK_TEXT": "@eroslabai",
+            "BLACKLIST_TAGS": [
+                "gore", "guro", "scat", "vore", "snuff", "necrophilia",
+                "bestiality", "zoo", "loli", "shota", "child", "minor",
+                "underage", "infant", "toddler"
+            ],
+            "PROMPT_TEMPLATES": []
+        }
+        with open(config_path, "w") as f:
+            json.dump(default_config, f, indent=2)
+        return default_config
+    with open(config_path, "r") as f:
+        return json.load(f)
+
+config = load_config()
+
+MIN_LIKES = config.get("MIN_LIKES", 20)
+MIN_IMAGE_SIZE = config.get("MIN_IMAGE_SIZE", 512)
+WATERMARK_TEXT = config.get("WATERMARK_TEXT", "@eroslabai")
+BLACKLIST_TAGS = set(config.get("BLACKLIST_TAGS", []))
+PROMPT_TEMPLATES = config.get("PROMPT_TEMPLATES", [])
+
 # ==================== НАСТРОЙКИ ====================
 TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "@eroslabai")
 CIVITAI_API_KEY     = os.environ.get("CIVITAI_API_KEY", "")
 
-WATERMARK_TEXT   = "@eroslabai"
-MIN_LIKES        = 20   # Минимум лайков для качественного контента
-MIN_IMAGE_SIZE   = 512  # Минимальный размер изображения
-
 HISTORY_FILE = "posted_ids.json"
 HASHES_FILE  = "posted_hashes.json"
 STATS_FILE   = "stats.json"
-
-# Черный список тегов (запрещенный контент)
-BLACKLIST_TAGS = {
-    "gore", "guro", "scat", "vore", "snuff", "necrophilia",
-    "bestiality", "zoo", "loli", "shota", "child", "minor",
-    "underage", "infant", "toddler, 1boy,"
-}
 
 # Стоп-слова для хэштегов
 HASHTAG_STOP_WORDS = {
@@ -56,7 +76,6 @@ logger = logging.getLogger(__name__)
 
 # ==================== ХРАНИЛИЩА ====================
 def load_json(path, default):
-    """Безопасная загрузка JSON"""
     if Path(path).exists():
         try:
             with open(path, "r", encoding="utf-8") as f:
@@ -66,7 +85,6 @@ def load_json(path, default):
     return default
 
 def save_json(path, data):
-    """Сохранение JSON с отступами"""
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -75,14 +93,12 @@ posted_hashes = set(load_json(HASHES_FILE, []))
 stats         = load_json(STATS_FILE, {"total_posts": 0, "sources": {}, "top_tags": {}})
 
 def save_all():
-    """Сохранение всей истории"""
     save_json(HISTORY_FILE, list(posted_ids))
     save_json(HASHES_FILE,  list(posted_hashes))
     save_json(STATS_FILE,   stats)
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 def clean_tags(tags):
-    """Очистка и фильтрация тегов для хэштегов"""
     clean, seen = [], set()
     for t in tags:
         t = re.sub(r"[^\w]", "", str(t).strip().lower().replace(" ", "_").replace("-", "_"))
@@ -92,7 +108,6 @@ def clean_tags(tags):
     return clean
 
 def has_blacklisted(tags):
-    """Проверка на запрещенные теги"""
     blacklisted = set(t.lower() for t in tags) & BLACKLIST_TAGS
     if blacklisted:
         logger.debug(f"Blacklisted: {blacklisted}")
@@ -100,7 +115,6 @@ def has_blacklisted(tags):
     return False
 
 def check_media_size(data, url):
-    """Проверка размера медиафайла"""
     try:
         if not url.lower().endswith((".mp4", ".webm", ".gif")):
             img = Image.open(BytesIO(data))
@@ -118,7 +132,6 @@ def check_media_size(data, url):
         return False
 
 def add_watermark(data, text):
-    """Добавление водяного знака (только для изображений)"""
     try:
         img = Image.open(BytesIO(data)).convert("RGBA")
         w, h = img.size
@@ -154,13 +167,7 @@ def add_watermark(data, text):
 
 # ==================== ТЕГИ ====================
 def extract_tags(item):
-    """
-    Извлекает теги из поста CivitAI.
-    Приоритет: item["tags"] (массив объектов) → meta.prompt
-    """
     raw_tags = []
-
-    # 1. Теги из официального поля CivitAI — самый надёжный источник
     civitai_tags = item.get("tags", [])
     if civitai_tags:
         for t in civitai_tags:
@@ -172,7 +179,6 @@ def extract_tags(item):
                 raw_tags.append(name)
         logger.debug(f"CivitAI tags found: {len(raw_tags)}")
 
-    # 2. Теги из AI-промпта (дополнение)
     meta = item.get("meta", {})
     prompt = meta.get("prompt", "") if meta else ""
     if prompt:
@@ -186,8 +192,6 @@ def extract_tags(item):
 
 # ==================== CIVITAI API ====================
 def fetch_civitai():
-    """Запрос к API CivitAI — только X и XXX рейтинг"""
-
     variations = [
         {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Day"},
         {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Week"},
@@ -216,8 +220,6 @@ def fetch_civitai():
             for item in items:
                 try:
                     nsfw_level = item.get("nsfwLevel")
-
-                    # Берём только X и XXX
                     is_x_rating = False
                     if isinstance(nsfw_level, str) and nsfw_level.upper() in ["X", "XXX"]:
                         is_x_rating = True
@@ -227,21 +229,14 @@ def fetch_civitai():
                     if not is_x_rating:
                         continue
 
-                    # Извлекаем теги (исправленная логика)
                     tags = extract_tags(item)
-
-                    # Проверка на запрещённый контент
                     if has_blacklisted(tags):
                         continue
 
-                    # Лайки
                     stats_data = item.get("stats", {})
                     likes = 0
                     if stats_data:
-                        likes = (
-                            stats_data.get("likeCount", 0)
-                            + stats_data.get("heartCount", 0)
-                        )
+                        likes = stats_data.get("likeCount", 0) + stats_data.get("heartCount", 0)
 
                     if likes < MIN_LIKES:
                         continue
@@ -274,9 +269,7 @@ def fetch_civitai():
     return []
 
 def fetch_and_pick():
-    """Получение и выбор случайного поста"""
     items = fetch_civitai()
-
     if not items:
         logger.warning("No items found from API")
         return None
@@ -297,7 +290,6 @@ def fetch_and_pick():
 
 # ==================== MAIN ====================
 async def main():
-    """Основная функция"""
     if not TELEGRAM_BOT_TOKEN:
         logger.error("No TELEGRAM_BOT_TOKEN found!")
         return
@@ -373,7 +365,8 @@ async def main():
         image_data=data,
         image_url=item["url"],
         watermark=WATERMARK_TEXT,
-        suggestion="💬 Предложка: @Haillord"
+        suggestion="💬 Предложка: @Haillord",
+        prompt_templates=PROMPT_TEMPLATES  # передаём шаблоны из конфига
     )
 
     logger.info(f"Tags for caption ({len(item['tags'])}): {item['tags'][:8]}")
@@ -412,7 +405,6 @@ async def main():
         save_all()
         logger.info(f"✅ Successfully posted: {item['id']}")
         logger.info(f"📊 Total posts: {stats['total_posts']}")
-
 
     except Exception as e:
         logger.error(f"Telegram Send Error: {e}")
