@@ -179,61 +179,69 @@ def fetch_civitai():
             
             erotic_items = []
             for item in items:
-                nsfw_level = item.get("nsfwLevel")
-                
-                # Проверяем рейтинг - берем только X и XXX
-                is_x_rating = False
-                if isinstance(nsfw_level, str) and nsfw_level.upper() in ["X", "XXX"]:
-                    is_x_rating = True
-                elif isinstance(nsfw_level, (int, float)) and nsfw_level >= 4:
-                    is_x_rating = True
-                
-                if not is_x_rating:
+                try:
+                    nsfw_level = item.get("nsfwLevel")
+                    
+                    # Проверяем рейтинг - берем только X и XXX
+                    is_x_rating = False
+                    if isinstance(nsfw_level, str) and nsfw_level.upper() in ["X", "XXX"]:
+                        is_x_rating = True
+                    elif isinstance(nsfw_level, (int, float)) and nsfw_level >= 4:
+                        is_x_rating = True
+                    
+                    if not is_x_rating:
+                        continue
+                    
+                    # Получаем теги из prompt (в meta) с защитой от None
+                    meta = item.get("meta")
+                    prompt = ""
+                    if meta and isinstance(meta, dict):
+                        prompt = meta.get("prompt", "")
+                    
+                    # Парсим теги из промпта
+                    raw_tags = []
+                    if prompt and isinstance(prompt, str):
+                        for tag in prompt.split(","):
+                            tag = tag.strip()
+                            if tag and len(tag) > 1:
+                                raw_tags.append(tag)
+                    
+                    # Если нет промпта, пробуем другие поля
+                    if not raw_tags and meta and isinstance(meta, dict):
+                        resources = meta.get("resources", [])
+                        if resources:
+                            for res in resources:
+                                if res and isinstance(res, dict) and res.get("name"):
+                                    raw_tags.append(res.get("name"))
+                    
+                    tags = clean_tags(raw_tags)
+                    
+                    # Проверка на черный список
+                    if has_blacklisted(tags):
+                        continue
+                    
+                    # Получаем лайки
+                    stats_data = item.get("stats", {})
+                    likes = 0
+                    if stats_data and isinstance(stats_data, dict):
+                        likes = stats_data.get("likeCount", 0) + stats_data.get("heartCount", 0)
+                    
+                    if likes < MIN_LIKES:
+                        continue
+                    
+                    erotic_items.append({
+                        "id": f"civitai_{item['id']}",
+                        "url": item.get("url", ""),
+                        "tags": tags[:15],
+                        "likes": likes,
+                        "rating": nsfw_level
+                    })
+                    
+                    logger.debug(f"✓ Added {item['id']} (rating:{nsfw_level}, likes:{likes}, tags:{len(tags)})")
+                    
+                except Exception as e:
+                    logger.error(f"Error processing item {item.get('id')}: {e}")
                     continue
-                
-                # Получаем теги из prompt (в meta)
-                meta = item.get("meta", {})
-                prompt = meta.get("prompt", "")
-                
-                # Парсим теги из промпта (они через запятые)
-                raw_tags = []
-                if prompt:
-                    # Разделяем по запятым и чистим
-                    for tag in prompt.split(","):
-                        tag = tag.strip()
-                        if tag and len(tag) > 1:
-                            raw_tags.append(tag)
-                
-                # Если нет промпта, пробуем другие поля
-                if not raw_tags:
-                    # Пробуем получить теги из resources
-                    resources = meta.get("resources", [])
-                    for res in resources:
-                        if res.get("name"):
-                            raw_tags.append(res.get("name"))
-                
-                tags = clean_tags(raw_tags)
-                
-                # Проверка на черный список
-                if has_blacklisted(tags):
-                    continue
-                
-                # Получаем лайки
-                stats_data = item.get("stats", {})
-                likes = stats_data.get("likeCount", 0) + stats_data.get("heartCount", 0)
-                
-                if likes < MIN_LIKES:
-                    continue
-                
-                erotic_items.append({
-                    "id": f"civitai_{item['id']}",
-                    "url": item.get("url", ""),
-                    "tags": tags[:15],
-                    "likes": likes,
-                    "rating": nsfw_level
-                })
-                
-                logger.debug(f"✓ Added {item['id']} (rating:{nsfw_level}, likes:{likes}, tags:{len(tags)})")
             
             if erotic_items:
                 logger.info(f"Found {len(erotic_items)} X/XXX rated posts")
