@@ -1,4 +1,4 @@
-"""
+﻿"""
 ErosLab Bot — CivitAI (только X и XXX рейтинг)
 Оптимизирован для GitHub Actions с защитой от повторов.
 """
@@ -58,7 +58,7 @@ def load_json(path, default):
     """Безопасная загрузка JSON"""
     if Path(path).exists():
         try:
-            with open(path, "r") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
             logger.error(f"Error loading {path}: {e}")
@@ -66,7 +66,7 @@ def load_json(path, default):
 
 def save_json(path, data):
     """Сохранение JSON с отступами"""
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 posted_ids    = set(load_json(HISTORY_FILE, []))
@@ -116,7 +116,6 @@ def check_media_size(data, url):
             return True
     except Exception as e:
         logger.error(f"Error checking media size: {e}")
-        # Если не удалось проверить, лучше пропустить
         return False
 
 def add_watermark(data, text):
@@ -292,16 +291,16 @@ async def main():
             logger.info(f"Downloaded {len(data)} bytes")
         except Exception as e:
             logger.error(f"Download Error: {e}")
-            posted_ids.add(item["id"])  # Помечаем битую ссылку
+            posted_ids.add(item["id"])
             save_all()
-            continue  # Пробуем следующий пост
+            continue
         
         # Проверка размера файла (общая для всех)
         if len(data) > MAX_FILE_SIZE:
             logger.warning(f"File too large ({len(data)} bytes > 50MB), skipping")
             posted_ids.add(item["id"])
             save_all()
-            continue  # Пробуем следующий пост
+            continue
         
         # Проверка размера изображения (только для картинок)
         if not item["url"].lower().endswith((".mp4", ".webm", ".gif")):
@@ -309,7 +308,7 @@ async def main():
                 logger.warning("Image size too small, skipping")
                 posted_ids.add(item["id"])
                 save_all()
-                continue  # Пробуем следующий пост
+                continue
         
         # Проверка на дубликат по хэшу
         img_hash = hashlib.md5(data).hexdigest()
@@ -317,12 +316,11 @@ async def main():
             logger.warning(f"Duplicate content detected")
             posted_ids.add(item["id"])
             save_all()
-            continue  # Пробуем следующий пост
+            continue
         
         # Если дошли сюда — пост подходит, выходим из цикла
         break
     else:
-        # Сработает, если ни один пост не подошёл за MAX_ATTEMPTS попыток
         logger.error(f"No suitable post found after {MAX_ATTEMPTS} attempts")
         return
     
@@ -367,3 +365,6 @@ async def main():
     
     except Exception as e:
         logger.error(f"Telegram Send Error: {e}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
