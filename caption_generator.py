@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
+
 NSFW_TRIGGER_TAGS = {
     "slut", "sex", "nude", "naked", "penis", "vagina", "cock",
     "pussy", "cum", "anal", "blowjob", "nsfw", "explicit", "porn",
@@ -21,6 +22,26 @@ NSFW_TRIGGER_TAGS = {
     "spread_legs", "pussy_juice", "uncensored", "censored", "genitals"
 }
 
+# Шаблоны промптов в стиле Nyx (без упоминания личности, только манера)
+PROMPT_TEMPLATES = [
+    (
+        "Напиши одно короткое, развратное предложение на русском языке для поста "
+        "с откровенным аниме-артом. Не описывай внешность буквально. Передай похоть, "
+        "желание, атмосферу. Вдохновение: {tags}. Добавь 2-3 эмодзи в стиле NSFW. "
+        "Только текст."
+    ),
+    (
+        "Придумай короткую, дерзкую, пошлую подпись на русском для эротичного NSFW-поста. "
+        "Стиль: игривый, провокационный, с характером. Атмосфера: {tags}. "
+        "Добавь 2-3 эмодзи (например, 🔥💋🍑💦). Только текст ответа."
+    ),
+    (
+        "Напиши одно предложение на русском — короткое, чувственное, с откровенным намёком. "
+        "Как будто описываешь момент, от которого захватывает дух и хочется продолжения. "
+        "Настроение задают слова: {tags}. Добавь 2-3 эмодзи. Без кавычек."
+    ),
+]
+
 def _safe_tags(tags):
     return [t for t in tags if t.lower() not in NSFW_TRIGGER_TAGS]
 
@@ -28,17 +49,16 @@ def _is_valid_response(text):
     bad_phrases = ["I'm sorry", "I can't", "I cannot", "<!DOCTYPE", "<html", "As an AI"]
     return bool(text) and len(text) > 5 and not any(p in text for p in bad_phrases)
 
-def _build_prompt(tags, prompt_templates):
+def _build_prompt(tags):
     safe = _safe_tags(tags)
     if not safe:
         return None
     tags_str = ", ".join(safe[:8])
-    if prompt_templates:
-        template = random.choice(prompt_templates)
-    else:
-        # fallback, если шаблонов нет
-        template = "Напиши одно короткое, развратное предложение на русском языке для поста с откровенным аниме-артом. Вдохновение: {tags}. Добавь 2-3 эмодзи в стиле NSFW. Только текст."
-    return template.format(tags=tags_str)
+    return random.choice(PROMPT_TEMPLATES).format(tags=tags_str)
+
+def _format_caption(ai_text, tags, footer):
+    hashtags = " ".join(f"#{t}" for t in tags[:8]) if tags else ""
+    return f"{ai_text}\n\n{hashtags}\n\n{footer}"
 
 def _try_groq(prompt):
     if not GROQ_API_KEY:
@@ -52,8 +72,8 @@ def _try_groq(prompt):
             data=json.dumps({
                 "model": "llama-3.3-70b-versatile",
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 70,
-                "temperature": 0.6
+                "max_tokens": 70,               # короче, чтобы описания были краткими
+                "temperature": 0.6              # немного ниже для стабильности
             }),
             timeout=15
         )
@@ -118,11 +138,11 @@ def fallback_caption(tags, footer):
     return f"{tags_line}\n\n{footer}"
 
 def generate_caption(tags, rating, likes, image_data=None, image_url=None,
-                     watermark="📢 @eroslabai", suggestion="💬 Предложка: @Haillord",
-                     prompt_templates=None):
+                     watermark="📢 @eroslabai", suggestion="💬 Предложка: @Haillord"):
     footer = f"{watermark}\n{suggestion}"
 
-    # Если тегов нет — нейтральный промпт
+
+    # Если тегов нет — нейтральный промпт (тоже в стиле)
     if not tags:
         prompt = "Коротко, сухо, одно предложение. Просто настроение. Без эмодзи."
         text = _try_groq(prompt)
@@ -134,7 +154,7 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
             return fallback_caption(tags, footer)
 
     # Если теги есть
-    prompt = _build_prompt(tags, prompt_templates)
+    prompt = _build_prompt(tags)
     if not prompt:
         return fallback_caption(tags, footer)
 
@@ -145,6 +165,4 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
     if not text:
         return fallback_caption(tags, footer)
 
-    # Форматирование с хэштегами
-    hashtags = " ".join(f"#{t}" for t in tags[:8]) if tags else ""
-    return f"{text}\n\n{hashtags}\n\n{footer}"
+    return _format_caption(text, tags, footer)
