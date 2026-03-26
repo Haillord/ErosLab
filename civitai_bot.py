@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 import telegram
 from telegram import Bot
 from caption_generator import generate_caption
+from vk_poster import post_to_vk
 
 # ==================== НАСТРОЙКИ ====================
 TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -410,6 +411,19 @@ async def main():
         save_all()
         logger.info(f"✅ Successfully posted: {item['id']}")
         logger.info(f"📊 Total posts: {stats['total_posts']}")
+
+        # ========== КРОССПОСТИНГ В ВК ==========
+        if os.environ.get("VK_ACCESS_TOKEN") and os.environ.get("VK_GROUP_ID"):
+            try:
+                post_to_vk(
+                    image_data=data,
+                    caption=caption,
+                    media_url=item["url"],
+                    group_id=os.environ["VK_GROUP_ID"],
+                    token=os.environ["VK_ACCESS_TOKEN"]
+                )
+            except Exception as e:
+                logger.error(f"VK posting error: {e}")
 
     except Exception as e:
         logger.error(f"Telegram Send Error: {e}")
