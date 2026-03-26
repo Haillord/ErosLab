@@ -338,7 +338,7 @@ async def main():
     
     # ========== ОТПРАВКА В TELEGRAM ==========
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    caption = " ".join(f"#{t}" for t in item["tags"]) + f"\n\n📢 {WATERMARK_TEXT}"
+    caption = generate_caption(item["tags"], item["rating"], item["likes"])
     
     try:
         url_lower = item["url"].lower()
