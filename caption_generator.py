@@ -29,7 +29,7 @@ def generate_caption(tags, rating, likes):
         # GET запрос для Pollinations.ai (работает)
         response = requests.get(
             f"https://text.pollinations.ai/{prompt}",
-            timeout=15
+            timeout=30
         )
         
         if response.status_code == 200:
