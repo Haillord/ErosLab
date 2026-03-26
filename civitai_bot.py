@@ -366,7 +366,7 @@ async def main():
 
     # ========== ОТПРАВКА В TELEGRAM ==========
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    caption = generate_caption(item["tags"])
+    caption = generate_caption(item["tags"], item["rating"], item["likes"])
 
     logger.info(f"Tags for caption ({len(item['tags'])}): {item['tags'][:8]}")
     logger.info(f"Caption preview: {caption[:100]}")
