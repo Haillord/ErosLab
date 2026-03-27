@@ -408,7 +408,7 @@ def fetch_and_pick():
         items = fetch_rule34(
             api_key=RULE34_API_KEY, 
             user_id=RULE34_USER_ID, 
-            tags="3d high_res -low_res"
+            tags="3d animated"
         )
     else:
         source = "civitai"
