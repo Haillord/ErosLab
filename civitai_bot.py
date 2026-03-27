@@ -233,7 +233,7 @@ def optimize_video(data: bytes) -> bytes:
             # Легкая оптимизация - только для streaming и thumbnail
             cmd = [
                 'ffmpeg', '-y', '-i', tmp_path,
-                '-c:v', 'libx264', '-preset', 'fast', '-crf', '20',
+                '-c:v', 'libx264', '-preset', 'superfast', '-crf', '20',
                 '-c:a', 'aac', '-b:a', '192k',
                 '-movflags', '+faststart',
                 '-vf', 'scale=1280:-2',
@@ -243,7 +243,7 @@ def optimize_video(data: bytes) -> bytes:
             # Сильная оптимизация для больших видео
             cmd = [
                 'ffmpeg', '-y', '-i', tmp_path,
-                '-c:v', 'libx264', '-preset', 'medium', '-crf', '25',
+                '-c:v', 'libx264', '-preset', 'superfast', '-crf', '25',
                 '-c:a', 'aac', '-b:a', '128k',
                 '-movflags', '+faststart',
                 '-vf', 'scale=1280:-2',
@@ -251,7 +251,7 @@ def optimize_video(data: bytes) -> bytes:
                 output_path
             ]
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
         if result.returncode == 0 and os.path.exists(output_path):
             with open(output_path, 'rb') as f:
