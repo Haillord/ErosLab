@@ -27,7 +27,7 @@ TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "@eroslabai")
 CIVITAI_API_KEY     = os.environ.get("CIVITAI_API_KEY", "")
 
 WATERMARK_TEXT   = "@eroslabai"
-MIN_LIKES        = 20
+MIN_LIKES        = 10
 MIN_IMAGE_SIZE   = 512
 
 HISTORY_FILE = "posted_ids.json"
@@ -53,7 +53,7 @@ HASHTAG_STOP_WORDS = {
 }
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
@@ -289,12 +289,13 @@ def _request_with_backoff(url, params, headers, max_retries=3):
 
 def fetch_civitai():
     variations = [
-        {"limit": 100, "nsfwLevel": 32, "sort": "Most Reactions", "period": "Day"},   # Уровень XXX
-        {"limit": 100, "nsfwLevel": 64, "sort": "Most Reactions", "period": "Day"},   # Уровень XXX (альтернатива)
-        {"limit": 100, "nsfwLevel": 32, "sort": "Most Reactions", "period": "Week"},
-        {"limit": 100, "nsfwLevel": 64, "sort": "Newest",         "period": "Day"},
-        {"limit": 100, "nsfwLevel": 16, "sort": "Most Reactions", "period": "Day"},   # Уровень X
+        {"limit": 100, "nsfwLevel": 16, "sort": "Most Reactions", "period": "Day"},   # X рейтинг
+        {"limit": 100, "nsfwLevel": 16, "sort": "Most Reactions", "period": "Week"},
+        {"limit": 100, "nsfwLevel": 16, "sort": "Most Reactions", "period": "Month"},
         {"limit": 100, "nsfwLevel": 16, "sort": "Newest",         "period": "Day"},
+        {"limit": 100, "nsfwLevel": 16, "sort": "Newest",         "period": "Week"},
+        {"limit": 100, "nsfwLevel": 32, "sort": "Most Reactions", "period": "Day"},   # XXX рейтинг
+        {"limit": 100, "nsfwLevel": 32, "sort": "Newest",         "period": "Day"},
     ]
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
@@ -319,26 +320,38 @@ def fetch_civitai():
             )
 
             erotic_items = []
-            for item in items:
+            for idx, item in enumerate(items):
+                # Диагностика первых 3 итемов — смотрим реальную структуру от API
+                if idx < 3:
+                    logger.debug(f"[RAW item #{idx}] keys={list(item.keys())}")
+                    logger.debug(f"[RAW item #{idx}] nsfwLevel={item.get('nsfwLevel')!r}, id={item.get('id')!r}, url={item.get('url', 'N/A')[:60]}")
+
                 try:
-                    # ПОЛУЧАЕМ РЕАЛЬНЫЙ РЕЙТИНГ КАРТИНКИ
-                    # 1 - PG, 2 - PG13, 4 - R, 8 - X, 16 - X, 32 - XXX
-                    actual_nsfw_level = item.get("nsfwLevel", 0)
-                    
-                    # Преобразуем в число если это строка
+                    # CivitAI API возвращает nsfwLevel=null — используем nsfw (bool) + browsingLevel
+                    # nsfw=True означает минимум R-рейтинг
+                    is_nsfw = item.get("nsfw", False)
+                    raw_level = item.get("nsfwLevel") or item.get("browsingLevel", 0)
                     try:
-                        actual_nsfw_level = int(actual_nsfw_level)
+                        actual_nsfw_level = int(raw_level) if raw_level is not None else 0
                     except (ValueError, TypeError):
-                        continue
-                    
-                    # Если рейтинг ниже 8 (X), пропускаем
-                    if actual_nsfw_level < 8:
+                        actual_nsfw_level = 0
+
+                    # Если nsfw=True но уровень не определился — ставим минимум R (4)
+                    if is_nsfw and actual_nsfw_level < 4:
+                        actual_nsfw_level = 4
+
+                    logger.debug(f"Item {item.get('id')}: nsfw={is_nsfw}, level={actual_nsfw_level}")
+
+                    # Фильтр: только R и выше (4=R, 8/16=X, 32=XXX)
+                    if actual_nsfw_level < 4:
                         continue
 
                     tags = extract_tags(item)
+                    logger.debug(f"Item {item.get('id')}: tags={tags[:5]}")
+
                     if has_blacklisted(tags):
                         continue
-                    
+
                     stats_data = item.get("stats", {})
                     likes = 0
                     if stats_data:
@@ -346,6 +359,8 @@ def fetch_civitai():
                             stats_data.get("likeCount", 0)
                             + stats_data.get("heartCount", 0)
                         )
+
+                    logger.debug(f"Item {item.get('id')}: likes={likes}")
 
                     if likes < MIN_LIKES:
                         continue
