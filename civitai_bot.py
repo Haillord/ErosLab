@@ -52,7 +52,7 @@ HASHTAG_STOP_WORDS = {
 }
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
@@ -288,11 +288,11 @@ def _request_with_backoff(url, params, headers, max_retries=3):
 
 def fetch_civitai():
     variations = [
-        {"limit": 100, "nsfwLevel": 16, "sort": "Most Reactions", "period": "Day"},   # Уровень X
         {"limit": 100, "nsfwLevel": 32, "sort": "Most Reactions", "period": "Day"},   # Уровень XXX
-        {"limit": 100, "nsfwLevel": 16, "sort": "Most Reactions", "period": "Week"},
-        {"limit": 100, "nsfwLevel": 32, "sort": "Newest",         "period": "Day"},
-        {"limit": 100, "nsfwLevel": 4,  "sort": "Newest",         "period": "Day"},   # Свежий R
+        {"limit": 100, "nsfwLevel": 64, "sort": "Most Reactions", "period": "Day"},   # Уровень XXX (альтернатива)
+        {"limit": 100, "nsfwLevel": 32, "sort": "Most Reactions", "period": "Week"},
+        {"limit": 100, "nsfwLevel": 64, "sort": "Newest",         "period": "Day"},
+        {"limit": 100, "nsfwLevel": 16, "sort": "Most Reactions", "period": "Day"},   # Уровень X
         {"limit": 100, "nsfwLevel": 16, "sort": "Newest",         "period": "Day"},
     ]
 
@@ -323,15 +323,10 @@ def fetch_civitai():
                     # Убираем проверку nsfwLevel - доверяем параметрам запроса
                     # API CivitAI изменил формат, nsfwLevel теперь "None" вместо чисел
                     is_suitable = True
-                    logger.debug(f"✓ Skipping nsfwLevel check, trusting API params")
 
                     tags = extract_tags(item)
-                    
-                    # ОТЛАДКА: выводим теги
-                    logger.debug(f"Tags for {item.get('id')}: {tags[:5]}")
 
                     if has_blacklisted(tags):
-                        logger.debug(f"✗ Tags blacklisted for {item.get('id')}")
                         continue
 
                     stats_data = item.get("stats", {})
@@ -341,12 +336,8 @@ def fetch_civitai():
                             stats_data.get("likeCount", 0)
                             + stats_data.get("heartCount", 0)
                         )
-                    
-                    # ОТЛАДКА: выводим лайки
-                    logger.debug(f"Likes for {item.get('id')}: {likes} (MIN_LIKES: {MIN_LIKES})")
 
                     if likes < MIN_LIKES:
-                        logger.debug(f"✗ Likes {likes} < {MIN_LIKES} for {item.get('id')}")
                         continue
 
                     erotic_items.append({
@@ -358,11 +349,6 @@ def fetch_civitai():
                         "post_id": item.get("postId"),
                         "source":  "civitai",
                     })
-
-                    logger.debug(
-                        f"✓ Added {item['id']} "
-                        f"(rating:{params['nsfwLevel']}, likes:{likes}, tags:{len(tags)})"
-                    )
 
                 except Exception as e:
                     logger.error(f"Error processing item {item.get('id')}: {e}")
