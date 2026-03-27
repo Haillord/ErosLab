@@ -378,7 +378,8 @@ def fetch_civitai():
                         "tags":    tags[:15],
                         "likes":   likes,
                         "rating":  nsfw_level,
-                        "post_id": item.get("postId"),   # сохраняем для lazy-fetch тегов
+                        "post_id": item.get("postId"),
+                        "source":  "civitai",# сохраняем для lazy-fetch тегов
                     })
 
                     logger.debug(
@@ -508,7 +509,7 @@ async def main():
         # /api/v1/images не возвращает теги в основном ответе,
         # поэтому запрашиваем их отдельно через postId.
         # Один запрос на весь запуск — никакого лишнего трафика.
-        if not item["tags"] and item.get("post_id"):
+        if not item["tags"] and item.get("post_id") and item.get("source") != "rule34":
             headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
             raw = fetch_tags_by_post_id(item["post_id"], headers, image_id=item["id"])
             fetched_tags = clean_tags([
