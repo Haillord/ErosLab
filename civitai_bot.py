@@ -493,7 +493,35 @@ def fetch_and_pick():
         logger.info("No fresh items")
         return None
 
-    selected = weighted_choice(fresh)
+    # Выбираем тип контента (50/50)
+    content_type = random.choice(['image', 'video'])
+    logger.info(f"Content type selection: {content_type}")
+
+    # Фильтруем по типу контента
+    if content_type == 'image':
+        type_items = [i for i in fresh if not i["url"].lower().endswith((".mp4", ".webm", ".gif"))]
+        fallback_type = 'video'
+    else:
+        type_items = [i for i in fresh if i["url"].lower().endswith((".mp4", ".webm", ".gif"))]
+        fallback_type = 'image'
+
+    logger.info(f"Items of selected type ({content_type}): {len(type_items)}")
+
+    # Если не найдено подходящих по типу, ищем альтернативу
+    if not type_items:
+        logger.info(f"No {content_type} items found, trying {fallback_type}")
+        if fallback_type == 'image':
+            type_items = [i for i in fresh if not i["url"].lower().endswith((".mp4", ".webm", ".gif"))]
+        else:
+            type_items = [i for i in fresh if i["url"].lower().endswith((".mp4", ".webm", ".gif"))]
+        
+        logger.info(f"Items of fallback type ({fallback_type}): {len(type_items)}")
+
+    if not type_items:
+        logger.info("No suitable items found")
+        return None
+
+    selected = weighted_choice(type_items)
 
     logger.info(
         f"Selected: {selected['id']} "
