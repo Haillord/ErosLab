@@ -32,7 +32,8 @@ def fetch_rule34(api_key: str, user_id: str, tags: str = "3d animated -low_res",
         posts = r.json()
         # ЗАЩИТА: Если пришла строка или не список, выходим без ошибки
         if not isinstance(posts, list):
-            logger.error(f"Rule34 returned unexpected data type: {type(posts)}")
+            # Эта строка покажет нам реальный текст ошибки от Rule34 (например, "Unauthorized")
+            logger.error(f"Rule34 Error Response: {r.text[:200]}")
             return []
             
         results = []
