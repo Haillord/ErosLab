@@ -1,5 +1,5 @@
 {
-  "total_posts": 79,
+  "total_posts": 80,
   "sources": {},
   "top_tags": {
     "nsfw": 1,
@@ -98,6 +98,11 @@
     "loraits_a_lora_for_portraits": 1,
     "dreadmirthart": 1,
     "sfw": 1,
-    "flat_color": 1
+    "flat_color": 1,
+    "detailed_background": 1,
+    "shiny_skin": 1,
+    "posing": 1,
+    "delipri": 1,
+    "curespicy": 1
   }
 }
