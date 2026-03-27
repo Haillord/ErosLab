@@ -32,8 +32,6 @@ MIN_IMAGE_SIZE   = 512
 
 HISTORY_FILE = "posted_ids.json"
 HASHES_FILE  = "posted_hashes.json"
-STATS_FILE   = "stats.json"
-
 # Максимум хранимых ID — чтобы файл не рос бесконечно
 MAX_HISTORY_SIZE = 5000
 
@@ -74,14 +72,12 @@ def save_json(path, data):
 
 posted_ids    = set(load_json(HISTORY_FILE, []))
 posted_hashes = set(load_json(HASHES_FILE, []))
-stats         = load_json(STATS_FILE, {"total_posts": 0, "top_tags": {}})
 
 def save_all():
     trimmed_ids    = list(posted_ids)[-MAX_HISTORY_SIZE:]
     trimmed_hashes = list(posted_hashes)[-MAX_HISTORY_SIZE:]
     save_json(HISTORY_FILE, trimmed_ids)
     save_json(HASHES_FILE,  trimmed_hashes)
-    save_json(STATS_FILE,   stats)
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 def clean_tags(tags):
@@ -120,39 +116,6 @@ def check_media_size(data, url):
         logger.error(f"Error checking media size: {e}")
         return False
 
-def add_watermark(data, text):
-    try:
-        img = Image.open(BytesIO(data)).convert("RGBA")
-        w, h = img.size
-        layer = Image.new("RGBA", img.size, (255, 255, 255, 0))
-        draw = ImageDraw.Draw(layer)
-        fsize = max(24, int(w * 0.045))
-
-        font = None
-        font_paths = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
-        ]
-        for fp in font_paths:
-            if os.path.exists(fp):
-                font = ImageFont.truetype(fp, fsize)
-                break
-        if not font:
-            font = ImageFont.load_default()
-
-        bbox = draw.textbbox((0, 0), text, font=font)
-        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        x, y = w - tw - 24, h - th - 24
-
-        draw.text((x + 2, y + 2), text, font=font, fill=(0, 0, 0, 160))
-        draw.text((x, y), text, font=font, fill=(255, 255, 255, 230))
-
-        out = BytesIO()
-        Image.alpha_composite(img, layer).convert("RGB").save(out, format="JPEG", quality=92)
-        return out.getvalue()
-    except Exception as e:
-        logger.error(f"Watermark Error: {e}")
-        return data
 
 def get_video_duration(data: bytes) -> float:
     """Возвращает длительность или 0.0 если видео битое"""
@@ -180,41 +143,6 @@ def get_video_duration(data: bytes) -> float:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
-def extract_thumbnail(data: bytes) -> bytes:
-    """Извлекает thumbnail из первого кадра видео"""
-    tmp_path = None
-    thumb_path = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp:
-            tmp.write(data)
-            tmp_path = tmp.name
-
-        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as thumb:
-            thumb_path = thumb.name
-
-        # Извлекаем первый кадр как thumbnail
-        cmd = [
-            'ffmpeg', '-y', '-i', tmp_path, 
-            '-ss', '00:00:01', '-vframes', '1', 
-            '-vf', 'scale=320:-1', thumb_path
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-
-        if result.returncode == 0 and os.path.exists(thumb_path):
-            with open(thumb_path, 'rb') as f:
-                return f.read()
-        else:
-            logger.warning("Failed to extract thumbnail")
-            return None
-
-    except Exception as e:
-        logger.error(f"Thumbnail extraction error: {e}")
-        return None
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-        if thumb_path and os.path.exists(thumb_path):
-            os.unlink(thumb_path)
 
 
 # ==================== RETRY ДЛЯ TELEGRAM ====================
@@ -225,9 +153,8 @@ async def send_with_retry(func, *args, retries=3, **kwargs):
         except Exception as e:
             if attempt == retries - 1:
                 raise
-            wait = 2 * (attempt + 1)
-            logger.warning(f"Telegram send failed (attempt {attempt + 1}/{retries}): {e}. Retrying in {wait}s...")
-            await asyncio.sleep(wait)
+            logger.warning(f"Telegram send failed (attempt {attempt + 1}/{retries}): {e}")
+            await asyncio.sleep(2)
 
 # ==================== ТЕГИ ====================
 def extract_tags(item):
@@ -255,39 +182,6 @@ def extract_tags(item):
 
     return clean_tags(raw_tags)
 
-def fetch_tags_by_post_id(post_id: int, headers: dict, image_id: str = None) -> list:
-    if post_id:
-        try:
-            r = _request_with_backoff(
-                f"https://civitai.com/api/v1/posts/{post_id}",
-                params={},
-                headers=headers
-            )
-            if r:
-                tags = r.json().get("tags", [])
-                if tags:
-                    logger.info(f"Fetched {len(tags)} tags from post {post_id}")
-                    return tags
-        except Exception as e:
-            logger.warning(f"Post tags fetch failed ({post_id}): {e}")
-
-    if image_id:
-        raw_id = str(image_id).replace("civitai_", "")
-        try:
-            r = _request_with_backoff(
-                f"https://civitai.com/api/v1/images/{raw_id}",
-                params={},
-                headers=headers
-            )
-            if r:
-                tags = r.json().get("tags", [])
-                if tags:
-                    logger.info(f"Fetched {len(tags)} tags from image {raw_id}")
-                    return tags
-        except Exception as e:
-            logger.warning(f"Image tags fetch failed ({raw_id}): {e}")
-
-    return []
 
 # ==================== CIVITAI API ====================
 def _request_with_backoff(url, params, headers, max_retries=3):
@@ -474,27 +368,12 @@ def weighted_choice(items):
     if not items:
         return None
 
-    popular_tags = set()
-    if stats.get("top_tags"):
-        top_10 = sorted(stats["top_tags"].items(), key=lambda x: x[1], reverse=True)[:10]
-        popular_tags = set(tag for tag, _ in top_10)
-        logger.debug(f"Popular tags boost: {popular_tags}")
-
-    weights = []
-    for item in items:
-        weight = max(1, item["likes"])
-        bonus = 0
-        for tag in item["tags"]:
-            if tag in popular_tags:
-                bonus += 5
-        weight += bonus
-        weights.append(weight)
-
+    weights = [max(1, item["likes"]) for item in items]
     selected = random.choices(items, weights=weights, k=1)[0]
 
     logger.info(
         f"Weighted selection: {selected['id']} "
-        f"(likes:{selected['likes']}, total_weight:{weight})"
+        f"(likes:{selected['likes']})"
     )
 
     return selected
@@ -526,24 +405,6 @@ async def main():
             logger.info("No more fresh posts available")
             return
 
-        # Lazy-fetch тегов — только для CivitAI постов
-        if not item["tags"] and item.get("post_id"):
-            headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
-            raw = fetch_tags_by_post_id(item["post_id"], headers, image_id=item["id"])
-            fetched_tags = clean_tags([
-                t.get("name", t) if isinstance(t, dict) else str(t)
-                for t in raw
-            ])
-            if fetched_tags:
-                if has_blacklisted(fetched_tags):
-                    logger.warning(f"Blacklisted tags after fetch, skipping {item['id']}")
-                    posted_ids.add(item["id"])
-                    save_all()
-                    continue
-                item["tags"] = fetched_tags[:15]
-                logger.info(f"Tags after lazy-fetch ({len(item['tags'])}): {item['tags']}")
-            else:
-                logger.info("No tags found even after lazy-fetch, proceeding without tags")
 
         try:
             logger.info(f"Downloading: {item['url']}")
@@ -614,26 +475,21 @@ async def main():
             video_data = data
             logger.info("Using original video (no optimization)")
             
-            # Извлекаем thumbnail
-            thumbnail_data = extract_thumbnail(video_data)
-            
             await send_with_retry(
                 bot.send_video,
                 chat_id=TELEGRAM_CHANNEL_ID,
                 video=BytesIO(video_data),
-                thumbnail=BytesIO(thumbnail_data) if thumbnail_data else None,
                 caption=caption,
                 supports_streaming=True,
                 write_timeout=60,
                 read_timeout=60
             )
         else:
-            logger.info("Sending as image with watermark")
-            final_data = add_watermark(data, WATERMARK_TEXT)
+            logger.info("Sending as image without watermark")
             await send_with_retry(
                 bot.send_photo,
                 chat_id=TELEGRAM_CHANNEL_ID,
-                photo=BytesIO(final_data),
+                photo=BytesIO(data),
                 caption=caption,
                 write_timeout=60,
                 read_timeout=60
@@ -641,14 +497,8 @@ async def main():
 
         posted_ids.add(item["id"])
         posted_hashes.add(img_hash)
-        stats["total_posts"] = stats.get("total_posts", 0) + 1
-
-        for tag in item["tags"][:5]:
-            stats["top_tags"][tag] = stats["top_tags"].get(tag, 0) + 1
-
         save_all()
         logger.info(f"✅ Successfully posted: {item['id']}")
-        logger.info(f"📊 Total posts: {stats['total_posts']}")
 
     except Exception as e:
         logger.error(f"Telegram Send Error: {e}")
