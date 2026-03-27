@@ -60,20 +60,70 @@ FORMAT_TYPES = {
 
 # ==================== ENGAGEMENT ====================
 
-ENGAGEMENT_LINES = [
-    "И что дальше? 😈",
-    "Оценка? 1–10",
-    "Ты бы остановился?",
-    "Слабовато или норм?",
-    "Продолжение хочешь?",
-    "Угадай, что будет дальше 👀",
-    "Молчишь — значит зацепило 😏",
-]
+def generate_engagement_line(tags, ai_text):
+    """Генерирует уникальную провокационную реплику на основе контекста."""
+    try:
+        # Промпт для генерации engagement-линии
+        engagement_prompt = f"""Ты — дерзкая, уверенная девушка. Придумай ОДНУ короткую провокационную реплику для подписи к откровенному аниме-арту.
 
-def maybe_add_engagement(text):
-    """С вероятностью 20% добавляем крючок в конце."""
+Контекст:
+- Теги: {', '.join(tags[:5])}
+- Основной текст: {ai_text[:100]}
+
+Характер:
+- дерзкая, уверенная, слегка циничная
+- провокационная, но не грубая
+- создает интригу или напряжение
+
+Формат: одна короткая реплика (1-2 предложения). Только текст, без пояснений."""
+        
+        # Пытаемся сгенерировать через Groq
+        if GROQ_API_KEY:
+            try:
+                import json
+                response = requests.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+                    data=json.dumps({
+                        "model": "llama-3.3-70b-versatile",
+                        "messages": [{"role": "user", "content": engagement_prompt}],
+                        "max_tokens": 50,
+                        "temperature": 0.9
+                    }),
+                    timeout=10
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    engagement = data["choices"][0]["message"]["content"].strip()
+                    if engagement and len(engagement) > 5 and len(engagement) < 100:
+                        return engagement
+            except Exception as e:
+                logger.warning(f"Groq engagement generation failed: {e}")
+
+        # Резервный вариант - Pollinations
+        try:
+            encoded = urllib.parse.quote(engagement_prompt)
+            response = requests.get(f"https://text.pollinations.ai/{encoded}", timeout=15)
+            if response.status_code == 200:
+                engagement = response.text.strip()
+                if engagement and len(engagement) > 5 and len(engagement) < 100:
+                    return engagement
+        except Exception as e:
+            logger.warning(f"Pollinations engagement generation failed: {e}")
+
+        # Если все способы не сработали - возвращаем None
+        return None
+
+    except Exception as e:
+        logger.error(f"Engagement generation error: {e}")
+        return None
+
+def maybe_add_engagement(text, tags):
+    """С вероятностью 20% добавляем AI-сгенерированную крючок в конце."""
     if random.random() < 0.20:
-        return text + "\n\n" + random.choice(ENGAGEMENT_LINES)
+        engagement = generate_engagement_line(tags, text)
+        if engagement:
+            return text + "\n\n" + engagement
     return text
 
 
@@ -246,7 +296,7 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
         return fallback_caption(raw_tags, footer)
 
     # Добавляем engagement-крючок с вероятностью 20%
-    text = maybe_add_engagement(text)
+    text = maybe_add_engagement(text, raw_tags)
 
     # В caption идут чистые теги (хэштеги)
     return _format_caption(text, safe_tags, footer)
