@@ -26,6 +26,8 @@ from rule34_api import fetch_rule34
 TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "@eroslabai")
 CIVITAI_API_KEY     = os.environ.get("CIVITAI_API_KEY", "")
+RULE34_API_KEY      = os.environ.get("RULE34_API_KEY", "")
+RULE34_USER_ID      = os.environ.get("RULE34_USER_ID", "")
 
 WATERMARK_TEXT   = "@eroslabai"
 MIN_LIKES        = 20
@@ -89,9 +91,6 @@ def clean_tags(tags):
     clean, seen = [], set()
     for t in tags:
         t = re.sub(r"[^\w]", "", str(t).strip().lower().replace(" ", "_").replace("-", "_"))
-        # Фильтруем технические теги с цифрами в конце (monochrome075, drawn2 и т.д.)
-        if re.search(r'\d+$', t):
-            continue
         if t and t not in HASHTAG_STOP_WORDS and t not in seen and 3 <= len(t) <= 30:
             clean.append(t)
             seen.add(t)
@@ -162,18 +161,19 @@ def get_video_duration(data: bytes) -> float:
         with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp:
             tmp.write(data)
             tmp_path = tmp.name
-
+        
+        # Проверяем, можно ли вообще прочитать
         cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
                '-of', 'default=noprint_wrappers=1:nokey=1', tmp_path]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-
+        
         if result.returncode != 0:
             logger.warning("ffprobe failed to read video")
             return 0.0
-
+            
         duration = float(result.stdout.strip())
         return duration
-
+        
     except Exception as e:
         logger.error(f"Error: {e}")
         return 0.0
@@ -183,6 +183,10 @@ def get_video_duration(data: bytes) -> float:
 
 # ==================== RETRY ДЛЯ TELEGRAM ====================
 async def send_with_retry(func, *args, retries=3, **kwargs):
+    """
+    Обёртка для отправки в Telegram с повторными попытками.
+    При сбое ждёт 2, 4, 6 секунд перед следующей попыткой.
+    """
     for attempt in range(retries):
         try:
             return await func(*args, **kwargs)
@@ -195,6 +199,12 @@ async def send_with_retry(func, *args, retries=3, **kwargs):
 
 # ==================== ТЕГИ ====================
 def extract_tags(item):
+    """
+    Сначала берём официальные теги CivitAI.
+    Если их нет (API не вернул) — парсим meta.prompt как fallback.
+    Prompt чистится через clean_tags и HASHTAG_STOP_WORDS,
+    так что мусор вроде "masterpiece, best quality, 8k" отфильтруется.
+    """
     raw_tags = []
 
     civitai_tags = item.get("tags", [])
@@ -205,6 +215,7 @@ def extract_tags(item):
                 raw_tags.append(name)
         logger.debug(f"CivitAI tags found: {len(raw_tags)}")
 
+    # Fallback: парсим prompt если официальных тегов нет
     if not raw_tags:
         prompt = item.get("meta", {}).get("prompt", "") if item.get("meta") else ""
         if prompt:
@@ -220,6 +231,11 @@ def extract_tags(item):
     return clean_tags(raw_tags)
 
 def fetch_tags_by_post_id(post_id: int, headers: dict, image_id: str = None) -> list:
+    """
+    Сначала пробуем получить теги через postId.
+    Если 404 — fallback на endpoint изображения по image_id.
+    """
+    # Вариант 1: через пост
     if post_id:
         try:
             r = _request_with_backoff(
@@ -235,7 +251,9 @@ def fetch_tags_by_post_id(post_id: int, headers: dict, image_id: str = None) -> 
         except Exception as e:
             logger.warning(f"Post tags fetch failed ({post_id}): {e}")
 
+    # Вариант 2: через image id
     if image_id:
+        # image_id хранится как "civitai_125396362" — берём только число
         raw_id = str(image_id).replace("civitai_", "")
         try:
             r = _request_with_backoff(
@@ -255,11 +273,15 @@ def fetch_tags_by_post_id(post_id: int, headers: dict, image_id: str = None) -> 
 
 # ==================== CIVITAI API ====================
 def _request_with_backoff(url, params, headers, max_retries=3):
+    """
+    GET-запрос с экспоненциальным backoff при 429/5xx.
+    Защищает от бана при rate limiting со стороны CivitAI.
+    """
     for attempt in range(max_retries):
         try:
             r = requests.get(url, params=params, headers=headers, timeout=30)
             if r.status_code == 429:
-                wait = 2 ** attempt * 5
+                wait = 2 ** attempt * 5  # 5s, 10s, 20s
                 logger.warning(f"Rate limited (429), waiting {wait}s before retry {attempt + 1}/{max_retries}")
                 time.sleep(wait)
                 continue
@@ -281,6 +303,13 @@ def _request_with_backoff(url, params, headers, max_retries=3):
     return None
 
 def fetch_civitai():
+    """
+    Запрос к API CivitAI — только X и XXX рейтинг.
+    Возвращаем результат сразу после первого успешного запроса,
+    не продолжая перебирать вариации без нужды.
+    Теги здесь не запрашиваются — они подтягиваются лениво
+    только для выбранного поста в main().
+    """
     variations = [
         {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Day"},
         {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Week"},
@@ -288,7 +317,7 @@ def fetch_civitai():
         {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Day"},
         {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Week"},
         {"limit": 100, "nsfw": "XXX", "sort": "Most Reactions", "period": "Day"},
-        {"limit": 100, "nsfw": "XXX", "sort": "Newest",         "period": "Day"},
+        {"limit": 100, "nsfw": "XXX", "sort": "Newest",         "period": "Day"}, 
     ]
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
@@ -326,6 +355,7 @@ def fetch_civitai():
                     if not is_x_rating:
                         continue
 
+                    # Теги из основного ответа (обычно пустые — подтянем позже для выбранного)
                     tags = extract_tags(item)
 
                     if has_blacklisted(tags):
@@ -348,8 +378,7 @@ def fetch_civitai():
                         "tags":    tags[:15],
                         "likes":   likes,
                         "rating":  nsfw_level,
-                        "post_id": item.get("postId"),
-                        "source":  "civitai",
+                        "post_id": item.get("postId"),   # сохраняем для lazy-fetch тегов
                     })
 
                     logger.debug(
@@ -376,13 +405,15 @@ def fetch_civitai():
 def fetch_and_pick():
     if random.random() < 0.4:
         source = "rule34"
-        logger.info("Source: Rule34")
-        items = fetch_rule34(tags="3d animated")
+        items = fetch_rule34(
+            api_key=RULE34_API_KEY, 
+            user_id=RULE34_USER_ID, 
+            tags="3d animated"
+        )
     else:
         source = "civitai"
-        logger.info("Source: CivitAI")
         items = fetch_civitai()
-
+    
     if not items:
         logger.warning("No items found from API")
         return None
@@ -394,8 +425,9 @@ def fetch_and_pick():
         logger.info("No fresh items")
         return None
 
+    # Взвешенный выбор на основе лайков и популярных тегов
     selected = weighted_choice(fresh)
-
+    
     logger.info(
         f"Selected: {selected['id']} "
         f"(rating:{selected['rating']}, likes:{selected['likes']}, tags:{len(selected['tags'])})"
@@ -404,32 +436,45 @@ def fetch_and_pick():
 
 
 def weighted_choice(items):
+    """
+    Выбирает пост с весом:
+    - основа: количество лайков
+    - бонус: +5 за каждый популярный тег (из топ-10 статистики)
+    """
     if not items:
         return None
-
+    
+    # Получаем топ-10 популярных тегов из статистики
     popular_tags = set()
     if stats.get("top_tags"):
+        # Берем топ-10 по частоте использования
         top_10 = sorted(stats["top_tags"].items(), key=lambda x: x[1], reverse=True)[:10]
         popular_tags = set(tag for tag, _ in top_10)
         logger.debug(f"Popular tags boost: {popular_tags}")
-
+    
     weights = []
     for item in items:
+        # База — количество лайков (минимум 1)
         weight = max(1, item["likes"])
+        
+        # Бонус за популярные теги (+5 за каждый совпадающий тег)
         bonus = 0
         for tag in item["tags"]:
             if tag in popular_tags:
                 bonus += 5
+                logger.debug(f"Bonus for {item['id']}: +5 for tag '{tag}'")
+        
         weight += bonus
         weights.append(weight)
-
+    
+    # Выбираем с учетом весов
     selected = random.choices(items, weights=weights, k=1)[0]
-
+    
     logger.info(
         f"Weighted selection: {selected['id']} "
-        f"(likes:{selected['likes']}, total_weight:{weight})"
+        f"(likes:{selected['likes']}, bonus:{bonus}, total_weight:{weight})"
     )
-
+    
     return selected
 
 # ==================== MAIN ====================
@@ -459,8 +504,11 @@ async def main():
             logger.info("No more fresh posts available")
             return
 
-        # Lazy-fetch тегов — только для CivitAI постов
-        if not item["tags"] and item.get("post_id") and item.get("source") != "rule34":
+        # ── Lazy-fetch тегов — только для выбранного поста ──────────────────
+        # /api/v1/images не возвращает теги в основном ответе,
+        # поэтому запрашиваем их отдельно через postId.
+        # Один запрос на весь запуск — никакого лишнего трафика.
+        if not item["tags"] and item.get("post_id"):
             headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
             raw = fetch_tags_by_post_id(item["post_id"], headers, image_id=item["id"])
             fetched_tags = clean_tags([
@@ -468,6 +516,7 @@ async def main():
                 for t in raw
             ])
             if fetched_tags:
+                # Прогоняем через блэклист ещё раз с полными тегами
                 if has_blacklisted(fetched_tags):
                     logger.warning(f"Blacklisted tags after fetch, skipping {item['id']}")
                     posted_ids.add(item["id"])
@@ -477,6 +526,7 @@ async def main():
                 logger.info(f"Tags after lazy-fetch ({len(item['tags'])}): {item['tags']}")
             else:
                 logger.info("No tags found even after lazy-fetch, proceeding without tags")
+        # ────────────────────────────────────────────────────────────────────
 
         try:
             logger.info(f"Downloading: {item['url']}")
@@ -496,6 +546,7 @@ async def main():
             save_all()
             continue
 
+        # Проверка изображения или видео
         if not item["url"].lower().endswith((".mp4", ".webm", ".gif")):
             if not check_media_size(data, item["url"]):
                 logger.warning("Image size too small, skipping")
@@ -503,6 +554,7 @@ async def main():
                 save_all()
                 continue
         else:
+            # Для видео проверяем длительность, чтобы отсеять битые/статичные файлы
             duration = get_video_duration(data)
             if duration < 0.5:
                 logger.warning(f"Video too short ({duration:.2f}s), skipping")
@@ -511,6 +563,7 @@ async def main():
                 continue
             logger.info(f"Video duration: {duration:.2f}s")
 
+        # SHA256 вместо MD5 — надёжнее, меньше коллизий
         img_hash = hashlib.sha256(data).hexdigest()
         if img_hash in posted_hashes:
             logger.warning("Duplicate content detected")
