@@ -154,7 +154,7 @@ def get_video_thumbnail(data: bytes) -> bytes:
 
         cmd = [
             'ffmpeg', '-y', '-i', tmp_in,
-            '-ss', '0', '-vframes', '1',
+            '-ss', '2', '-vframes', '1',
             '-vf', 'scale=512:-1',
             '-q:v', '3',
             tmp_out
