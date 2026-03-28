@@ -53,8 +53,8 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           CIVITAI_API_KEY: ${{ secrets.CIVITAI_API_KEY }}
-          RULE34_API_KEY: ${{ secrets.RULE34_API_KEY }}
-          RULE34_USER_ID: ${{ secrets.RULE34_USER_ID }}
+          R34_API_KEY: ${{ secrets.R34_API_KEY }}
+          R34_USER_ID: ${{ secrets.R34_USER_ID }}
           POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python civitai_bot.py
