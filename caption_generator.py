@@ -103,29 +103,51 @@ FORMAT_TYPES = {
 # ==================== VISION ====================
 
 def _describe_image(image_data: bytes = None, image_url: str = None) -> str:
-    """Описывает изображение через OpenRouter vision модель."""
+    """Описывает изображение через OpenRouter vision модель (устойчиво к ошибкам)."""
+
     if not OPENROUTER_API_KEY:
-        logger.warning("No OPENROUTER_API_KEY, skipping vision")
+        logger.warning("Vision: no OPENROUTER_API_KEY, skipping")
+        return None
+
+    if not image_data and not image_url:
+        logger.warning("Vision: no image data or url provided")
         return None
 
     logger.info("Vision: attempting image description...")
 
     try:
+        # === Формируем image content ===
         if image_data:
-            b64 = base64.b64encode(image_data).decode("utf-8")
-            if image_data[:4] == b'\x89PNG':
-                mime = "image/png"
-            elif image_data[:3] == b'GIF':
-                mime = "image/gif"
-            else:
-                mime = "image/jpeg"
-            img_content = {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
-        elif image_url:
-            img_content = {"type": "image_url", "image_url": {"url": image_url}}
-        else:
-            logger.warning("Vision: no image data or url provided")
-            return None
+            try:
+                b64 = base64.b64encode(image_data).decode("utf-8")
 
+                if image_data.startswith(b'\x89PNG'):
+                    mime = "image/png"
+                elif image_data.startswith(b'GIF'):
+                    mime = "image/gif"
+                else:
+                    mime = "image/jpeg"
+
+                img_content = {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{mime};base64,{b64}"
+                    }
+                }
+
+            except Exception as e:
+                logger.error(f"Vision: base64 encoding failed: {e}")
+                return None
+
+        else:
+            img_content = {
+                "type": "image_url",
+                "image_url": {
+                    "url": image_url
+                }
+            }
+
+        # === Запрос ===
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
@@ -139,30 +161,75 @@ def _describe_image(image_data: bytes = None, image_url: str = None) -> str:
                         "role": "user",
                         "content": [
                             img_content,
-                            {"type": "text", "text": (
-                                "Describe the mood, atmosphere and setting of this image in 2-3 sentences. "
-                                "Focus on the feeling and tension, not on body parts. "
-                                "Be concise and evocative."
-                            )}
+                            {
+                                "type": "text",
+                                "text": (
+                                    "Describe the scene in a sensual, cinematic way. "
+                                    "Focus on mood, tension and interaction. "
+                                    "Avoid explicit words. "
+                                    "Write 1-2 short evocative sentences."
+                                )
+                            }
                         ]
                     }
                 ],
-                "max_tokens": 150
+                "max_tokens": 120
             },
-            timeout=35
+            timeout=20
         )
 
-        if response.status_code == 200:
-            description = response.json()["choices"][0]["message"]["content"].strip()
-            logger.info(f"Vision description: {description[:100]}")
-            return description
-        else:
-            logger.warning(f"Vision API error {response.status_code}: {response.text[:150]}")
+        logger.info(f"Vision status: {response.status_code}")
+
+        if response.status_code != 200:
+            logger.warning(f"Vision API error {response.status_code}: {response.text[:200]}")
             return None
+
+        # === Безопасный разбор ===
+        try:
+            data = response.json()
+        except Exception as e:
+            logger.error(f"Vision: JSON decode error: {e}")
+            return None
+
+        choices = data.get("choices")
+        if not choices:
+            logger.warning("Vision: no choices in response")
+            return None
+
+        message = choices[0].get("message", {})
+        content = message.get("content")
+
+        if not content or not isinstance(content, str):
+            logger.warning("Vision: empty or invalid content")
+            return None
+
+        description = content.strip()
+
+        if not description:
+            logger.warning("Vision: content empty after strip")
+            return None
+
+        # === Фильтр отказов ===
+        bad_phrases = [
+            "cannot", "can't", "nsfw", "explicit", "sorry",
+            "unable", "not allowed", "refuse", "i cannot"
+        ]
+
+        if any(p in description.lower() for p in bad_phrases):
+            logger.warning(f"Vision rejected content: {description[:100]}")
+            return None
+
+        logger.info(f"Vision description: {description[:120]}")
+        return description
+
+    except requests.exceptions.Timeout:
+        logger.warning("Vision: request timeout")
+        return None
 
     except Exception as e:
         logger.error(f"Vision error: {e}")
         return None
+
 
 
 # ==================== ПРОМПТ ====================
@@ -338,15 +405,13 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
                      watermark="📢 @eroslabai", suggestion="💬 Предложка: @Haillord"):
     footer = f"{watermark}\n{suggestion}"
 
-    # Пробуем vision если есть картинка (не видео)
+    # Пробуем vision (и для картинок, и для видео через thumbnail)
     vision_description = None
-    is_video = image_url and image_url.lower().endswith((".mp4", ".webm", ".gif"))
 
-    if not is_video:
-        if image_data:
-            vision_description = _describe_image(image_data=image_data)
-        elif image_url:
-            vision_description = _describe_image(image_url=image_url)
+    if image_data:
+        vision_description = _describe_image(image_data=image_data)
+    elif image_url:
+        vision_description = _describe_image(image_url=image_url)
 
     if vision_description:
         logger.info("Using vision description for caption")
