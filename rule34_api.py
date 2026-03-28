@@ -1,34 +1,50 @@
-import logging
+import os
 import requests
+import logging
 from typing import List, Dict, Any
+
+# Получаем данные из секретов GitHub (или ENV сервера)
+R34_USER_ID = os.getenv("R34_USER_ID")
+R34_API_KEY = os.getenv("R34_API_KEY")
 
 logger = logging.getLogger("ErosLab.Rule34")
 
 def fetch_rule34(tags: str = "3d animated", limit: int = 100) -> List[Dict[str, Any]]:
-    """
-    Парсинг Rule34 через публичный API (авторизация не требуется).
-    """
-    url = "https://api.rule34.xxx/index.php"
+    """Парсинг Rule34 через API с авторизацией"""
+    
+    # Проверка, что секреты загружены
+    if not R34_USER_ID or not R34_API_KEY:
+        logger.error("API credentials are missing in environment variables!")
+        return []
+
+    url = "https://api.rule34.xxx"
     params = {
         "page": "dapi",
         "s": "post",
         "q": "index",
-        "json": 1,
+        "json": 1,  # JSON формат
         "limit": limit,
         "tags": tags,
+        "user_id": R34_USER_ID,
+        "api_key": R34_API_KEY
     }
 
+    headers = {"User-Agent": "ErosLabBot/1.0 (Windows NT 10.0; Win64; x64)"}
+
     try:
-        r = requests.get(url, params=params, timeout=30)
+        r = requests.get(url, params=params, headers=headers, timeout=30)
         r.raise_for_status()
 
-        logger.info(f"Rule34 status: {r.status_code}")
-        logger.info(f"Rule34 Content-Type: {r.headers.get('Content-Type')}")
+        # Проверка на пустой ответ
+        if not r.text.strip():
+            logger.warning("Rule34 returned empty response")
+            return []
 
         posts = r.json()
 
+        # Проверка формата ответа
         if not isinstance(posts, list):
-            logger.error(f"Rule34 unexpected response: {r.text[:200]}")
+            logger.error(f"Rule34 unexpected response format: {type(posts)}")
             return []
 
         results = []

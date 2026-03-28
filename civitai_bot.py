@@ -20,6 +20,7 @@ from PIL import Image, ImageDraw, ImageFont
 import telegram
 from telegram import Bot
 from caption_generator import generate_caption
+from rule34_api import fetch_rule34
 
 # ==================== НАСТРОЙКИ ====================
 TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -311,55 +312,99 @@ def fetch_civitai():
 
     return []
 
+VIDEO_EXTENSIONS = (".mp4", ".webm", ".gif")
+
+def _is_video(url: str) -> bool:
+    return url.lower().endswith(VIDEO_EXTENSIONS)
+
+def _pick_by_content_type(fresh):
+    """50/50 видео или фото. Если нужного типа нет — берём что есть."""
+    content_type = random.choice(['image', 'video'])
+    logger.info(f"Content type selection: {content_type}")
+
+    if content_type == 'video':
+        typed = [i for i in fresh if _is_video(i["url"])]
+        fallback = [i for i in fresh if not _is_video(i["url"])]
+    else:
+        typed = [i for i in fresh if not _is_video(i["url"])]
+        fallback = [i for i in fresh if _is_video(i["url"])]
+
+    logger.info(f"Items of selected type ({content_type}): {len(typed)}")
+
+    if typed:
+        return weighted_choice(typed)
+
+    fallback_type = 'video' if content_type == 'image' else 'image'
+    logger.info(f"No {content_type} items, falling back to {fallback_type}: {len(fallback)}")
+    return weighted_choice(fallback) if fallback else None
+
+
 def fetch_and_pick():
-    source = "civitai"
-    logger.info("Source: CivitAI")
-    items = fetch_civitai()
+    # ── 50/50 выбор источника ──────────────────────────────────────────────
+    source = random.choice(["civitai", "rule34"])
+    logger.info(f"Source selected: {source}")
+
+    if source == "civitai":
+        items = fetch_civitai()
+        if not items:
+            logger.warning("CivitAI returned nothing, falling back to Rule34")
+            source = "rule34"
+            items = fetch_rule34(tags="animated 3d", limit=100)
+    else:
+        items = fetch_rule34(tags="animated 3d", limit=100)
+        if not items:
+            logger.warning("Rule34 returned nothing, falling back to CivitAI")
+            source = "civitai"
+            items = fetch_civitai()
 
     if not items:
-        logger.warning("No items found from API")
+        logger.warning("No items found from any source")
         return None
 
     fresh = [i for i in items if i["id"] not in posted_ids]
-    logger.info(f"Fresh items: {len(fresh)} out of {len(items)}")
+    logger.info(f"Fresh items: {len(fresh)} out of {len(items)} (source: {source})")
 
     if not fresh:
         logger.info("No fresh items")
         return None
 
-    # Выбираем тип контента (50/50)
-    content_type = random.choice(['image', 'video'])
-    logger.info(f"Content type selection: {content_type}")
-
-    # Фильтруем по типу контента
-    if content_type == 'image':
-        type_items = [i for i in fresh if not i["url"].lower().endswith((".mp4", ".webm", ".gif"))]
-        fallback_type = 'video'
+    # ── Для CivitAI тип контента уже выбирается внутри fetch_civitai ──────
+    # ── Для Rule34 делаем 50/50 видео/фото здесь ─────────────────────────
+    if source == "rule34":
+        selected = _pick_by_content_type(fresh)
     else:
-        type_items = [i for i in fresh if i["url"].lower().endswith((".mp4", ".webm", ".gif"))]
-        fallback_type = 'image'
+        # CivitAI: оставляем старую логику 50/50 через weighted_choice
+        content_type = random.choice(['image', 'video'])
+        logger.info(f"Content type selection (civitai): {content_type}")
 
-    logger.info(f"Items of selected type ({content_type}): {len(type_items)}")
-
-    # Если не найдено подходящих по типу, ищем альтернативу
-    if not type_items:
-        logger.info(f"No {content_type} items found, trying {fallback_type}")
-        if fallback_type == 'image':
-            type_items = [i for i in fresh if not i["url"].lower().endswith((".mp4", ".webm", ".gif"))]
+        if content_type == 'image':
+            type_items = [i for i in fresh if not _is_video(i["url"])]
+            fallback_items = [i for i in fresh if _is_video(i["url"])]
         else:
-            type_items = [i for i in fresh if i["url"].lower().endswith((".mp4", ".webm", ".gif"))]
-        
-        logger.info(f"Items of fallback type ({fallback_type}): {len(type_items)}")
+            type_items = [i for i in fresh if _is_video(i["url"])]
+            fallback_items = [i for i in fresh if not _is_video(i["url"])]
 
-    if not type_items:
-        logger.info("No suitable items found")
+        logger.info(f"Items of selected type ({content_type}): {len(type_items)}")
+
+        if not type_items:
+            fallback_type = 'video' if content_type == 'image' else 'image'
+            logger.info(f"No {content_type} items found, trying {fallback_type}: {len(fallback_items)}")
+            type_items = fallback_items
+
+        if not type_items:
+            logger.info("No suitable items found")
+            return None
+
+        selected = weighted_choice(type_items)
+
+    if not selected:
+        logger.info("No suitable items found after type filtering")
         return None
-
-    selected = weighted_choice(type_items)
 
     logger.info(
         f"Selected: {selected['id']} "
-        f"(rating:{selected['rating']}, likes:{selected['likes']}, tags:{len(selected['tags'])})"
+        f"(source:{source}, rating:{selected['rating']}, "
+        f"likes:{selected['likes']}, tags:{len(selected['tags'])})"
     )
     return selected
 
