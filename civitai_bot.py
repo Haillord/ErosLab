@@ -131,9 +131,19 @@ def get_video_duration(data: bytes) -> float:
             logger.warning("ffprobe failed to read video")
             return 0.0
 
-        duration = float(result.stdout.strip())
+        duration_str = result.stdout.strip()
+        
+        # 🔥 ФИКС: проверяем, что вернулось не 'N/A'
+        if not duration_str or duration_str == 'N/A':
+            logger.warning(f"ffprobe returned: '{duration_str}'")
+            return 0.0
+        
+        duration = float(duration_str)
         return duration
 
+    except ValueError as e:
+        logger.error(f"Error converting duration '{duration_str}' to float: {e}")
+        return 0.0
     except Exception as e:
         logger.error(f"Error: {e}")
         return 0.0
