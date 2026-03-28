@@ -22,12 +22,10 @@ TAG_SETS = [
 def fetch_rule34(tags: str = None, limit: int = 100) -> List[Dict[str, Any]]:
     """Парсинг Rule34 через API с авторизацией"""
 
-    # Проверка, что секреты загружены
     if not R34_USER_ID or not R34_API_KEY:
         logger.error("API credentials are missing in environment variables!")
         return []
 
-    # Если теги не заданы — выбираем случайный набор
     if tags is None:
         tags = random.choice(TAG_SETS)
 
@@ -61,24 +59,39 @@ def fetch_rule34(tags: str = None, limit: int = 100) -> List[Dict[str, Any]]:
             logger.error(f"Rule34 unexpected response format: {type(posts)}")
             return []
 
+        logger.info(f"Rule34 raw posts count: {len(posts)}")
+
+        # Логируем первые посты чтобы видеть структуру
+        if posts:
+            logger.info(f"Rule34 sample keys: {list(posts[0].keys())}")
+            logger.info(f"Rule34 sample ratings: {[p.get('rating') for p in posts[:5]]}")
+
         results = []
         for post in posts:
-            if not isinstance(post, dict) or post.get("rating") not in ["e", "q"]:
+            if not isinstance(post, dict):
+                continue
+
+            # Принимаем все рейтинги
+            rating = post.get("rating", "")
+            mapped_rating = "XXX" if rating == "e" else "X"
+
+            file_url = post.get("file_url")
+            if not file_url:
                 continue
 
             post_tags = post.get("tags", "").split()
 
             results.append({
                 "id":      f"r34_{post['id']}",
-                "url":     post.get("file_url"),
+                "url":     file_url,
                 "tags":    post_tags[:15],
                 "likes":   int(post.get("score", 0)),
-                "rating":  "XXX" if post.get("rating") == "e" else "X",
+                "rating":  mapped_rating,
                 "post_id": post.get("id"),
                 "source":  "rule34"
             })
 
-        logger.info(f"Rule34: Found {len(results)} posts")
+        logger.info(f"Rule34: Found {len(results)} posts after filtering")
         return results
 
     except Exception as e:
