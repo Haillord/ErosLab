@@ -4,8 +4,8 @@ import logging
 from typing import List, Dict, Any
 
 # Получаем данные из секретов GitHub (или ENV сервера)
-R34_USER_ID = os.getenv("R34_USER_ID")
-R34_API_KEY = os.getenv("R34_API_KEY")
+R34_USER_ID = os.getenv("R34_USER_ID") or os.getenv("RULE34_USER_ID")
+R34_API_KEY = os.getenv("R34_API_KEY") or os.getenv("RULE34_API_KEY")
 
 logger = logging.getLogger("ErosLab.Rule34")
 
@@ -17,7 +17,7 @@ def fetch_rule34(tags: str = "3d animated", limit: int = 100) -> List[Dict[str, 
         logger.error("API credentials are missing in environment variables!")
         return []
 
-    url = "https://api.rule34.xxx"
+    url = "https://api.rule34.xxx/index.php"
     params = {
         "page": "dapi",
         "s": "post",
