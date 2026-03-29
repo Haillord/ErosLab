@@ -22,6 +22,7 @@ from telegram import Bot
 from caption_generator import generate_caption
 from rule34_api import fetch_rule34
 from quality_filter import QualityFilter, filter_posts_by_quality
+from watermark import add_watermark, should_add_watermark, add_watermark_to_video_thumbnail
 
 # ==================== НАСТРОЙКИ ====================
 TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -701,23 +702,26 @@ async def main():
 
     try:
         if is_video:
-            logger.info("Sending as video/gif")
-            logger.info("Using original video (no optimization)")
+            logger.info("Adding watermark to video thumbnail...")
+            watermarked_video_data = add_watermark_to_video_thumbnail(data, text=WATERMARK_TEXT, opacity=0.3)
+            logger.info("Sending as video/gif with watermark")
             await send_with_retry(
                 bot.send_video,
                 chat_id=TELEGRAM_CHANNEL_ID,
-                video=BytesIO(data),
+                video=BytesIO(watermarked_video_data),
                 caption=caption,
                 supports_streaming=True,
                 write_timeout=60,
                 read_timeout=60
             )
         else:
-            logger.info("Sending as image without watermark")
+            logger.info("Adding watermark to image...")
+            watermarked_data = add_watermark(data, text=WATERMARK_TEXT, opacity=0.3)
+            logger.info("Sending as image with watermark")
             await send_with_retry(
                 bot.send_photo,
                 chat_id=TELEGRAM_CHANNEL_ID,
-                photo=BytesIO(data),
+                photo=BytesIO(watermarked_data),
                 caption=caption,
                 write_timeout=60,
                 read_timeout=60
