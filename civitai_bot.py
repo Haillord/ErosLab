@@ -21,6 +21,7 @@ import telegram
 from telegram import Bot
 from caption_generator import generate_caption
 from rule34_api import fetch_rule34
+from quality_filter import QualityFilter, filter_posts_by_quality
 
 # ==================== НАСТРОЙКИ ====================
 TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -375,6 +376,93 @@ def _pick_by_content_type(fresh):
     return weighted_choice(fallback) if fallback else None
 
 
+def fetch_and_pick_with_quality():
+    """Выбор поста с фильтром качества"""
+    source = random.choice(["civitai", "rule34"])
+    logger.info(f"Source selected: {source}")
+
+    if source == "civitai":
+        items = fetch_civitai()
+        if not items:
+            logger.warning("CivitAI returned nothing, falling back to Rule34")
+            source = "rule34"
+            items = fetch_rule34(limit=100)
+    else:
+        items = fetch_rule34(limit=100)
+        if not items:
+            logger.warning("Rule34 returned nothing, falling back to CivitAI")
+            source = "civitai"
+            items = fetch_civitai()
+
+    if not items:
+        logger.warning("No items found from any source")
+        return None
+
+    fresh = [i for i in items if i["id"] not in posted_ids]
+    logger.info(f"Fresh items: {len(fresh)} out of {len(items)} (source: {source})")
+
+    if not fresh:
+        logger.info("No fresh items")
+        return None
+
+    # Скачиваем изображения для анализа качества
+    logger.info("Downloading images for quality analysis...")
+    quality_filter = QualityFilter(min_score=7.0)
+    valid_posts = []
+    image_data_list = []
+    
+    for item in fresh[:20]:  # Анализируем первые 20 постов
+        try:
+            logger.info(f"Downloading for quality check: {item['url']}")
+            r = requests.get(item["url"], timeout=30)
+            r.raise_for_status()
+            data = r.content
+            
+            # Проверяем размер
+            if len(data) > 50 * 1024 * 1024:  # 50MB
+                logger.info(f"Post {item['id']} too large, skipping quality check")
+                continue
+            
+            # Проверяем тип контента
+            is_video = _is_video(item["url"])
+            if is_video:
+                duration = get_video_duration(data)
+                if duration < 0.5 or duration > 60:
+                    logger.info(f"Post {item['id']} video duration out of range, skipping")
+                    continue
+            
+            # Проверяем дубликаты
+            img_hash = hashlib.sha256(data).hexdigest()
+            if img_hash in posted_hashes:
+                logger.info(f"Post {item['id']} duplicate content, skipping")
+                continue
+            
+            valid_posts.append(item)
+            image_data_list.append(data)
+            logger.info(f"Post {item['id']} ready for quality analysis")
+            
+        except Exception as e:
+            logger.warning(f"Failed to download {item['id']}: {e}")
+            continue
+    
+    if not valid_posts:
+        logger.warning("No valid posts for quality analysis")
+        return None
+    
+    # Фильтруем по качеству
+    logger.info(f"Analyzing quality of {len(valid_posts)} posts...")
+    selected_post, selected_image_data, quality_result = filter_posts_by_quality(
+        valid_posts, image_data_list, min_score=7.0
+    )
+    
+    if selected_post:
+        logger.info(f"Quality filter passed: {selected_post['id']} (score: {quality_result['score']})")
+        return selected_post, selected_image_data
+    else:
+        logger.warning("No posts passed quality filter, using fallback selection")
+        # Fallback к старому методу
+        return fetch_and_pick(), None
+
 def fetch_and_pick():
     source = random.choice(["civitai", "rule34"])
     logger.info(f"Source selected: {source}")
@@ -476,11 +564,21 @@ async def main():
     MAX_ATTEMPTS  = 10
 
     for attempt in range(MAX_ATTEMPTS):
-        item = fetch_and_pick()
-
-        if not item:
+        # Используем новый метод с фильтром качества
+        result = fetch_and_pick_with_quality()
+        
+        if result is None:
             logger.info("No more fresh posts available")
             return
+        
+        if isinstance(result, tuple):
+            item, selected_image_data = result
+            if item is None:
+                logger.info("No suitable posts after quality filtering")
+                continue
+        else:
+            item = result
+            selected_image_data = None
 
         try:
             logger.info(f"Downloading: {item['url']}")
@@ -531,6 +629,11 @@ async def main():
 
     # ========== THUMBNAIL ДЛЯ ВИДЕО (для vision) ==========
     caption_image_data = data  # для фото — оригинал, для видео — fallback
+    
+    # Если quality filter уже предоставил изображение (для фото)
+    if selected_image_data and not is_video:
+        caption_image_data = selected_image_data
+        logger.info(f"Using quality-filtered image data ({len(selected_image_data)} bytes)")
 
     if is_video:
         thumbnail = get_video_thumbnail(data)
