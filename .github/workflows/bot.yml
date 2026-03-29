@@ -34,7 +34,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install requests Pillow python-telegram-bot feedparser
+          pip install -r requirements.txt
           
       - name: Install ffmpeg if needed
         run: |
