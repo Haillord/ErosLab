@@ -3,6 +3,7 @@
 Стиль: дерзкая альтушка-анимешница. Без описания внешности напрямую.
 """
 
+import json
 import requests
 import logging
 import random
@@ -140,6 +141,25 @@ def get_random_format():
 
 # ==================== VISION ====================
 
+def _get_mime_type(image_data: bytes) -> str:
+    """
+    Определяет MIME-тип изображения по сигнатуре байтов.
+    Поддерживает JPEG, PNG, GIF, WebP.
+    """
+    if image_data[:4] == b'\x89PNG':
+        return "image/png"
+    if image_data[:6] in (b'GIF87a', b'GIF89a'):
+        return "image/gif"
+    # WebP: заголовок RIFF....WEBP
+    if image_data[:4] == b'RIFF' and image_data[8:12] == b'WEBP':
+        return "image/webp"
+    # JPEG: FF D8
+    if image_data[:2] == b'\xff\xd8':
+        return "image/jpeg"
+    # Fallback
+    return "image/jpeg"
+
+
 def _describe_image(image_data: bytes = None, image_url: str = None) -> str:
     """Описывает изображение через OpenRouter vision модель."""
     if not OPENROUTER_API_KEY:
@@ -151,12 +171,7 @@ def _describe_image(image_data: bytes = None, image_url: str = None) -> str:
     try:
         if image_data:
             b64 = base64.b64encode(image_data).decode("utf-8")
-            if image_data[:4] == b'\x89PNG':
-                mime = "image/png"
-            elif image_data[:3] == b'GIF':
-                mime = "image/gif"
-            else:
-                mime = "image/jpeg"
+            mime = _get_mime_type(image_data)
             img_content = {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
         elif image_url:
             img_content = {"type": "image_url", "image_url": {"url": image_url}}
@@ -191,9 +206,8 @@ def _describe_image(image_data: bytes = None, image_url: str = None) -> str:
         )
 
         if response.status_code == 200:
-            # Получаем контент безопасно, чтобы не вылететь с ошибкой, если там None
             content = response.json()["choices"][0]["message"].get("content")
-            
+
             if content:
                 description = content.strip()
                 logger.info(f"Vision description: {description[:100]}")
@@ -215,8 +229,7 @@ def _describe_image(image_data: bytes = None, image_url: str = None) -> str:
 def _build_prompt(tags, vision_description=None):
     persona_line = random.choice(PERSONA)
     format_key, format_instruction = get_random_format()
-    
-    # Логируем какой формат выбран
+
     logger.info(f"Selected format: {format_key}")
 
     if vision_description:
@@ -298,7 +311,7 @@ def _is_valid_response(text):
     if question_count > 1 and len(text) < 100:
         logger.warning(f"Too many questions ({question_count}) in response: {text[:80]}")
         return False
-    
+
     return bool(text) and len(text) > 10 and not any(p in text for p in bad_phrases)
 
 
@@ -309,7 +322,6 @@ def _try_groq(prompt):
         logger.info("No GROQ_API_KEY, skipping Groq")
         return None
     try:
-        import json
         response = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
@@ -317,7 +329,7 @@ def _try_groq(prompt):
                 "model": "llama-3.3-70b-versatile",
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 120,
-                "temperature": 0.9,  # чуть снизил температуру для стабильности
+                "temperature": 0.9,
                 "top_p": 0.95
             }),
             timeout=15
@@ -380,7 +392,7 @@ FALLBACK_TEXTS = [
     "Этот вайб не описать словами... ✨",
     "Зацени, пока никто не видит 😉",
     "Момент, который запомнится 🖤",
-    "Слабо такое повторить? 😈"  # один вопрос разрешён в фолбэке
+    "Слабо такое повторить? 😈"
 ]
 
 
@@ -421,8 +433,7 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
         logger.info("Using tags for caption (no vision)")
 
     prompt = _build_prompt(tags, vision_description)
-    
-    # Логируем промпт для отладки (обрезанный)
+
     logger.debug(f"Prompt: {prompt[:200]}...")
 
     text = _try_groq(prompt)
