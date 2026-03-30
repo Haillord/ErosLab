@@ -31,6 +31,9 @@ WATERMARK_TEXT   = "@eroslabai"
 MIN_LIKES        = 20
 MIN_IMAGE_SIZE   = 512
 
+# Временно отключить Rule34 (True = только CivitAI для тестов)
+TEST_CIVITAI_ONLY = False
+
 HISTORY_FILE = "posted_ids.json"
 HASHES_FILE  = "posted_hashes.json"
 MAX_HISTORY_SIZE = 5000
@@ -370,8 +373,8 @@ def _pick_by_content_type(fresh):
 
 
 def fetch_and_pick():
-    source = random.choice(["civitai", "rule34"])
-    logger.info(f"Source selected: {source}")
+    source = "civitai" if TEST_CIVITAI_ONLY else random.choice(["civitai", "rule34"])
+    logger.info(f"Source selected: {source}" + (" (TEST_CIVITAI_ONLY mode)" if TEST_CIVITAI_ONLY else ""))
 
     if source == "civitai":
         items = fetch_civitai()

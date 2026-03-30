@@ -66,6 +66,9 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
+          # Сначала делаем pull, чтобы получить последние изменения
+          git pull origin main --no-rebase || true
+          
           git add posted_ids.json posted_hashes.json stats.json apt-ffmpeg-version.txt 2>/dev/null || true
           
           if git diff --cached --quiet; then
@@ -75,13 +78,16 @@ jobs:
           
           git commit -m "📊 Update posted history [skip ci]"
           
+          # Пробуем push с предварительным pull при конфликте
           for i in {1..3}; do
             if git push; then
               echo "✅ Successfully pushed"
               exit 0
             fi
+            echo "Push failed, attempting pull and retry..."
+            git pull origin main --no-rebase || true
             sleep 5
           done
           
-          echo "❌ Failed to push"
+          echo "❌ Failed to push after retries"
           exit 1
