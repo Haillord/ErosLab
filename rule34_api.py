@@ -19,21 +19,31 @@ TAG_SETS = [
     "3d_(artwork) tagme",
 ]
 
-# Теги для ИИ-контента (AI generated)
+# Теги для ИИ-контента (AI generated) - улучшенные
 AI_TAG_SETS = [
+    # Базовые теги
     "stable_diffusion",
     "ai_generated",
     "generated_by_ai",
     "novelai",
+    
+    # Видео теги
     "stable_diffusion video",
     "ai_generated video",
+    "generated_by_ai video",
+    "novelai video",
+    
+    # Анимированные теги
+    "stable_diffusion animated",
+    "ai_generated animated",
+    "generated_by_ai animated",
 ]
 
-# Теги для 3D контента
+# Теги для 3D контента (с исключением 2D)
 THREE_D_TAG_SETS = [
-    "3d_(artwork)",
-    "3d video",
-    "3d_(artwork) animated",
+    "3d_(artwork) rating:explicit -2d -hand_drawn -drawn",
+    "3d_video rating:explicit -2d",
+    "3d_(artwork) animated rating:explicit -2d",
 ]
 
 def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed", media_type: str = "mixed") -> List[Dict[str, Any]]:
