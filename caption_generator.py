@@ -657,24 +657,39 @@ FALLBACK_TEXTS = [
 
 # ==================== СБОРКА ====================
 
-def _format_caption(ai_text, tags, footer):
+def _format_caption(ai_text, tags, footer, content_header=None):
     safe_tags = _safe_tags(tags)
     hashtags = " ".join(f"#{t}" for t in safe_tags[:6]) if safe_tags else ""
+    
+    # Форматируем с разделителями и заголовком типа контента
+    header_line = f"{content_header}\n" if content_header else ""
     if hashtags:
-        return f"{ai_text}\n\n{hashtags}\n\n{footer}"
-    return f"{ai_text}\n\n{footer}"
+        return f"{header_line}{ai_text}\n━━━━━━━━━━━━━━━━━━━━━━\nTags: {hashtags}\n────────────────────\n{footer}"
+    return f"{header_line}{ai_text}\n────────────────────\n{footer}"
 
-def fallback_caption(tags, footer):
+def fallback_caption(tags, footer, content_header=None):
     text = random.choice(FALLBACK_TEXTS)
     safe_tags = _safe_tags(tags)
     tags_line = " ".join(f"#{t}" for t in safe_tags[:6]) if safe_tags else ""
+    
+    # Форматируем с разделителями и заголовком типа контента
+    header_line = f"{content_header}\n" if content_header else ""
     if tags_line:
-        return f"{text}\n\n{tags_line}\n\n{footer}"
-    return f"{text}\n\n{footer}"
+        return f"{header_line}{text}\n━━━━━━━━━━━━━━━━━━━━━━\nTags: {tags_line}\n────────────────────\n{footer}"
+    return f"{header_line}{text}\n────────────────────\n{footer}"
 
 def generate_caption(tags, rating, likes, image_data=None, image_url=None,
-                     watermark="📢 @eroslabai", suggestion="💬 Предложка: @Haillord"):
-    footer = f"{watermark}\n{suggestion}"
+                     watermark="📢 @eroslabai", suggestion="💬 Предложка: @Haillord",
+                     content_type="ai"):
+    # Делаем "Предложка" кликабельной ссылкой на профиль
+    clickable_suggestion = f"💬 [Предложка](tg://resolve?domain=Haillord)"
+    footer = f"{watermark}\n{clickable_suggestion}"
+    
+    # Форматируем тип контента с цветными кружками
+    if content_type == "ai":
+        content_header = "🟢 AI Art | 🔴 3D"
+    else:  # 3d
+        content_header = "🔴 AI Art | 🟢 3D"
     
     # Пробуем структурированный vision анализ
     vision_details = None
@@ -719,6 +734,6 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
     
     if not text:
         logger.warning("All caption generators failed, using fallback")
-        return fallback_caption(tags, footer)
+        return fallback_caption(tags, footer, content_header)
     
-    return _format_caption(text, tags, footer)
+    return _format_caption(text, tags, footer, content_header)

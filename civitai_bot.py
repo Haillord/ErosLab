@@ -609,6 +609,10 @@ async def main():
 
     # ========== ОТПРАВКА В TELEGRAM ==========
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
+    
+    # Определяем тип контента (3D или AI) на основе тегов
+    content_type = "3d" if any(t.lower() in ["3d", "3d_(artwork)", "3d_video"] for t in item["tags"]) else "ai"
+    
     caption = generate_caption(
         tags=item["tags"],
         rating=item["rating"],
@@ -616,7 +620,8 @@ async def main():
         image_data=caption_image_data,
         image_url=item["url"] if not is_video else None,
         watermark=WATERMARK_TEXT,
-        suggestion="💬 Предложка: @Haillord"
+        suggestion="💬 Предложка: @Haillord",
+        content_type=content_type
     )
 
     logger.info(f"Tags for caption ({len(item['tags'])}): {item['tags'][:8]}")
