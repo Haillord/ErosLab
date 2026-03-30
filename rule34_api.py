@@ -19,19 +19,13 @@ TAG_SETS = [
     "3d_(artwork) tagme",
 ]
 
-# Теги для ИИ-контента (AI generated) - улучшенные
+# Теги для ИИ-контента (AI generated) - без "video" тегов (media_type логика сама добавит)
 AI_TAG_SETS = [
     # Базовые теги
     "stable_diffusion",
     "ai_generated",
     "generated_by_ai",
     "novelai",
-    
-    # Видео теги
-    "stable_diffusion video",
-    "ai_generated video",
-    "generated_by_ai video",
-    "novelai video",
     
     # Анимированные теги
     "stable_diffusion animated",
@@ -42,7 +36,7 @@ AI_TAG_SETS = [
 # Теги для 3D контента (с исключением 2D)
 THREE_D_TAG_SETS = [
     "3d_(artwork) rating:explicit -2d -hand_drawn -drawn",
-    "3d_video rating:explicit -2d",
+    "3d_(artwork) video rating:explicit -2d",  # 3d_video не существует, используем 3d_(artwork) + video
     "3d_(artwork) animated rating:explicit -2d",
 ]
 
@@ -66,11 +60,9 @@ def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed"
         else:
             tags = random.choice(TAG_SETS)
     
-    # Добавляем тег для видео или фото если нужно
+    # Добавляем тег для видео если нужно (тега "photo" не существует на Rule34)
     if media_type == "video" and "video" not in tags and "animated" not in tags:
         tags = tags + " video"
-    elif media_type == "image" and "video" not in tags and "animated" not in tags:
-        tags = tags + " photo"
     
     # Добавляем rating:explicit если нет
     if "rating:explicit" not in tags:
@@ -79,9 +71,7 @@ def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed"
     if not R34_USER_ID or not R34_API_KEY:
         logger.error("API credentials are missing in environment variables!")
         return []
-
-    if tags is None:
-        tags = random.choice(TAG_SETS)
+  
 
     logger.info(f"Rule34: using tags = '{tags}'")
 
@@ -92,14 +82,15 @@ def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed"
     max_pages = 10  # Ищем по 10 страницам
     min_posts = 50  # Минимум постов для выбора
     
-    for page in range(1, max_pages + 1):
+    # Rule34 API: pid=0 — первая страница, pid=1 — вторая, и т.д.
+    for page in range(0, max_pages):
         params = {
             "page": "dapi",
             "s": "post",
             "q": "index",
             "json": 1,
             "limit": limit,
-            "pid": page,  # Номер страницы
+            "pid": page,  # Номер страницы (начинается с 0)
             "tags": tags,
             "user_id": R34_USER_ID,
             "api_key": R34_API_KEY
@@ -132,13 +123,18 @@ def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed"
                 if not file_url:
                     continue
 
+                # Фильтруем по минимальному score (Rule34 score ниже чем CivitAI likes)
+                score = int(post.get("score", 0))
+                if score < 5:  # MIN_LIKES для Rule34
+                    continue
+
                 post_tags = post.get("tags", "").split()
 
                 all_results.append({
                     "id":      f"r34_{post['id']}",
                     "url":     file_url,
                     "tags":    post_tags[:15],
-                    "likes":   int(post.get("score", 0)),
+                    "likes":   score,
                     "rating":  mapped_rating,
                     "post_id": post.get("id"),
                     "source":  "rule34"

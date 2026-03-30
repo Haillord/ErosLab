@@ -260,10 +260,13 @@ def _describe_image_structured(image_data: bytes = None, image_url: str = None) 
             logger.warning("Vision: empty or invalid content")
             return None
 
-        # === Парсим JSON ответ ===
+        # === Парсим JSON ответ (очищаем от markdown-обёртки) ===
         try:
             import json as json_module
-            vision_data = json_module.loads(content.strip())
+            import re
+            # Gemini иногда оборачивает JSON в markdown-блок: ```json ... ```
+            clean_content = re.sub(r'^```json\s*|\s*```$', '', content.strip(), flags=re.MULTILINE)
+            vision_data = json_module.loads(clean_content)
             
             details = VisionDetails()
             details.appearance = vision_data.get("appearance", [])

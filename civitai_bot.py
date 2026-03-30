@@ -50,7 +50,7 @@ BLACKLIST_TAGS = {
     "gay", "yaoi", "bara", "2boys", "3boys", "multiple_boys",
     "male_only", "male_male", "gay_male", "bl", "boy_love",
     # Other
-    "1boy", "furry", "furry_male", "anthro",
+    "furry_male", "anthro",
 }
 
 HASHTAG_STOP_WORDS = {
@@ -224,6 +224,47 @@ def get_video_thumbnail(data: bytes) -> bytes:
         if tmp_out and os.path.exists(tmp_out):
             os.unlink(tmp_out)
 
+def convert_gif_to_mp4(gif_data: bytes) -> bytes:
+    """Конвертирует GIF в MP4 для лучшей совместимости с Telegram."""
+    tmp_in = None
+    tmp_out = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.gif', delete=False) as tmp:
+            tmp.write(gif_data)
+            tmp_in = tmp.name
+
+        tmp_out = tmp_in + '.mp4'
+
+        # Конвертация GIF → MP4
+        cmd = [
+            'ffmpeg', '-y', '-i', tmp_in,
+            '-c:v', 'libx264',
+            '-pix_fmt', 'yuv420p',
+            '-movflags', '+faststart',
+            '-preset', 'fast',
+            tmp_out
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=120)
+
+        if result.returncode != 0:
+            logger.warning(f"GIF→MP4 conversion failed: {result.stderr.decode()[:200]}")
+            return None
+
+        with open(tmp_out, 'rb') as f:
+            mp4_data = f.read()
+
+        logger.info(f"GIF converted to MP4: {len(gif_data)} → {len(mp4_data)} bytes")
+        return mp4_data
+
+    except Exception as e:
+        logger.error(f"GIF→MP4 conversion error: {e}")
+        return None
+    finally:
+        if tmp_in and os.path.exists(tmp_in):
+            os.unlink(tmp_in)
+        if tmp_out and os.path.exists(tmp_out):
+            os.unlink(tmp_out)
+
 # ==================== RETRY ДЛЯ TELEGRAM ====================
 async def send_with_retry(func, *args, retries=3, **kwargs):
     for attempt in range(retries):
@@ -371,8 +412,8 @@ def fetch_civitai():
                 is_x_rating = False
                 if isinstance(nsfw_level, str) and nsfw_level.upper() in ["X", "XXX"]:
                     is_x_rating = True
-                elif isinstance(nsfw_level, (int, float)) and 16 <= nsfw_level <= 64:
-                    # Только Extreme/Hardcore контент (nsfwLevel 16-64)
+                elif isinstance(nsfw_level, (int, float)) and nsfw_level >= 8:
+                    # X и XXX контент (nsfwLevel >= 8)
                     is_x_rating = True
 
                 if not is_x_rating:
@@ -479,6 +520,8 @@ def fetch_and_pick():
         return None
 
     fresh = [i for i in items if i["id"] not in posted_ids]
+    # Фильтруем blacklist для всех источников (CivitAI уже фильтрует внутри fetch_civitai)
+    fresh = [i for i in fresh if not has_blacklisted(i["tags"])]
     logger.info(f"Fresh items: {len(fresh)} out of {len(items)} (source: {source})")
 
     if not fresh:
@@ -583,6 +626,17 @@ async def main():
             continue
 
         is_video = _is_video(item["url"])
+        is_gif = _is_gif(item["url"])
+
+        # Конвертируем GIF в MP4 для лучшей совместимости
+        if is_gif:
+            mp4_data = convert_gif_to_mp4(data)
+            if mp4_data:
+                data = mp4_data
+                is_video = True  # Теперь это видео
+                logger.info("GIF converted to MP4")
+            else:
+                logger.warning("GIF conversion failed, sending as animation")
 
         if not is_video:
             if not check_media_size(data, item["url"]):
