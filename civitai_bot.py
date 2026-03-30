@@ -401,10 +401,14 @@ def fetch_civitai():
 
     return []
 
-VIDEO_EXTENSIONS = (".mp4", ".webm", ".gif")
+VIDEO_EXTENSIONS = (".mp4", ".webm")
+GIF_EXTENSION = ".gif"
 
 def _is_video(url: str) -> bool:
     return url.lower().endswith(VIDEO_EXTENSIONS)
+
+def _is_gif(url: str) -> bool:
+    return url.lower().endswith(GIF_EXTENSION)
 
 def _pick_by_content_type(fresh):
     """50/50 видео или фото. Если нужного типа нет — берём что есть."""
@@ -620,7 +624,7 @@ async def main():
 
     try:
         if is_video:
-            logger.info("Sending as video/gif")
+            logger.info("Sending as video")
             logger.info("Using original video (no optimization)")
             await send_with_retry(
                 bot.send_video,
@@ -628,6 +632,16 @@ async def main():
                 video=BytesIO(data),
                 caption=caption,
                 supports_streaming=True,
+                write_timeout=60,
+                read_timeout=60
+            )
+        elif _is_gif(item["url"]):
+            logger.info("Sending as GIF animation")
+            await send_with_retry(
+                bot.send_animation,
+                chat_id=TELEGRAM_CHANNEL_ID,
+                animation=BytesIO(data),
+                caption=caption,
                 write_timeout=60,
                 read_timeout=60
             )
