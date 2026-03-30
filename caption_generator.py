@@ -127,15 +127,33 @@ def _fix_truncated_json(content: str) -> str:
     if not content_stripped.endswith((',', '.', '...')):
         return content_stripped
     
-    # Эффективные варианты "дособирания" JSON
-    fixes = [
-        # Закрытие массивов
-        '"]}]', '"]}', '"]',
-        # Закрытие строк
-        '"}', '"',
-        # Закрытие объектов
-        '}', 
-    ]
+    # Анализируем структуру обрезанного JSON для подбора подходящих вариантов
+    fixes = []
+    
+    # Считаем количество открывающих и закрывающих скобок
+    open_brackets = content_stripped.count('[')
+    close_brackets = content_stripped.count(']')
+    open_braces = content_stripped.count('{')
+    close_braces = content_stripped.count('}')
+    
+    # Если больше открывающих скобок - нужно закрыть массивы
+    if open_brackets > close_brackets:
+        fixes.extend(['"]]', '"]}', '"]'])
+    
+    # Если больше открывающих фигурных скобок - нужно закрыть объекты
+    if open_braces > close_braces:
+        fixes.extend(['"}', '}'])
+    
+    # Если есть кавычки без закрытия - нужно закрыть строки
+    quote_count = content_stripped.count('"')
+    if quote_count % 2 != 0:
+        fixes.extend(['"', '"]', '"]}', '"]}]'])
+    
+    # Стандартные варианты для всех случаев
+    fixes.extend(['"]}]', '"]}', '"]', '"}', '"', '}'])
+    
+    # Уникальные варианты
+    fixes = list(dict.fromkeys(fixes))
     
     for fix in fixes:
         try:
