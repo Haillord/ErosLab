@@ -290,115 +290,132 @@ def _request_with_backoff(url, params, headers, max_retries=3):
     return None
 
 def fetch_civitai():
-    # Full variations with X and XXX (XXX may not work now, but could in future)
+    # Используем browsingLevel=31 для максимального охвата порно-контента
     variations = [
-        {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Day"},
-        {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Week"},
-        {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Month"},
-        {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Day"},
-        {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Week"},
-        {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Month"},
-        {"limit": 100, "nsfw": "XXX", "sort": "Most Reactions", "period": "Day"},
-        {"limit": 100, "nsfw": "XXX", "sort": "Most Reactions", "period": "Week"},
-        {"limit": 100, "nsfw": "XXX", "sort": "Most Reactions", "period": "Month"},
-        {"limit": 100, "nsfw": "XXX", "sort": "Newest",         "period": "Day"},
-        {"limit": 100, "nsfw": "XXX", "sort": "Newest",         "period": "Week"},
-        {"limit": 100, "nsfw": "XXX", "sort": "Newest",         "period": "Month"},
+        {"browsingLevel": 31, "sort": "Most Reactions", "period": "Day"},
+        {"browsingLevel": 31, "sort": "Most Reactions", "period": "Week"},
+        {"browsingLevel": 31, "sort": "Most Reactions", "period": "Month"},
+        {"browsingLevel": 31, "sort": "Newest",         "period": "Day"},
+        {"browsingLevel": 31, "sort": "Newest",         "period": "Week"},
+        {"browsingLevel": 31, "sort": "Newest",         "period": "Month"},
     ]
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
+    min_posts = 50  # Минимум постов для выбора
 
-    for params in variations:
-        try:
-            r = _request_with_backoff(
-                "https://civitai.com/api/v1/images",
-                params=params,
-                headers=headers
-            )
-            if r is None:
-                logger.warning(f"No response for params {params}, trying next variation")
-                continue
-
-            # Handle 400 Bad Request (e.g., nsfw=XXX not supported)
-            if r.status_code == 400:
-                logger.debug(f"Skipping invalid params {params} (400 Bad Request)")
-                continue
-
-            data = r.json()
-            items = data.get("items", [])
-
-            logger.info(
-                f"Got {len(items)} items "
-                f"(nsfw={params['nsfw']}, sort={params['sort']}, period={params['period']})"
-            )
-
-            erotic_items = []
-            skipped_nsfw = 0
-            skipped_blacklist = 0
-            skipped_likes = 0
+    for base_params in variations:
+        all_items = []
+        
+        # Ищем по 5 страницам для каждой вариации
+        for page in range(1, 6):
+            params = {**base_params, "limit": 100, "page": page}
             
-            # Debug: sample first 5 items nsfwLevel
-            for debug_item in items[:5]:
-                debug_nsfw = debug_item.get("nsfwLevel")
-                debug_id = debug_item.get("id")
-                logger.debug(f"Item {debug_id}: nsfwLevel={debug_nsfw} (type={type(debug_nsfw).__name__})")
-            
-            for item in items:
-                try:
-                    nsfw_level = item.get("nsfwLevel")
-
-                    is_x_rating = False
-                    if isinstance(nsfw_level, str) and nsfw_level.upper() in ["X", "XXX"]:
-                        is_x_rating = True
-                    elif isinstance(nsfw_level, (int, float)) and 16 <= nsfw_level <= 64:
-                        # Только Extreme/Hardcore контент (nsfwLevel 32-64)
-                        is_x_rating = True
-
-                    if not is_x_rating:
-                        skipped_nsfw += 1
-                        continue
-
-                    tags = extract_tags(item)
-
-                    if has_blacklisted(tags):
-                        skipped_blacklist += 1
-                        continue
-
-                    stats_data = item.get("stats", {})
-                    likes = 0
-                    if stats_data:
-                        likes = (
-                            stats_data.get("likeCount", 0)
-                            + stats_data.get("heartCount", 0)
-                        )
-
-                    if likes < MIN_LIKES:
-                        skipped_likes += 1
-                        continue
-
-                    erotic_items.append({
-                        "id":      f"civitai_{item['id']}",
-                        "url":     item.get("url", ""),
-                        "tags":    tags[:15],
-                        "likes":   likes,
-                        "rating":  nsfw_level,
-                        "post_id": item.get("postId"),
-                        "source":  "civitai",
-                    })
-
-                except Exception as e:
-                    logger.error(f"Error processing item {item.get('id')}: {e}")
+            try:
+                r = _request_with_backoff(
+                    "https://civitai.com/api/v1/images",
+                    params=params,
+                    headers=headers
+                )
+                if r is None:
+                    logger.warning(f"CivitAI page {page}: no response for params {params}")
                     continue
 
-            if erotic_items:
-                logger.info(f"Found {len(erotic_items)} X/XXX rated posts")
-                return erotic_items
+                # Handle 400 Bad Request
+                if r.status_code == 400:
+                    logger.debug(f"CivitAI page {page}: skipping invalid params {params}")
+                    continue
 
-            logger.info(f"No suitable posts: skipped_nsfw={skipped_nsfw}, skipped_blacklist={skipped_blacklist}, skipped_likes={skipped_likes}")
+                data = r.json()
+                items = data.get("items", [])
+                
+                if not items:
+                    logger.debug(f"CivitAI page {page}: no items")
+                    continue
 
-        except Exception as e:
-            logger.error(f"Error with params {params}: {e}")
+                all_items.extend(items)
+                logger.info(f"CivitAI page {page}: got {len(items)} items (total: {len(all_items)})")
+                
+                # Если набрали достаточно — останавливаемся
+                if len(all_items) >= min_posts:
+                    break
+
+            except Exception as e:
+                logger.error(f"CivitAI page {page} error: {e}")
+                continue
+
+        if not all_items:
+            logger.info(f"No items for params {base_params}")
             continue
+
+        items = all_items
+        logger.info(
+            f"Got {len(items)} items total "
+            f"(browsingLevel={base_params['browsingLevel']}, sort={base_params['sort']}, period={base_params['period']})"
+        )
+
+        erotic_items = []
+        skipped_nsfw = 0
+        skipped_blacklist = 0
+        skipped_likes = 0
+        
+        # Debug: sample first 5 items nsfwLevel
+        for debug_item in items[:5]:
+            debug_nsfw = debug_item.get("nsfwLevel")
+            debug_id = debug_item.get("id")
+            logger.debug(f"Item {debug_id}: nsfwLevel={debug_nsfw} (type={type(debug_nsfw).__name__})")
+        
+        for item in items:
+            try:
+                nsfw_level = item.get("nsfwLevel")
+
+                is_x_rating = False
+                if isinstance(nsfw_level, str) and nsfw_level.upper() in ["X", "XXX"]:
+                    is_x_rating = True
+                elif isinstance(nsfw_level, (int, float)) and 16 <= nsfw_level <= 64:
+                    # Только Extreme/Hardcore контент (nsfwLevel 16-64)
+                    is_x_rating = True
+
+                if not is_x_rating:
+                    skipped_nsfw += 1
+                    continue
+
+                tags = extract_tags(item)
+
+                if has_blacklisted(tags):
+                    skipped_blacklist += 1
+                    continue
+
+                stats_data = item.get("stats", {})
+                likes = 0
+                if stats_data:
+                    likes = (
+                        stats_data.get("likeCount", 0)
+                        + stats_data.get("heartCount", 0)
+                    )
+
+                if likes < MIN_LIKES:
+                    skipped_likes += 1
+                    continue
+
+                erotic_items.append({
+                    "id":      f"civitai_{item['id']}",
+                    "url":     item.get("url", ""),
+                    "tags":    tags[:15],
+                    "likes":   likes,
+                    "rating":  nsfw_level,
+                    "post_id": item.get("postId"),
+                    "source":  "civitai",
+                })
+
+            except Exception as e:
+                logger.error(f"Error processing item {item.get('id')}: {e}")
+                continue
+
+        if erotic_items:
+            logger.info(f"Found {len(erotic_items)} X/XXX rated posts")
+            return erotic_items
+
+        logger.info(f"No suitable posts: skipped_nsfw={skipped_nsfw}, skipped_blacklist={skipped_blacklist}, skipped_likes={skipped_likes}")
 
     return []
 

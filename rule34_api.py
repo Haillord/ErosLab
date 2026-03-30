@@ -48,7 +48,7 @@ THREE_D_TAG_SETS = [
 
 def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed", media_type: str = "mixed") -> List[Dict[str, Any]]:
     """
-    Парсинг Rule34 через API с авторизацией
+    Парсинг Rule34 через API с авторизацией и пагинацией
     
     Args:
         tags: конкретные теги (если None, выбираются случайно)
@@ -86,68 +86,72 @@ def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed"
     logger.info(f"Rule34: using tags = '{tags}'")
 
     url = "https://api.rule34.xxx/index.php"
-    params = {
-        "page": "dapi",
-        "s": "post",
-        "q": "index",
-        "json": 1,
-        "limit": limit,
-        "tags": tags,
-        "user_id": R34_USER_ID,
-        "api_key": R34_API_KEY
-    }
-
     headers = {"User-Agent": "ErosLabBot/1.0 (Windows NT 10.0; Win64; x64)"}
+    
+    all_results = []
+    max_pages = 10  # Ищем по 10 страницам
+    min_posts = 50  # Минимум постов для выбора
+    
+    for page in range(1, max_pages + 1):
+        params = {
+            "page": "dapi",
+            "s": "post",
+            "q": "index",
+            "json": 1,
+            "limit": limit,
+            "pid": page,  # Номер страницы
+            "tags": tags,
+            "user_id": R34_USER_ID,
+            "api_key": R34_API_KEY
+        }
 
-    try:
-        r = requests.get(url, params=params, headers=headers, timeout=30)
-        r.raise_for_status()
+        try:
+            r = requests.get(url, params=params, headers=headers, timeout=30)
+            r.raise_for_status()
 
-        if not r.text.strip():
-            logger.warning("Rule34 returned empty response")
-            return []
-
-        posts = r.json()
-
-        if not isinstance(posts, list):
-            logger.error(f"Rule34 unexpected response format: {type(posts)}")
-            return []
-
-        logger.info(f"Rule34 raw posts count: {len(posts)}")
-
-        # Логируем первые посты чтобы видеть структуру
-        if posts:
-            logger.info(f"Rule34 sample keys: {list(posts[0].keys())}")
-            logger.info(f"Rule34 sample ratings: {[p.get('rating') for p in posts[:5]]}")
-
-        results = []
-        for post in posts:
-            if not isinstance(post, dict):
+            if not r.text.strip():
+                logger.warning(f"Rule34 page {page}: empty response")
                 continue
 
-            # Принимаем все рейтинги
-            rating = post.get("rating", "")
-            mapped_rating = "XXX" if rating == "e" else "X"
+            posts = r.json()
 
-            file_url = post.get("file_url")
-            if not file_url:
+            if not isinstance(posts, list):
+                logger.warning(f"Rule34 page {page}: unexpected response format")
                 continue
 
-            post_tags = post.get("tags", "").split()
+            logger.info(f"Rule34 page {page}: got {len(posts)} posts")
 
-            results.append({
-                "id":      f"r34_{post['id']}",
-                "url":     file_url,
-                "tags":    post_tags[:15],
-                "likes":   int(post.get("score", 0)),
-                "rating":  mapped_rating,
-                "post_id": post.get("id"),
-                "source":  "rule34"
-            })
+            for post in posts:
+                if not isinstance(post, dict):
+                    continue
 
-        logger.info(f"Rule34: Found {len(results)} posts after filtering")
-        return results
+                rating = post.get("rating", "")
+                mapped_rating = "XXX" if rating == "e" else "X"
 
-    except Exception as e:
-        logger.error(f"Rule34 API Error: {e}")
-        return []
+                file_url = post.get("file_url")
+                if not file_url:
+                    continue
+
+                post_tags = post.get("tags", "").split()
+
+                all_results.append({
+                    "id":      f"r34_{post['id']}",
+                    "url":     file_url,
+                    "tags":    post_tags[:15],
+                    "likes":   int(post.get("score", 0)),
+                    "rating":  mapped_rating,
+                    "post_id": post.get("id"),
+                    "source":  "rule34"
+                })
+
+            # Если набрали достаточно постов — останавливаемся
+            if len(all_results) >= min_posts:
+                logger.info(f"Rule34: collected {len(all_results)} posts from {page} pages")
+                break
+
+        except Exception as e:
+            logger.error(f"Rule34 page {page} error: {e}")
+            continue
+
+    logger.info(f"Rule34: Found {len(all_results)} total posts from {max_pages} pages")
+    return all_results
