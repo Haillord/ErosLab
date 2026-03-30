@@ -657,14 +657,26 @@ FALLBACK_TEXTS = [
 
 # ==================== СБОРКА ====================
 
+def _center_text(text, width=30):
+    """Центрирует текст с заполнением символами ═"""
+    if not text:
+        return ""
+    text_len = len(text)
+    total_padding = width - text_len
+    if total_padding <= 0:
+        return f"══ {text} ══"
+    left = total_padding // 2
+    right = total_padding - left
+    return f"{'═' * left} {text} {'═' * right}"
+
 def _format_caption(ai_text, tags, footer, content_header=None):
     safe_tags = _safe_tags(tags)
     hashtags = " ".join(f"#{t}" for t in safe_tags[:6]) if safe_tags else ""
     
     # Форматируем с разделителями и заголовком типа контента
-    header_line = f"{content_header}\n" if content_header else ""
+    header_line = f"{_center_text(content_header)}\n" if content_header else ""
     if hashtags:
-        return f"{header_line}{ai_text}\n━━━━━━━━━━━━━━━━━━━━━━\nTags: {hashtags}\n────────────────────\n{footer}"
+        return f"{header_line}{ai_text}\n━━━━━━━━━━━━━━━━━━━━━━\n{hashtags}\n────────────────────\n{footer}"
     return f"{header_line}{ai_text}\n────────────────────\n{footer}"
 
 def fallback_caption(tags, footer, content_header=None):
@@ -673,9 +685,9 @@ def fallback_caption(tags, footer, content_header=None):
     tags_line = " ".join(f"#{t}" for t in safe_tags[:6]) if safe_tags else ""
     
     # Форматируем с разделителями и заголовком типа контента
-    header_line = f"{content_header}\n" if content_header else ""
+    header_line = f"{_center_text(content_header)}\n" if content_header else ""
     if tags_line:
-        return f"{header_line}{text}\n━━━━━━━━━━━━━━━━━━━━━━\nTags: {tags_line}\n────────────────────\n{footer}"
+        return f"{header_line}{text}\n━━━━━━━━━━━━━━━━━━━━━━\n{tags_line}\n────────────────────\n{footer}"
     return f"{header_line}{text}\n────────────────────\n{footer}"
 
 def generate_caption(tags, rating, likes, image_data=None, image_url=None,
