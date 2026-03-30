@@ -121,19 +121,23 @@ class VisionDetails:
 
 def _fix_truncated_json(content: str) -> str:
     """Умно "дособирает" обрезанный JSON ответ"""
+    import json as json_module
+    import re
     content_stripped = content.strip()
     
-    # Убираем markdown-обёртку если есть
-    if content_stripped.startswith("```json"):
-        content_stripped = content_stripped[7:]
-    elif content_stripped.startswith("```"):
-        content_stripped = content_stripped[3:]
-    if content_stripped.endswith("```"):
-        content_stripped = content_stripped[:-3]
-    content_stripped = content_stripped.strip()
+    # Извлекаем JSON из ```json ... ``` блока (даже если перед ним есть текст)
+    code_block = re.search(r'```(?:json)?\s*(\{.*)', content_stripped, re.DOTALL)
+    if code_block:
+        content_stripped = code_block.group(1)
+        # Убираем закрывающие ``` если есть
+        content_stripped = re.sub(r'```\s*$', '', content_stripped).strip()
+    else:
+        # Ищем первый { как начало JSON
+        brace_pos = content_stripped.find('{')
+        if brace_pos > 0:
+            content_stripped = content_stripped[brace_pos:]
     
     # Проверяем — может уже валидный JSON
-    import json as json_module
     try:
         json_module.loads(content_stripped)
         return content_stripped
@@ -227,17 +231,14 @@ def _describe_image_structured(image_data: bytes = None, image_url: str = None) 
 
         # === Запрос с structured prompt ===
         structured_prompt = (
-            "Проанализируй изображение и выдели следующие элементы:\n"
-            "1. Внешность: цвет волос, глаз, одежда, аксессуары\n"
-            "2. Поза: положение тела, жесты, поза\n"
-            "3. Эмоции: выражение лица, настроение персонажа\n"
-            "4. Фон: окружение, интерьер/экстерьер, детали\n"
-            "5. Свет: тип освещения, тени, блики\n"
-            "6. Props: предметы, реквизит, атрибуты\n"
-            "7. Атмосфера: общее настроение сцены\n\n"
-            "Ответ дай в формате JSON с полями: appearance, pose, emotions, background, lighting, props, mood.\n"
-            "Каждое поле - массив из 2-3 кратких описательных фраз на русском языке.\n"
-            "Избегай прямых упоминаний эротики, делай акцент на визуальных деталях и атмосфере."
+            "Ответь ТОЛЬКО чистым JSON без вступлений, пояснений и markdown-блоков.\n"
+            "Первый символ ответа должен быть {, последний }.\n\n"
+            "Формат:\n"
+            '{"appearance":["фраза1","фраза2"],"pose":["фраза1","фраза2"],'
+            '"emotions":["фраза1","фраза2"],"background":["фраза1","фраза2"],'
+            '"lighting":["фраза1","фраза2"],"props":["фраза1","фраза2"],"mood":["фраза1","фраза2"]}\n\n'
+            "Каждый массив — 2 короткие фразы на русском, описывающие изображение.\n"
+            "Без упоминания эротики напрямую — только визуальные детали и атмосфера."
         )
 
         response = requests.post(
@@ -260,7 +261,7 @@ def _describe_image_structured(image_data: bytes = None, image_url: str = None) 
                         ]
                     }
                 ],
-                "max_tokens": 700
+                "max_tokens": 800
             },
             timeout=25
         )
