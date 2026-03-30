@@ -53,7 +53,7 @@ HASHTAG_STOP_WORDS = {
 }
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # Changed to DEBUG to see detailed filtering info
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
@@ -290,6 +290,16 @@ def fetch_civitai():
             )
 
             erotic_items = []
+            skipped_nsfw = 0
+            skipped_blacklist = 0
+            skipped_likes = 0
+            
+            # Debug: sample first 5 items nsfwLevel
+            for debug_item in items[:5]:
+                debug_nsfw = debug_item.get("nsfwLevel")
+                debug_id = debug_item.get("id")
+                logger.debug(f"Item {debug_id}: nsfwLevel={debug_nsfw} (type={type(debug_nsfw).__name__})")
+            
             for item in items:
                 try:
                     nsfw_level = item.get("nsfwLevel")
@@ -301,11 +311,13 @@ def fetch_civitai():
                         is_x_rating = True
 
                     if not is_x_rating:
+                        skipped_nsfw += 1
                         continue
 
                     tags = extract_tags(item)
 
                     if has_blacklisted(tags):
+                        skipped_blacklist += 1
                         continue
 
                     stats_data = item.get("stats", {})
@@ -317,6 +329,7 @@ def fetch_civitai():
                         )
 
                     if likes < MIN_LIKES:
+                        skipped_likes += 1
                         continue
 
                     erotic_items.append({
@@ -337,7 +350,7 @@ def fetch_civitai():
                 logger.info(f"Found {len(erotic_items)} X/XXX rated posts")
                 return erotic_items
 
-            logger.info("No suitable posts in this variation, trying next")
+            logger.info(f"No suitable posts: skipped_nsfw={skipped_nsfw}, skipped_blacklist={skipped_blacklist}, skipped_likes={skipped_likes}")
 
         except Exception as e:
             logger.error(f"Error with params {params}: {e}")
