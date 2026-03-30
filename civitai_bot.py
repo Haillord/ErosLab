@@ -36,6 +36,7 @@ TEST_CIVITAI_ONLY = True
 
 HISTORY_FILE = "posted_ids.json"
 HASHES_FILE  = "posted_hashes.json"
+CONTENT_STATE_FILE = "content_state.json"
 MAX_HISTORY_SIZE = 5000
 
 BLACKLIST_TAGS = {
@@ -53,7 +54,7 @@ HASHTAG_STOP_WORDS = {
 }
 
 logging.basicConfig(
-    level=logging.DEBUG,  # Changed to DEBUG to see detailed filtering info
+    level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
@@ -75,12 +76,34 @@ def save_json(path, data):
 
 posted_ids    = set(load_json(HISTORY_FILE, []))
 posted_hashes = set(load_json(HASHES_FILE, []))
+content_state = load_json(CONTENT_STATE_FILE, {"last_type": "3d", "last_media": "video"})
+
+def get_next_content_type():
+    """Чередует между 3d и ai контентом"""
+    global content_state
+    next_type = "ai" if content_state["last_type"] == "3d" else "3d"
+    content_state["last_type"] = next_type
+    save_json(CONTENT_STATE_FILE, content_state)
+    return next_type
+
+def get_next_media_type():
+    """70% video, 30% image с чередованием"""
+    global content_state
+    # Чередование: если последнее было video, следующее с большей вероятностью image
+    if content_state.get("last_media") == "video":
+        media_type = "video" if random.random() < 0.4 else "image"  # 40% video, 60% image
+    else:
+        media_type = "video" if random.random() < 0.9 else "image"  # 90% video, 10% image
+    content_state["last_media"] = media_type
+    save_json(CONTENT_STATE_FILE, content_state)
+    return media_type
 
 def save_all():
     trimmed_ids    = list(posted_ids)[-MAX_HISTORY_SIZE:]
     trimmed_hashes = list(posted_hashes)[-MAX_HISTORY_SIZE:]
     save_json(HISTORY_FILE, trimmed_ids)
     save_json(HASHES_FILE,  trimmed_hashes)
+    save_json(CONTENT_STATE_FILE, content_state)
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 def clean_tags(tags):
@@ -259,13 +282,20 @@ def _request_with_backoff(url, params, headers, max_retries=3):
     return None
 
 def fetch_civitai():
+    # Full variations with X and XXX (XXX may not work now, but could in future)
     variations = [
-        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Day"},
-        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Week"},
-        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Month"},
-        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "nsfw": "X", "sort": "Newest",         "period": "Day"},
-        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "nsfw": "X", "sort": "Newest",         "period": "Week"},
-        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "nsfw": "X", "sort": "Newest",         "period": "Month"}
+        {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Day"},
+        {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Week"},
+        {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Month"},
+        {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Day"},
+        {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Week"},
+        {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Month"},
+        {"limit": 100, "nsfw": "XXX", "sort": "Most Reactions", "period": "Day"},
+        {"limit": 100, "nsfw": "XXX", "sort": "Most Reactions", "period": "Week"},
+        {"limit": 100, "nsfw": "XXX", "sort": "Most Reactions", "period": "Month"},
+        {"limit": 100, "nsfw": "XXX", "sort": "Newest",         "period": "Day"},
+        {"limit": 100, "nsfw": "XXX", "sort": "Newest",         "period": "Week"},
+        {"limit": 100, "nsfw": "XXX", "sort": "Newest",         "period": "Month"},
     ]
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
@@ -279,6 +309,11 @@ def fetch_civitai():
             )
             if r is None:
                 logger.warning(f"No response for params {params}, trying next variation")
+                continue
+
+            # Handle 400 Bad Request (e.g., nsfw=XXX not supported)
+            if r.status_code == 400:
+                logger.debug(f"Skipping invalid params {params} (400 Bad Request)")
                 continue
 
             data = r.json()
@@ -394,9 +429,16 @@ def fetch_and_pick():
         if not items:
             logger.warning("CivitAI returned nothing, falling back to Rule34")
             source = "rule34"
-            items = fetch_rule34(limit=100)
+            # Чередование между 3D и AI, 70% video / 30% image
+            content_type = get_next_content_type()
+            media_type = get_next_media_type()
+            items = fetch_rule34(limit=100, content_type=content_type, media_type=media_type)
     else:
-        items = fetch_rule34(limit=100)
+        # Чередование между 3D и AI, 70% video / 30% image
+        content_type = get_next_content_type()
+        media_type = get_next_media_type()
+        logger.info(f"Rule34 content_type={content_type}, media_type={media_type}")
+        items = fetch_rule34(limit=100, content_type=content_type, media_type=media_type)
         if not items:
             logger.warning("Rule34 returned nothing, falling back to CivitAI")
             source = "civitai"

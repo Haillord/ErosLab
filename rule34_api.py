@@ -19,8 +19,52 @@ TAG_SETS = [
     "3d_(artwork) tagme",
 ]
 
-def fetch_rule34(tags: str = None, limit: int = 100) -> List[Dict[str, Any]]:
-    """Парсинг Rule34 через API с авторизацией"""
+# Теги для ИИ-контента (AI generated)
+AI_TAG_SETS = [
+    "stable_diffusion",
+    "ai_generated",
+    "generated_by_ai",
+    "novelai",
+    "stable_diffusion video",
+    "ai_generated video",
+]
+
+# Теги для 3D контента
+THREE_D_TAG_SETS = [
+    "3d_(artwork)",
+    "3d video",
+    "3d_(artwork) animated",
+]
+
+def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed", media_type: str = "mixed") -> List[Dict[str, Any]]:
+    """
+    Парсинг Rule34 через API с авторизацией
+    
+    Args:
+        tags: конкретные теги (если None, выбираются случайно)
+        limit: количество постов
+        content_type: "mixed", "3d", "ai" — тип контента
+        media_type: "mixed", "video", "image" — тип медиа (70% video, 30% image)
+    """
+    
+    # Выбор тегов на основе типа контента
+    if tags is None:
+        if content_type == "ai":
+            tags = random.choice(AI_TAG_SETS)
+        elif content_type == "3d":
+            tags = random.choice(THREE_D_TAG_SETS)
+        else:
+            tags = random.choice(TAG_SETS)
+    
+    # Добавляем тег для видео или фото если нужно
+    if media_type == "video" and "video" not in tags and "animated" not in tags:
+        tags = tags + " video"
+    elif media_type == "image" and "video" not in tags and "animated" not in tags:
+        tags = tags + " photo"
+    
+    # Добавляем rating:explicit если нет
+    if "rating:explicit" not in tags:
+        tags = tags + " rating:explicit"
 
     if not R34_USER_ID or not R34_API_KEY:
         logger.error("API credentials are missing in environment variables!")
