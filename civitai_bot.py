@@ -257,18 +257,12 @@ def _request_with_backoff(url, params, headers, max_retries=3):
 
 def fetch_civitai():
     variations = [
-        {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Day"},
-        {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Week"},
-        {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Month"},
-        {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Day"},
-        {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Week"},
-        {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Month"},
-        {"limit": 100, "nsfw": "XXX", "sort": "Most Reactions", "period": "Day"},
-        {"limit": 100, "nsfw": "XXX", "sort": "Most Reactions", "period": "Week"},
-        {"limit": 100, "nsfw": "XXX", "sort": "Most Reactions", "period": "Month"},
-        {"limit": 100, "nsfw": "XXX", "sort": "Newest",         "period": "Day"},
-        {"limit": 100, "nsfw": "XXX", "sort": "Newest",         "period": "Week"},
-        {"limit": 100, "nsfw": "XXX", "sort": "Newest",         "period": "Month"},
+        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Day"},
+        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Week"},
+        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Month"},
+        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "nsfw": "X", "sort": "Newest",         "period": "Day"},
+        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "nsfw": "X", "sort": "Newest",         "period": "Week"},
+        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "nsfw": "X", "sort": "Newest",         "period": "Month"}
     ]
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
