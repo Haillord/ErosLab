@@ -21,8 +21,6 @@ import telegram
 from telegram import Bot
 from caption_generator import generate_caption
 from rule34_api import fetch_rule34
-from quality_filter import QualityFilter, filter_posts_by_quality
-from watermark import add_watermark, should_add_watermark
 
 # ==================== НАСТРОЙКИ ====================
 TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -30,7 +28,7 @@ TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "@eroslabai")
 CIVITAI_API_KEY     = os.environ.get("CIVITAI_API_KEY", "")
 
 WATERMARK_TEXT   = "@eroslabai"
-MIN_LIKES        = 5
+MIN_LIKES        = 20
 MIN_IMAGE_SIZE   = 512
 
 HISTORY_FILE = "posted_ids.json"
@@ -118,10 +116,8 @@ def check_media_size(data, url):
         return False
 
 def get_video_duration(data: bytes) -> float:
-    """Возвращает длительность видео в секундах или 0.0 если файл нечитаем."""
+    """Возвращает длительность или 0.0 если видео битое"""
     tmp_path = None
-    # FIX: инициализируем duration_str заранее, чтобы избежать NameError в except ValueError
-    duration_str = "N/A"
     try:
         with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp:
             tmp.write(data)
@@ -136,11 +132,12 @@ def get_video_duration(data: bytes) -> float:
             return 0.0
 
         duration_str = result.stdout.strip()
-
+        
+        # 🔥 ФИКС: проверяем, что вернулось не 'N/A'
         if not duration_str or duration_str == 'N/A':
             logger.warning(f"ffprobe returned: '{duration_str}'")
             return 0.0
-
+        
         duration = float(duration_str)
         return duration
 
@@ -148,7 +145,7 @@ def get_video_duration(data: bytes) -> float:
         logger.error(f"Error converting duration '{duration_str}' to float: {e}")
         return 0.0
     except Exception as e:
-        logger.error(f"Error getting video duration: {e}")
+        logger.error(f"Error: {e}")
         return 0.0
     finally:
         if tmp_path and os.path.exists(tmp_path):
@@ -233,11 +230,6 @@ def extract_tags(item):
 
 # ==================== CIVITAI API ====================
 def _request_with_backoff(url, params, headers, max_retries=3):
-    """
-    HTTP GET с экспоненциальным backoff при 429 и 5xx.
-    Переменная r объявлена до цикла, чтобы избежать NameError в except-ветках.
-    """
-    r = None
     for attempt in range(max_retries):
         try:
             r = requests.get(url, params=params, headers=headers, timeout=30)
@@ -253,8 +245,7 @@ def _request_with_backoff(url, params, headers, max_retries=3):
             if attempt < max_retries - 1:
                 time.sleep(3)
         except requests.exceptions.HTTPError as e:
-            # r гарантированно не None здесь, потому что HTTPError бросает raise_for_status()
-            if r is not None and r.status_code >= 500:
+            if r.status_code >= 500:
                 logger.warning(f"Server error {r.status_code}, retry {attempt + 1}/{max_retries}")
                 time.sleep(2 ** attempt * 2)
             else:
@@ -266,12 +257,18 @@ def _request_with_backoff(url, params, headers, max_retries=3):
 
 def fetch_civitai():
     variations = [
-        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "sort": "Most Reactions", "period": "Day"},
-        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "sort": "Most Reactions", "period": "Week"},
-        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "sort": "Most Reactions", "period": "Month"},
-        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "sort": "Newest",         "period": "Day"},
-        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "sort": "Newest",         "period": "Week"},
-        {"limit": 100, "nsfwLevel": 31, "browsingLevel": 31, "sort": "Newest",         "period": "Month"},
+        {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Day"},
+        {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Week"},
+        {"limit": 100, "nsfw": "X",   "sort": "Most Reactions", "period": "Month"},
+        {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Day"},
+        {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Week"},
+        {"limit": 100, "nsfw": "X",   "sort": "Newest",         "period": "Month"},
+        {"limit": 100, "nsfw": "XXX", "sort": "Most Reactions", "period": "Day"},
+        {"limit": 100, "nsfw": "XXX", "sort": "Most Reactions", "period": "Week"},
+        {"limit": 100, "nsfw": "XXX", "sort": "Most Reactions", "period": "Month"},
+        {"limit": 100, "nsfw": "XXX", "sort": "Newest",         "period": "Day"},
+        {"limit": 100, "nsfw": "XXX", "sort": "Newest",         "period": "Week"},
+        {"limit": 100, "nsfw": "XXX", "sort": "Newest",         "period": "Month"},
     ]
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
@@ -290,10 +287,9 @@ def fetch_civitai():
             data = r.json()
             items = data.get("items", [])
 
-            # FIX: используем правильные имена ключей из словаря params
             logger.info(
                 f"Got {len(items)} items "
-                f"(nsfwLevel={params['nsfwLevel']}, sort={params['sort']}, period={params.get('period', 'All')})"
+                f"(nsfw={params['nsfw']}, sort={params['sort']}, period={params['period']})"
             )
 
             erotic_items = []
@@ -379,31 +375,22 @@ def _pick_by_content_type(fresh):
     return weighted_choice(fallback) if fallback else None
 
 
-def fetch_and_pick_with_quality():
-    """
-    Выбор поста с фильтром качества + категория AI.
-    Возвращает (item, data) или None.
-    Данные скачиваются ОДИН РАЗ здесь, чтобы main() не делал повторный запрос.
-    """
-    source = random.choice(["civitai", "civitai", "rule34", "rule34_ai"])
+def fetch_and_pick():
+    source = random.choice(["civitai", "rule34"])
     logger.info(f"Source selected: {source}")
 
-    if source == "rule34_ai":
-        from rule34_api import AI_TAG_SETS
-        tags = random.choice(AI_TAG_SETS)
-        logger.info(f"AI Category mode: using tags '{tags}'")
-        items = fetch_rule34(tags=tags, limit=100)
-        if items:
-            for i in items:
-                i["source"] = "rule34_ai"
-
-    elif source == "civitai":
+    if source == "civitai":
         items = fetch_civitai()
         if not items:
             logger.warning("CivitAI returned nothing, falling back to Rule34")
+            source = "rule34"
             items = fetch_rule34(limit=100)
     else:
         items = fetch_rule34(limit=100)
+        if not items:
+            logger.warning("Rule34 returned nothing, falling back to CivitAI")
+            source = "civitai"
+            items = fetch_civitai()
 
     if not items:
         logger.warning("No items found from any source")
@@ -416,55 +403,42 @@ def fetch_and_pick_with_quality():
         logger.info("No fresh items")
         return None
 
-    video_posts = [i for i in fresh if _is_video(i["url"])]
-    image_posts = [i for i in fresh if not _is_video(i["url"])]
+    if source == "rule34":
+        selected = _pick_by_content_type(fresh)
+    else:
+        content_type = random.choice(['image', 'video'])
+        logger.info(f"Content type selection (civitai): {content_type}")
 
-    prefer_video = random.choice([True, False])
+        if content_type == 'image':
+            type_items = [i for i in fresh if not _is_video(i["url"])]
+            fallback_items = [i for i in fresh if _is_video(i["url"])]
+        else:
+            type_items = [i for i in fresh if _is_video(i["url"])]
+            fallback_items = [i for i in fresh if not _is_video(i["url"])]
 
-    if prefer_video and video_posts:
-        selected_video = weighted_choice(video_posts)
-        if selected_video:
-            try:
-                logger.info(f"Downloading video candidate: {selected_video['url']}")
-                r = requests.get(selected_video["url"], timeout=30)
-                r.raise_for_status()
-                data = r.content
-                duration = get_video_duration(data)
-                if 0.5 <= duration <= 60:
-                    logger.info(f"Video accepted: duration={duration:.2f}s, size={len(data)} bytes")
-                    return selected_video, data
-                else:
-                    logger.warning(f"Video rejected: duration={duration:.2f}s (out of 0.5-60s range)")
-            except Exception as e:
-                logger.warning(f"Video download failed: {e}")
+        logger.info(f"Items of selected type ({content_type}): {len(type_items)}")
 
-    if image_posts:
-        quality_filter = QualityFilter(min_score=6.0)
-        valid_posts, image_data_list = [], []
+        if not type_items:
+            fallback_type = 'video' if content_type == 'image' else 'image'
+            logger.info(f"No {content_type} items found, trying {fallback_type}: {len(fallback_items)}")
+            type_items = fallback_items
 
-        for item in image_posts[:20]:
-            try:
-                logger.info(f"Downloading image candidate: {item['url']}")
-                r = requests.get(item["url"], timeout=30)
-                r.raise_for_status()
-                data = r.content
-                img_hash = hashlib.sha256(data).hexdigest()
-                if img_hash not in posted_hashes:
-                    valid_posts.append(item)
-                    image_data_list.append(data)
-            except Exception as e:
-                logger.warning(f"Image download failed ({item['url']}): {e}")
-                continue
+        if not type_items:
+            logger.info("No suitable items found")
+            return None
 
-        if valid_posts:
-            selected_post, selected_image_data, quality_result = filter_posts_by_quality(
-                valid_posts, image_data_list, min_score=6.0
-            )
-            if selected_post:
-                return selected_post, selected_image_data
+        selected = weighted_choice(type_items)
 
-    logger.warning("No suitable post found after quality filtering")
-    return None
+    if not selected:
+        logger.info("No suitable items found after type filtering")
+        return None
+
+    logger.info(
+        f"Selected: {selected['id']} "
+        f"(source:{source}, rating:{selected['rating']}, "
+        f"likes:{selected['likes']}, tags:{len(selected['tags'])})"
+    )
+    return selected
 
 
 def weighted_choice(items):
@@ -502,25 +476,23 @@ async def main():
     MAX_ATTEMPTS  = 10
 
     for attempt in range(MAX_ATTEMPTS):
-        logger.info(f"--- Attempt {attempt + 1}/{MAX_ATTEMPTS} ---")
+        item = fetch_and_pick()
 
-        # FIX: fetch_and_pick_with_quality уже скачивает файл.
-        # main() больше НЕ делает повторный requests.get.
-        result = fetch_and_pick_with_quality()
-
-        if result is None:
-            logger.info("No suitable posts available")
+        if not item:
+            logger.info("No more fresh posts available")
             return
 
-        item, data = result
-
-        if data is None:
-            logger.warning("Got item but no data, skipping")
+        try:
+            logger.info(f"Downloading: {item['url']}")
+            r = requests.get(item["url"], timeout=60)
+            r.raise_for_status()
+            data = r.content
+            logger.info(f"Downloaded {len(data)} bytes")
+        except Exception as e:
+            logger.error(f"Download Error: {e}")
             posted_ids.add(item["id"])
             save_all()
             continue
-
-        logger.info(f"Working with: {item['id']} ({len(data)} bytes)")
 
         if len(data) > MAX_FILE_SIZE:
             logger.warning(f"File too large ({len(data)} bytes > 50MB), skipping")
@@ -537,24 +509,21 @@ async def main():
                 save_all()
                 continue
         else:
-            # Для видео duration уже проверена в fetch_and_pick_with_quality,
-            # но делаем повторную проверку на случай edge-кейсов
             duration = get_video_duration(data)
             if duration < 0.5 or duration > 60:
-                logger.warning(f"Video duration check failed: {duration:.2f}s, skipping")
+                logger.warning(f"Video too short ({duration:.2f}s) or too long, skipping")
                 posted_ids.add(item["id"])
                 save_all()
                 continue
-            logger.info(f"Video duration confirmed: {duration:.2f}s")
+            logger.info(f"Video duration: {duration:.2f}s")
 
         img_hash = hashlib.sha256(data).hexdigest()
         if img_hash in posted_hashes:
-            logger.warning("Duplicate content detected by hash, skipping")
+            logger.warning("Duplicate content detected")
             posted_ids.add(item["id"])
             save_all()
             continue
 
-        # Дошли до сюда — пост подходит
         break
     else:
         logger.error(f"No suitable post found after {MAX_ATTEMPTS} attempts")
@@ -569,10 +538,12 @@ async def main():
             caption_image_data = thumbnail
             logger.info(f"Using video thumbnail for vision caption ({len(thumbnail)} bytes)")
         else:
+            # Если thumbnail не получился, пробуем использовать первый фрагмент видео
+            # как "изображение" (некоторые vision модели могут его обработать)
             caption_image_data = data[:500000] if len(data) > 500000 else data
-            logger.warning(f"Thumbnail failed, using first {len(caption_image_data)} bytes for vision")
+            logger.warning(f"Thumbnail failed, using first {len(caption_image_data)} bytes of video for vision")
 
-    # ========== CAPTION ==========
+    # ========== ОТПРАВКА В TELEGRAM ==========
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     caption = generate_caption(
         tags=item["tags"],
@@ -587,43 +558,25 @@ async def main():
     logger.info(f"Tags for caption ({len(item['tags'])}): {item['tags'][:8]}")
     logger.info(f"Caption preview: {caption[:100]}")
 
-    # ========== ОТПРАВКА В TELEGRAM ==========
     try:
         if is_video:
-            logger.info("Creating video thumbnail with watermark...")
-            thumbnail = get_video_thumbnail(data)
-            if thumbnail:
-                watermarked_thumbnail = add_watermark(thumbnail, text=WATERMARK_TEXT, opacity=0.3)
-                logger.info("Sending video with watermark thumbnail")
-                await send_with_retry(
-                    bot.send_video,
-                    chat_id=TELEGRAM_CHANNEL_ID,
-                    video=BytesIO(data),
-                    thumbnail=BytesIO(watermarked_thumbnail),
-                    caption=caption,
-                    supports_streaming=True,
-                    write_timeout=60,
-                    read_timeout=60
-                )
-            else:
-                logger.warning("Thumbnail extraction failed, sending video without watermark thumbnail")
-                await send_with_retry(
-                    bot.send_video,
-                    chat_id=TELEGRAM_CHANNEL_ID,
-                    video=BytesIO(data),
-                    caption=caption,
-                    supports_streaming=True,
-                    write_timeout=60,
-                    read_timeout=60
-                )
+            logger.info("Sending as video/gif")
+            logger.info("Using original video (no optimization)")
+            await send_with_retry(
+                bot.send_video,
+                chat_id=TELEGRAM_CHANNEL_ID,
+                video=BytesIO(data),
+                caption=caption,
+                supports_streaming=True,
+                write_timeout=60,
+                read_timeout=60
+            )
         else:
-            logger.info("Adding watermark to image...")
-            watermarked_data = add_watermark(data, text=WATERMARK_TEXT, opacity=0.3)
-            logger.info("Sending image with watermark")
+            logger.info("Sending as image without watermark")
             await send_with_retry(
                 bot.send_photo,
                 chat_id=TELEGRAM_CHANNEL_ID,
-                photo=BytesIO(watermarked_data),
+                photo=BytesIO(data),
                 caption=caption,
                 write_timeout=60,
                 read_timeout=60

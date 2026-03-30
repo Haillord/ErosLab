@@ -10,7 +10,7 @@ R34_API_KEY = os.getenv("R34_API_KEY") or os.getenv("RULE34_API_KEY")
 
 logger = logging.getLogger("ErosLab.Rule34")
 
-# Стандартные наборы тегов для обычных постов
+# Разнообразные наборы тегов — выбираем случайный каждый раз
 TAG_SETS = [
     "animated",
     "3d_(artwork)",
@@ -19,24 +19,6 @@ TAG_SETS = [
     "3d_(artwork) tagme",
 ]
 
-# Наборы тегов для категории AI (имитация rule34gen)
-AI_TAG_SETS = [
-    "ai_generated",
-    "ai_generated video",
-    "ai_generated high_res",
-    "stable_diffusion animated",
-    "ai_generated 3d_(artwork)",
-    "novelai",
-    "midjourney",
-    "ai_generated realistic"
-]
-
-# Максимальный номер страницы для случайного выбора.
-# Rule34 обычно имеет сотни страниц по популярным тегам,
-# но чем выше — тем меньше постов. 50 — безопасный потолок.
-MAX_PAGE = 50
-
-
 def fetch_rule34(tags: str = None, limit: int = 100) -> List[Dict[str, Any]]:
     """Парсинг Rule34 через API с авторизацией"""
 
@@ -44,14 +26,10 @@ def fetch_rule34(tags: str = None, limit: int = 100) -> List[Dict[str, Any]]:
         logger.error("API credentials are missing in environment variables!")
         return []
 
-    # Если теги не переданы, выбираем случайный стандартный сет
     if tags is None:
         tags = random.choice(TAG_SETS)
 
-    # Случайная страница — чтобы не получать одинаковые топ-100 при каждом запуске
-    pid = random.randint(0, MAX_PAGE)
-
-    logger.info(f"Rule34 Request: tags='{tags}', limit={limit}, page={pid}")
+    logger.info(f"Rule34: using tags = '{tags}'")
 
     url = "https://api.rule34.xxx/index.php"
     params = {
@@ -61,7 +39,6 @@ def fetch_rule34(tags: str = None, limit: int = 100) -> List[Dict[str, Any]]:
         "json": 1,
         "limit": limit,
         "tags": tags,
-        "pid": pid,
         "user_id": R34_USER_ID,
         "api_key": R34_API_KEY
     }
@@ -73,16 +50,8 @@ def fetch_rule34(tags: str = None, limit: int = 100) -> List[Dict[str, Any]]:
         r.raise_for_status()
 
         if not r.text.strip():
-            # Страница пустая — возможно, вышли за пределы. Пробуем страницу 0.
-            if pid > 0:
-                logger.warning(f"Rule34 empty response on page {pid}, retrying with page 0")
-                params["pid"] = 0
-                r = requests.get(url, params=params, headers=headers, timeout=30)
-                r.raise_for_status()
-
-            if not r.text.strip():
-                logger.warning("Rule34 returned empty response")
-                return []
+            logger.warning("Rule34 returned empty response")
+            return []
 
         posts = r.json()
 
@@ -90,11 +59,19 @@ def fetch_rule34(tags: str = None, limit: int = 100) -> List[Dict[str, Any]]:
             logger.error(f"Rule34 unexpected response format: {type(posts)}")
             return []
 
+        logger.info(f"Rule34 raw posts count: {len(posts)}")
+
+        # Логируем первые посты чтобы видеть структуру
+        if posts:
+            logger.info(f"Rule34 sample keys: {list(posts[0].keys())}")
+            logger.info(f"Rule34 sample ratings: {[p.get('rating') for p in posts[:5]]}")
+
         results = []
         for post in posts:
             if not isinstance(post, dict):
                 continue
 
+            # Принимаем все рейтинги
             rating = post.get("rating", "")
             mapped_rating = "XXX" if rating == "e" else "X"
 
@@ -114,7 +91,7 @@ def fetch_rule34(tags: str = None, limit: int = 100) -> List[Dict[str, Any]]:
                 "source":  "rule34"
             })
 
-        logger.info(f"Rule34: Found {len(results)} posts (page {pid})")
+        logger.info(f"Rule34: Found {len(results)} posts after filtering")
         return results
 
     except Exception as e:
