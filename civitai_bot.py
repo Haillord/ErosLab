@@ -32,7 +32,7 @@ MIN_LIKES        = 20
 MIN_IMAGE_SIZE   = 512
 
 # Временно отключить Rule34 (True = только CivitAI для тестов)
-TEST_CIVITAI_ONLY = False
+TEST_CIVITAI_ONLY = True
 
 HISTORY_FILE = "posted_ids.json"
 HASHES_FILE  = "posted_hashes.json"
