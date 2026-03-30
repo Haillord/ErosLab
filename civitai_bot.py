@@ -350,7 +350,7 @@ def fetch_civitai():
                     is_x_rating = False
                     if isinstance(nsfw_level, str) and nsfw_level.upper() in ["X", "XXX"]:
                         is_x_rating = True
-                    elif isinstance(nsfw_level, (int, float)) and 32 <= nsfw_level <= 64:
+                    elif isinstance(nsfw_level, (int, float)) and 16 <= nsfw_level <= 64:
                         # Только Extreme/Hardcore контент (nsfwLevel 32-64)
                         is_x_rating = True
 
