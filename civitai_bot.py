@@ -227,46 +227,6 @@ def get_video_thumbnail(data: bytes) -> bytes:
         if tmp_out and os.path.exists(tmp_out):
             os.unlink(tmp_out)
 
-def convert_gif_to_mp4(gif_data: bytes) -> bytes:
-    """Конвертирует GIF в MP4 для лучшей совместимости с Telegram."""
-    tmp_in = None
-    tmp_out = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix='.gif', delete=False) as tmp:
-            tmp.write(gif_data)
-            tmp_in = tmp.name
-
-        tmp_out = tmp_in + '.mp4'
-
-        # Конвертация GIF → MP4
-        cmd = [
-            'ffmpeg', '-y', '-i', tmp_in,
-            '-c:v', 'libx264',
-            '-pix_fmt', 'yuv420p',
-            '-movflags', '+faststart',
-            '-preset', 'fast',
-            tmp_out
-        ]
-        result = subprocess.run(cmd, capture_output=True, timeout=120)
-
-        if result.returncode != 0:
-            logger.warning(f"GIF→MP4 conversion failed: {result.stderr.decode()[:200]}")
-            return None
-
-        with open(tmp_out, 'rb') as f:
-            mp4_data = f.read()
-
-        logger.info(f"GIF converted to MP4: {len(gif_data)} → {len(mp4_data)} bytes")
-        return mp4_data
-
-    except Exception as e:
-        logger.error(f"GIF→MP4 conversion error: {e}")
-        return None
-    finally:
-        if tmp_in and os.path.exists(tmp_in):
-            os.unlink(tmp_in)
-        if tmp_out and os.path.exists(tmp_out):
-            os.unlink(tmp_out)
 
 # ==================== RETRY ДЛЯ TELEGRAM ====================
 async def send_with_retry(func, *args, retries=3, **kwargs):
@@ -631,16 +591,6 @@ async def main():
         is_video = _is_video(item["url"])
         is_gif = _is_gif(item["url"])
 
-        # Конвертируем GIF в MP4 для лучшей совместимости
-        if is_gif:
-            mp4_data = convert_gif_to_mp4(data)
-            if mp4_data:
-                data = mp4_data
-                is_video = True  # Теперь это видео
-                logger.info("GIF converted to MP4")
-            else:
-                logger.warning("GIF conversion failed, sending as animation")
-
         # Получаем технические данные для caption
         img_width = None
         img_height = None
@@ -748,10 +698,12 @@ async def main():
         if is_video:
             logger.info("Sending as video")
             logger.info("Using original video (no optimization)")
+            video_io = BytesIO(data)
+            video_io.name = "video.mp4"
             await send_with_retry(
                 bot.send_video,
                 chat_id=TELEGRAM_CHANNEL_ID,
-                video=BytesIO(data),
+                video=video_io,
                 caption=caption,
                 parse_mode="HTML",
                 supports_streaming=True,
@@ -760,10 +712,12 @@ async def main():
             )
         elif _is_gif(item["url"]):
             logger.info("Sending as GIF animation")
+            anim_io = BytesIO(data)
+            anim_io.name = "animation.gif"
             await send_with_retry(
                 bot.send_animation,
                 chat_id=TELEGRAM_CHANNEL_ID,
-                animation=BytesIO(data),
+                animation=anim_io,
                 caption=caption,
                 parse_mode="HTML",
                 write_timeout=60,
@@ -771,10 +725,12 @@ async def main():
             )
         else:
             logger.info("Sending as image without watermark")
+            photo_io = BytesIO(data)
+            photo_io.name = "image.jpg"
             await send_with_retry(
                 bot.send_photo,
                 chat_id=TELEGRAM_CHANNEL_ID,
-                photo=BytesIO(data),
+                photo=photo_io,
                 caption=caption,
                 parse_mode="HTML",
                 write_timeout=60,
