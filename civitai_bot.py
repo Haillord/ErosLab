@@ -638,12 +638,24 @@ async def main():
             else:
                 logger.warning("GIF conversion failed, sending as animation")
 
+        # Получаем технические данные для caption
+        img_width = None
+        img_height = None
+        file_size_bytes = len(data)
+
         if not is_video:
             if not check_media_size(data, item["url"]):
                 logger.warning("Image size too small, skipping")
                 posted_ids.add(item["id"])
                 save_all()
                 continue
+            # Получаем размеры изображения
+            try:
+                img = Image.open(BytesIO(data))
+                img_width, img_height = img.size
+                logger.info(f"Image dimensions: {img_width}x{img_height}")
+            except Exception as e:
+                logger.warning(f"Could not get image dimensions: {e}")
         else:
             duration = get_video_duration(data)
             if duration < 0.5 or duration > 60:
@@ -708,6 +720,9 @@ async def main():
         # Если нет явных тегов - определяем по source
         content_type = "ai" if item.get("source") == "civitai" else "3d"
     
+    # Получаем дату из метаданных
+    post_date = item.get("createdAt")
+
     caption = generate_caption(
         tags=item["tags"],
         rating=item["rating"],
@@ -716,7 +731,11 @@ async def main():
         image_url=item["url"] if not is_video else None,
         watermark=WATERMARK_TEXT,
         suggestion="💬 Предложка: @Haillord",
-        content_type=content_type
+        content_type=content_type,
+        width=img_width,
+        height=img_height,
+        file_size=file_size_bytes,
+        date=post_date
     )
 
     logger.info(f"Tags for caption ({len(item['tags'])}): {item['tags'][:8]}")
