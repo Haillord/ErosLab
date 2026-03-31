@@ -1,27 +1,12 @@
 """
-Генератор описаний: Vision (OpenRouter) → Groq → Pollinations → fallback
-Минималистичный стиль — короткие цепляющие подписи без кринжа.
+Генератор описаний: только хэштеги + footer.
+Без AI-подписей, без кринжа.
 """
 
-import sys
-import io
-import requests
 import logging
-import random
-import urllib.parse
-import base64
 import os
 
-# Если проблема с выводом в консоль
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-
 logger = logging.getLogger(__name__)
-
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-
-VISION_MODEL = "google/gemini-2.0-flash-001"
 
 
 # ==================== ФИЛЬТРЫ ====================
@@ -43,6 +28,7 @@ TECHNICAL_TAGS = {
     "stable_diffusion", "novelai", "midjourney", "lora"
 }
 
+
 def _safe_tags(tags):
     """Только для хэштегов — убираем NSFW и технические теги."""
     result = []
@@ -59,319 +45,18 @@ def _safe_tags(tags):
         result.append(t)
     return result
 
-def _prompt_tags(tags):
-    """Теги для промпта — фильтруем мусор, переводим в читаемый вид."""
-    result = []
-    for t in tags:
-        t_lower = t.lower()
-        if t_lower in TECHNICAL_TAGS:
-            continue
-        if t_lower.count("_") > 2:
-            continue
-        if any(c.isdigit() for c in t_lower):
-            continue
-        clean = t.replace("_(artwork)", "").replace("_(character)", "")
-        human = clean.replace("_", " ").strip()
-        if human:
-            result.append(human)
-    return result[:8]
-
-
-# ==================== VISION ====================
-
-def _describe_image(image_data: bytes = None, image_url: str = None) -> str:
-    """Описывает изображение через OpenRouter vision модель (устойчиво к ошибкам)."""
-
-    if not OPENROUTER_API_KEY:
-        logger.warning("Vision: no OPENROUTER_API_KEY, skipping")
-        return None
-
-    if not image_data and not image_url:
-        logger.warning("Vision: no image data or url provided")
-        return None
-
-    logger.info("Vision: attempting image description...")
-
-    try:
-        # === Формируем image content ===
-        if image_data:
-            try:
-                b64 = base64.b64encode(image_data).decode("utf-8")
-
-                if image_data.startswith(b'\x89PNG'):
-                    mime = "image/png"
-                elif image_data.startswith(b'GIF'):
-                    mime = "image/gif"
-                else:
-                    mime = "image/jpeg"
-
-                img_content = {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:{mime};base64,{b64}"
-                    }
-                }
-
-            except Exception as e:
-                logger.error(f"Vision: base64 encoding failed: {e}")
-                return None
-
-        else:
-            img_content = {
-                "type": "image_url",
-                "image_url": {
-                    "url": image_url
-                }
-            }
-
-        # === Запрос ===
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": VISION_MODEL,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            img_content,
-                            {
-                                "type": "text",
-                                "text": (
-                                    "Describe this image in Russian. "
-                                    "Focus on mood, tension and key elements. "
-                                    "Write 1 short evocative sentences. "
-                                    "Avoid explicit words."
-                                )
-                            }
-                        ]
-                    }
-                ],
-                "max_tokens": 120
-            },
-            timeout=20
-        )
-
-        logger.info(f"Vision status: {response.status_code}")
-
-        if response.status_code != 200:
-            logger.warning(f"Vision API error {response.status_code}: {response.text[:200]}")
-            return None
-
-        # === Безопасный разбор ===
-        try:
-            data = response.json()
-        except Exception as e:
-            logger.error(f"Vision: JSON decode error: {e}")
-            return None
-
-        choices = data.get("choices")
-        if not choices:
-            logger.warning("Vision: no choices in response")
-            return None
-
-        message = choices[0].get("message", {})
-        content = message.get("content")
-
-        if not content or not isinstance(content, str):
-            logger.warning("Vision: empty or invalid content")
-            return None
-
-        description = content.strip()
-
-        if not description:
-            logger.warning("Vision: content empty after strip")
-            return None
-
-        # === Фильтр отказов ===
-        bad_phrases = [
-            "cannot", "can't", "nsfw", "explicit", "sorry",
-            "unable", "not allowed", "refuse", "i cannot"
-        ]
-
-        if any(p in description.lower() for p in bad_phrases):
-            logger.warning(f"Vision rejected content: {description[:100]}")
-            return None
-
-        logger.info(f"Vision description: {description[:120]}")
-        return description
-
-    except requests.exceptions.Timeout:
-        logger.warning("Vision: request timeout")
-        return None
-
-    except Exception as e:
-        logger.error(f"Vision error: {e}")
-        return None
-
-
-# ==================== ПРОМПТ ====================
-
-def _build_prompt(tags, vision_description=None):
-    human_tags = _prompt_tags(tags)
-    tags_context = f"Контекст: {', '.join(human_tags[:3])}" if human_tags else ""
-    vision_context = f"Атмосфера: {vision_description}" if vision_description else ""
-
-    context_parts = [tags_context, vision_context]
-    context = "\n".join(p for p in context_parts if p)
-
-    prompt = f"""Напиши короткую подпись для изображения (1-2 предложения, до 15 слов).
-
-Стиль:
-— кратко и по делу
-— без обращений к читателю
-— без описания внешности
-— 1-2 эмодзи максимум
-— без кавычек
-
-{context}
-
-Только текст подписи."""
-
-    return prompt
-
-
-# ==================== ВАЛИДАЦИЯ ====================
-
-def trim_to_sentence(text, max_len=250):
-    if len(text) <= max_len:
-        return text
-    truncated = text[:max_len]
-    last_punct = max(truncated.rfind('.'), truncated.rfind('!'), truncated.rfind('?'))
-    if last_punct > max_len * 0.7:
-        return truncated[:last_punct + 1]
-    last_space = truncated.rfind(' ')
-    if last_space > max_len * 0.7:
-        return truncated[:last_space] + '...'
-    return truncated + '...'
-
-def _is_valid_response(text):
-    bad_phrases = [
-        "I'm sorry", "I can't", "I cannot", "<!DOCTYPE", "<html", "As an AI",
-        "Не могу выполнить этот запрос", "Извините, я не могу", "Я не могу",
-        "не могу выполнить", "не могу ответить", "не могу сгенерировать",
-        "как ИИ", "как языковая модель"
-    ]
-    return bool(text) and len(text) > 5 and not any(p in text for p in bad_phrases)
-
-
-# ==================== ПRОВАЙДЕРЫ ====================
-
-def _try_groq(prompt):
-    if not GROQ_API_KEY:
-        logger.warning("No GROQ_API_KEY, skipping Groq")
-        return None
-    
-    logger.info("Attempting Groq API call...")
-    
-    try:
-        import json
-        response = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-            data=json.dumps({
-                "model": "llama-3.3-70b-versatile",
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 80,
-                "temperature": 0.7
-            }),
-            timeout=15
-        )
-        
-        logger.info(f"Groq API response status: {response.status_code}")
-        
-        if response.status_code == 200:
-            try:
-                data = response.json()
-                try:
-                    text = data["choices"][0]["message"]["content"]
-                    if text and isinstance(text, str):
-                        text = text.strip()
-                        if _is_valid_response(text):
-                            text = trim_to_sentence(text, max_len=200)
-                            logger.info("Groq caption generated successfully")
-                            return text
-                        else:
-                            logger.warning(f"Groq invalid response: {text[:100]}")
-                    else:
-                        logger.warning("Groq empty content")
-                except (KeyError, IndexError, TypeError) as e:
-                    logger.error(f"Groq parse error: {e}")
-            except Exception as e:
-                logger.error(f"Groq JSON decode error: {e}")
-        else:
-            logger.warning(f"Groq status {response.status_code}: {response.text[:100]}")
-    except Exception as e:
-        logger.error(f"Groq error: {e}")
-    return None
-
-def _try_pollinations(prompt):
-    try:
-        encoded = urllib.parse.quote(prompt)
-        response = requests.get(f"https://text.pollinations.ai/{encoded}", timeout=20)
-        if response.status_code == 200:
-            text = response.text.strip()
-            if _is_valid_response(text):
-                text = trim_to_sentence(text, max_len=200)
-                logger.info("Pollinations GET caption generated")
-                return text
-    except Exception as e:
-        logger.warning(f"Pollinations GET failed: {e}")
-
-    try:
-        response = requests.post(
-            "https://text.pollinations.ai/",
-            json={"messages": [{"role": "user", "content": prompt}], "model": "openai", "private": True},
-            headers={"Content-Type": "application/json"},
-            timeout=20
-        )
-        if response.status_code == 200:
-            text = response.text.strip()
-            if _is_valid_response(text):
-                text = trim_to_sentence(text, max_len=200)
-                logger.info("Pollinations POST caption generated")
-                return text
-    except Exception as e:
-        logger.error(f"Pollinations POST failed: {e}")
-    return None
-
-
-# ==================== FALLBACK ====================
-
-FALLBACK_TEXTS = [
-    "Красиво 🔥",
-    "Смотри и наслаждайся 😏",
-    "Без слов 🖤",
-    "Просто оставлю это здесь 👀",
-    "Момент 😌",
-    "Всё сказано 😉",
-    "Лови вайб ✨",
-]
-
 
 # ==================== СБОРКА ====================
 
-def _format_caption(ai_text, tags, footer, content_header=None):
+def _format_caption(tags, footer, content_header=None):
     safe_tags = _safe_tags(tags)
     hashtags = " ".join(f"#{t}" for t in safe_tags[:6]) if safe_tags else ""
-    
+
     header_line = f"{content_header}\n" if content_header else ""
     if hashtags:
-        return f"{header_line}{ai_text}\n\n{hashtags}\n\n{footer}"
-    return f"{header_line}{ai_text}\n\n{footer}"
+        return f"{header_line}\n{hashtags}\n\n{footer}"
+    return f"{header_line}\n{footer}"
 
-def fallback_caption(tags, footer, content_header=None):
-    text = random.choice(FALLBACK_TEXTS)
-    safe_tags = _safe_tags(tags)
-    tags_line = " ".join(f"#{t}" for t in safe_tags[:6]) if safe_tags else ""
-    
-    header_line = f"{content_header}\n" if content_header else ""
-    if tags_line:
-        return f"{header_line}{text}\n\n{tags_line}\n\n{footer}"
-    return f"{header_line}{text}\n\n{footer}"
 
 def generate_caption(tags, rating, likes, image_data=None, image_url=None,
                      watermark="📢 @eroslabai", suggestion="💬 Предложка: @Haillord",
@@ -381,42 +66,11 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
     # Используем HTML-ссылку для "Предложка"
     clickable_suggestion = '💬 <a href="https://t.me/Haillord">Предложка</a>'
     footer = f"{safe_watermark}\n{clickable_suggestion}"
-    
+
     # Форматируем тип контента с цветными кружками
     if content_type == "ai":
         content_header = "🟢 AI Art | 🔴 3D"
-    else:  # 3d
+    else:
         content_header = "🔴 AI Art | 🟢 3D"
-    
-    # Получаем описание изображения
-    vision_description = None
-    
-    if image_data:
-        logger.info(f"Attempting vision with image_data ({len(image_data)} bytes)")
-        vision_description = _describe_image(image_data=image_data)
-    elif image_url:
-        logger.info(f"Attempting vision with image_url: {image_url[:50]}...")
-        vision_description = _describe_image(image_url=image_url)
-    else:
-        logger.warning("No image_data or image_url provided for vision")
-    
-    if vision_description:
-        logger.info(f"Vision description: {vision_description[:100]}...")
-    else:
-        logger.info("Vision failed, using tags only")
-    
-    # Формируем промпт
-    prompt = _build_prompt(tags, vision_description)
-    
-    logger.debug(f"Prompt: {prompt[:200]}...")
-    
-    text = _try_groq(prompt)
-    if not text:
-        logger.info("Groq failed, trying Pollinations...")
-        text = _try_pollinations(prompt)
-    
-    if not text:
-        logger.warning("All caption generators failed, using fallback")
-        return fallback_caption(tags, footer, content_header)
-    
-    return _format_caption(text, tags, footer, content_header)
+
+    return _format_caption(tags, footer, content_header)
