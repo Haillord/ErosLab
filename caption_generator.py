@@ -5,7 +5,6 @@
 
 import logging
 import math
-import os
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -30,6 +29,7 @@ TECHNICAL_TAGS = {
     "stable_diffusion", "novelai", "midjourney", "lora"
 }
 
+MAX_HASHTAGS = 6
 
 
 def _safe_tags(tags):
@@ -69,7 +69,6 @@ def _format_resolution(width, height):
 
     resolution = f"{width}×{height}"
 
-    # Вычисляем соотношение сторон
     gcd = math.gcd(width, height)
     ratio_w = width // gcd
     ratio_h = height // gcd
@@ -87,7 +86,6 @@ def _format_date(date_value):
         return date_value.strftime("%d.%m.%Y")
 
     if isinstance(date_value, str):
-        # Пробуем распарсить разные форматы
         for fmt in ["%Y-%m-%d", "%d.%m.%Y", "%Y/%m/%d", "%m/%d/%Y"]:
             try:
                 dt = datetime.strptime(date_value, fmt)
@@ -112,24 +110,19 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
     - file_size: размер файла в байтах
     - date: дата создания (datetime или строка в формате YYYY-MM-DD)
     """
-    # Экранируем специальные HTML-символы в watermark
-    safe_watermark = watermark.replace("&", "&").replace("<", "<").replace(">", ">")
-    # Используем HTML-ссылку для "Предложка"
+    # Фикс: правильное HTML-экранирование
+    safe_watermark = watermark.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     clickable_suggestion = '💬 <a href="https://t.me/Haillord">Предложка</a>'
     footer = f"{safe_watermark}\n{clickable_suggestion}"
 
-    # Форматируем тип контента
-    if content_type == "ai":
-        content_header = "🟢 AI Art | 🔴 3D"
-    else:
-        content_header = "🔴 AI Art | 🟢 3D"
+    # Фикс: показываем только актуальный тип контента
+    content_header = "🤖 AI Art" if content_type == "ai" else "🎨 3D Art"
 
-    # Форматируем техническую информацию
+    # Техническая информация
     resolution, aspect_ratio = _format_resolution(width, height)
     formatted_size = _format_file_size(file_size)
     formatted_date = _format_date(date)
 
-    # Собираем технический блок
     tech_lines = []
     if resolution and aspect_ratio:
         tech_lines.append(f"📐 {resolution} | {aspect_ratio}")
@@ -144,11 +137,11 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
 
     tech_block = "\n".join(tech_lines) if tech_lines else ""
 
-    # Форматируем хэштеги
+    # Хэштеги
     safe_tags = _safe_tags(tags)
-    hashtags = " ".join(f"#{t}" for t in safe_tags[:6]) if safe_tags else ""
+    hashtags = " ".join(f"#{t}" for t in safe_tags[:MAX_HASHTAGS]) if safe_tags else ""
 
-    # Собираем итоговую подпись (адаптивно - без лишних пустых строк)
+    # Сборка подписи
     parts = [content_header]
 
     if tech_block:
