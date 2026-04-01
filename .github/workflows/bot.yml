@@ -73,6 +73,7 @@ jobs:
           OPENROUTER_MODEL: "openai/gpt-4o-mini"
           ENABLE_STYLE_BLOCK: "true"
           STYLE_BLOCK_MAX_ITEMS: "3"
+          CAPTION_STYLE: "auto"
           STATS_TZ: "Europe/Moscow"
         run: python civitai_bot.py
         

@@ -6,6 +6,7 @@ Supports optional AI-enhanced copy with safe fallback.
 import logging
 import math
 import os
+import random
 from datetime import datetime
 
 import requests
@@ -44,6 +45,7 @@ GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 ENABLE_STYLE_BLOCK = os.environ.get("ENABLE_STYLE_BLOCK", "true").lower() in ("1", "true", "yes", "on")
 STYLE_BLOCK_MAX_ITEMS = int(os.environ.get("STYLE_BLOCK_MAX_ITEMS", "3"))
+CAPTION_STYLE = os.environ.get("CAPTION_STYLE", "auto").strip().lower()
 
 CRINGE_TAG_HINTS = {
     "dynamic", "moments", "details", "fidelity", "thrust", "shaking",
@@ -54,6 +56,8 @@ STYLE_TAG_STOP = {
     "solo", "woman", "girl", "female", "image", "video", "clip",
     "high", "quality", "detail", "best", "art", "ai", "3d"
 }
+
+STYLE_VARIANTS = ("classic", "story", "minimal")
 
 
 def _safe_tags(tags):
@@ -129,6 +133,55 @@ def _build_style_block(tags):
 
     bullet_lines = "\n".join(f"• {_escape_html(item)}" for item in picked)
     return f"Что внутри:\n<blockquote>{bullet_lines}</blockquote>"
+
+
+def _pick_caption_style():
+    if CAPTION_STYLE in STYLE_VARIANTS:
+        return CAPTION_STYLE
+    # auto: случайный, но контролируемый набор шаблонов
+    return random.choice(STYLE_VARIANTS)
+
+
+def _build_title_line(content_type):
+    if content_type == "ai":
+        return "🟢 AI Art | 🔴 3D"
+    return "🔴 AI Art | 🟢 3D"
+
+
+def _build_hook_line(style, content_type):
+    if style == "story":
+        return "Свежий релиз в ленте, ловим атмосферу."
+    if style == "minimal":
+        return ""
+    if content_type == "ai":
+        return "Новый AI-пост на вечер."
+    return "Новый 3D-пост на вечер."
+
+
+def _assemble_caption(style, content_type, title_line, tech_block, body_text, style_block, hashtags, footer):
+    parts = [title_line]
+
+    hook = _build_hook_line(style, content_type)
+    if hook:
+        parts.append(hook)
+
+    if tech_block and style != "story":
+        parts.append(tech_block)
+
+    if body_text:
+        parts.append(body_text)
+
+    if style_block:
+        parts.append(style_block)
+
+    if tech_block and style == "story":
+        parts.append(tech_block)
+
+    if hashtags:
+        parts.append(hashtags)
+
+    parts.append(footer)
+    return "\n\n".join(parts)
 
 
 def _format_file_size(size_bytes):
@@ -287,7 +340,8 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
     clickable_suggestion = '💬 <a href="https://t.me/Haillord">Предложка</a>'
     footer = f"{safe_watermark}\n{clickable_suggestion}"
 
-    content_header = "🟢 AI Art | 🔴 3D" if content_type == "ai" else "🔴 AI Art | 🟢 3D"
+    style = _pick_caption_style()
+    content_header = _build_title_line(content_type)
 
     resolution, aspect_ratio = _format_resolution(width, height)
     formatted_size = _format_file_size(file_size)
@@ -311,32 +365,34 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
     hashtags = " ".join(f"#{t}" for t in safe_tags[:MAX_HASHTAGS]) if safe_tags else ""
     style_block = _build_style_block(safe_tags)
 
-    fallback_parts = [content_header]
-    if tech_block:
-        fallback_parts.append(tech_block)
-    if style_block:
-        fallback_parts.append(style_block)
-    if hashtags:
-        fallback_parts.append(hashtags)
-    fallback_parts.append(footer)
-    fallback_caption = "\n\n".join(fallback_parts)
+    fallback_caption = _assemble_caption(
+        style=style,
+        content_type=content_type,
+        title_line=content_header,
+        tech_block=tech_block,
+        body_text="",
+        style_block=style_block,
+        hashtags=hashtags,
+        footer=footer,
+    )
 
     ai_body = _generate_ai_body(content_type, rating, likes, safe_tags, tech_block)
     if not ai_body:
         return fallback_caption
 
-    ai_parts = [content_header]
-    if tech_block:
-        ai_parts.append(tech_block)
-    ai_parts.append(_escape_html(ai_body))
-    if style_block:
-        ai_parts.append(style_block)
-    if hashtags:
-        ai_parts.append(hashtags)
-    ai_parts.append(footer)
-    ai_caption = "\n\n".join(ai_parts)
+    ai_caption = _assemble_caption(
+        style=style,
+        content_type=content_type,
+        title_line=content_header,
+        tech_block=tech_block,
+        body_text=_escape_html(ai_body),
+        style_block=style_block,
+        hashtags=hashtags,
+        footer=footer,
+    )
 
     if AI_DRY_RUN:
+        logger.info(f"AI_DRY_RUN caption style: {style}")
         logger.info(f"AI_DRY_RUN fallback caption: {fallback_caption[:240]}")
         logger.info(f"AI_DRY_RUN ai caption: {ai_caption[:240]}")
         return fallback_caption
