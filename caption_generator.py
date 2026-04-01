@@ -42,10 +42,17 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+ENABLE_STYLE_BLOCK = os.environ.get("ENABLE_STYLE_BLOCK", "true").lower() in ("1", "true", "yes", "on")
+STYLE_BLOCK_MAX_ITEMS = int(os.environ.get("STYLE_BLOCK_MAX_ITEMS", "3"))
 
 CRINGE_TAG_HINTS = {
     "dynamic", "moments", "details", "fidelity", "thrust", "shaking",
     "jiggle", "ultra", "cinematic", "masterpiece", "quality"
+}
+
+STYLE_TAG_STOP = {
+    "solo", "woman", "girl", "female", "image", "video", "clip",
+    "high", "quality", "detail", "best", "art", "ai", "3d"
 }
 
 
@@ -84,6 +91,44 @@ def _clean_caption_tags(tags):
         result.append(t)
         seen.add(t)
     return result
+
+
+def _humanize_tag(tag):
+    text = str(tag).replace("_", " ").strip()
+    if not text:
+        return ""
+    return text[0].upper() + text[1:]
+
+
+def _build_style_block(tags):
+    if not ENABLE_STYLE_BLOCK:
+        return ""
+
+    picked = []
+    seen = set()
+    for tag in tags:
+        low = str(tag).lower()
+        if low in STYLE_TAG_STOP:
+            continue
+        if len(low) < 4 or len(low) > 24:
+            continue
+        if low.count("_") > 2:
+            continue
+        words = [w for w in low.split("_") if w]
+        if any(w in STYLE_TAG_STOP for w in words):
+            continue
+        if low in seen:
+            continue
+        seen.add(low)
+        picked.append(_humanize_tag(low))
+        if len(picked) >= max(1, STYLE_BLOCK_MAX_ITEMS):
+            break
+
+    if not picked:
+        return ""
+
+    bullet_lines = "\n".join(f"• {_escape_html(item)}" for item in picked)
+    return f"Что внутри:\n<blockquote>{bullet_lines}</blockquote>"
 
 
 def _format_file_size(size_bytes):
@@ -264,10 +309,13 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
 
     safe_tags = _clean_caption_tags(_safe_tags(tags))
     hashtags = " ".join(f"#{t}" for t in safe_tags[:MAX_HASHTAGS]) if safe_tags else ""
+    style_block = _build_style_block(safe_tags)
 
     fallback_parts = [content_header]
     if tech_block:
         fallback_parts.append(tech_block)
+    if style_block:
+        fallback_parts.append(style_block)
     if hashtags:
         fallback_parts.append(hashtags)
     fallback_parts.append(footer)
@@ -281,6 +329,8 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
     if tech_block:
         ai_parts.append(tech_block)
     ai_parts.append(_escape_html(ai_body))
+    if style_block:
+        ai_parts.append(style_block)
     if hashtags:
         ai_parts.append(hashtags)
     ai_parts.append(footer)

@@ -71,6 +71,8 @@ jobs:
           AI_TIMEOUT_SEC: "12"
           GROQ_MODEL: "llama-3.3-70b-versatile"
           OPENROUTER_MODEL: "openai/gpt-4o-mini"
+          ENABLE_STYLE_BLOCK: "true"
+          STYLE_BLOCK_MAX_ITEMS: "3"
           STATS_TZ: "Europe/Moscow"
         run: python civitai_bot.py
         
