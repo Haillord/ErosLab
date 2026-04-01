@@ -101,13 +101,9 @@ def get_next_content_type():
     return next_type
 
 def get_next_media_type():
-    """70% video, 30% image с чередованием"""
+    """Строгое распределение: 70% video, 30% image."""
     global content_state
-    # Чередование: если последнее было video, следующее с большей вероятностью image
-    if content_state.get("last_media") == "video":
-        media_type = "video" if random.random() < 0.4 else "image"  # 40% video, 60% image
-    else:
-        media_type = "video" if random.random() < 0.9 else "image"  # 90% video, 10% image
+    media_type = "video" if random.random() < 0.7 else "image"
     content_state["last_media"] = media_type
     save_json(CONTENT_STATE_FILE, content_state)
     return media_type
@@ -354,13 +350,14 @@ def _extract_civitai_likes(item):
 
 def fetch_civitai():
     # Используем browsingLevel=31 для максимального охвата + nsfw=X для explicit.
+    # Newest проверяем первым для более быстрого нахождения свежего контента.
     variations = [
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Day"},
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Week"},
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Month"},
         {"browsingLevel": 31, "nsfw": "X", "sort": "Newest"},
         {"browsingLevel": 31, "nsfw": "X", "sort": "Newest", "period": "Week"},
         {"browsingLevel": 31, "nsfw": "X", "sort": "Newest", "period": "Month"},
+        {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Day"},
+        {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Week"},
+        {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Month"},
     ]
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
@@ -538,8 +535,8 @@ def _is_video_item(item: dict) -> bool:
     return _is_video(item.get("url", ""))
 
 def _pick_by_content_type(fresh):
-    """50/50 видео или фото. Если нужного типа нет — берём что есть."""
-    content_type = random.choice(['image', 'video'])
+    """70/30 видео или фото. Если нужного типа нет — берём что есть."""
+    content_type = "video" if random.random() < 0.7 else "image"
     logger.info(f"Content type selection: {content_type}")
 
     if content_type == 'video':
@@ -560,21 +557,36 @@ def _pick_by_content_type(fresh):
 
 
 def fetch_and_pick():
-    source = "civitai"
-    logger.info("Source selection: CivitAI first, Rule34 as fallback")
+    if TEST_CIVITAI_ONLY:
+        source = "civitai"
+        logger.info("Source selection: CivitAI only (TEST_CIVITAI_ONLY=True)")
+        items = fetch_civitai()
+        if not items:
+            logger.warning("TEST_CIVITAI_ONLY=True and CivitAI returned nothing")
+            return None
+    else:
+        # Возвращаем монетку 50/50 между источниками.
+        source = random.choice(["civitai", "rule34"])
+        logger.info(f"Source selection: {source} (50/50 coin)")
 
-    items = fetch_civitai()
-
-    if not items and not TEST_CIVITAI_ONLY:
-        logger.warning("CivitAI returned nothing, falling back to Rule34")
-        source = "rule34"
-        content_type = get_next_content_type()
-        media_type = get_next_media_type()
-        logger.info(f"Rule34 content_type={content_type}, media_type={media_type}")
-        items = fetch_rule34(limit=100, content_type=content_type, media_type=media_type)
-    elif not items and TEST_CIVITAI_ONLY:
-        logger.warning("TEST_CIVITAI_ONLY=True and CivitAI returned nothing")
-        return None
+        if source == "civitai":
+            items = fetch_civitai()
+            if not items:
+                logger.warning("CivitAI returned nothing, falling back to Rule34")
+                source = "rule34"
+                content_type = get_next_content_type()
+                media_type = get_next_media_type()
+                logger.info(f"Rule34 content_type={content_type}, media_type={media_type}")
+                items = fetch_rule34(limit=100, content_type=content_type, media_type=media_type)
+        else:
+            content_type = get_next_content_type()
+            media_type = get_next_media_type()
+            logger.info(f"Rule34 content_type={content_type}, media_type={media_type}")
+            items = fetch_rule34(limit=100, content_type=content_type, media_type=media_type)
+            if not items:
+                logger.warning("Rule34 returned nothing, falling back to CivitAI")
+                source = "civitai"
+                items = fetch_civitai()
 
     if not items:
         logger.warning("No items found from any source")
@@ -592,7 +604,7 @@ def fetch_and_pick():
     if source == "rule34":
         selected = _pick_by_content_type(fresh)
     else:
-        content_type = random.choice(['image', 'video'])
+        content_type = "video" if random.random() < 0.7 else "image"
         logger.info(f"Content type selection (civitai): {content_type}")
 
         if content_type == 'image':
