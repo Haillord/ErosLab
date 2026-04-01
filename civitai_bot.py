@@ -31,6 +31,7 @@ CIVITAI_API_KEY     = os.environ.get("CIVITAI_API_KEY", "")
 WATERMARK_TEXT   = "@eroslabai"
 MIN_LIKES        = 10
 MIN_CIVITAI_LIKES = int(os.environ.get("MIN_CIVITAI_LIKES", "5"))
+ALLOW_MATURE_FALLBACK = os.environ.get("ALLOW_MATURE_FALLBACK", "true").lower() in ("1", "true", "yes", "on")
 MIN_IMAGE_SIZE   = 720
 
 # Временно отключить Rule34 (True = только CivitAI для тестов)
@@ -307,6 +308,16 @@ def _is_x_or_xxx(nsfw_level):
         return nsfw_level >= 8
     return False
 
+def _is_mature_or_higher(nsfw_level):
+    """Более мягкий фильтр: Mature/X/XXX (для случаев, когда X мало в выдаче)."""
+    if isinstance(nsfw_level, str):
+        value = nsfw_level.strip().lower()
+        return value in {"mature", "x", "xxx"}
+    if isinstance(nsfw_level, (int, float)):
+        # Консервативный порог для "Mature и выше" на числовых форматах.
+        return nsfw_level >= 4
+    return False
+
 def fetch_civitai():
     # Используем browsingLevel=31 для максимального охвата + nsfw=X для explicit.
     variations = [
@@ -324,19 +335,21 @@ def fetch_civitai():
     for base_params in variations:
         all_items = []
         seen_ids = set()
+        next_page_url = None
         
-        # Ищем по нескольким страницам для каждой вариации
+        # CivitAI paginates через metadata.nextPage (cursor-based).
         for page in range(1, max_pages + 1):
-            params = {**base_params, "limit": 100, "page": page}
+            request_url = next_page_url or "https://civitai.com/api/v1/images"
+            params = None if next_page_url else {**base_params, "limit": 100}
             
             try:
                 r = _request_with_backoff(
-                    "https://civitai.com/api/v1/images",
+                    request_url,
                     params=params,
                     headers=headers
                 )
                 if r is None:
-                    logger.warning(f"CivitAI page {page}: no response for params {params}")
+                    logger.warning(f"CivitAI page {page}: no response")
                     continue
 
                 # Handle 400 Bad Request
@@ -359,8 +372,9 @@ def fetch_civitai():
                     all_items.append(item)
                 logger.info(f"CivitAI page {page}: got {len(items)} items (total: {len(all_items)})")
 
-                # Если страница неполная — обычно это конец выдачи
-                if len(items) < 100:
+                metadata = data.get("metadata", {}) if isinstance(data, dict) else {}
+                next_page_url = metadata.get("nextPage")
+                if not next_page_url:
                     break
 
             except Exception as e:
@@ -382,6 +396,8 @@ def fetch_civitai():
         skipped_nsfw = 0
         skipped_blacklist = 0
         skipped_likes = 0
+        accepted_mature = 0
+        nsfw_distribution = {}
         
         # Debug: sample first 5 items nsfwLevel
         for debug_item in items[:5]:
@@ -392,8 +408,15 @@ def fetch_civitai():
         for item in items:
             try:
                 nsfw_level = item.get("nsfwLevel")
+                nsfw_key = str(nsfw_level).strip() if nsfw_level is not None else "None"
+                nsfw_distribution[nsfw_key] = nsfw_distribution.get(nsfw_key, 0) + 1
 
-                if not _is_x_or_xxx(nsfw_level):
+                is_allowed_nsfw = _is_x_or_xxx(nsfw_level)
+                if not is_allowed_nsfw and ALLOW_MATURE_FALLBACK and _is_mature_or_higher(nsfw_level):
+                    is_allowed_nsfw = True
+                    accepted_mature += 1
+
+                if not is_allowed_nsfw:
                     skipped_nsfw += 1
                     continue
 
@@ -432,14 +455,16 @@ def fetch_civitai():
                 continue
 
         if erotic_items:
-            logger.info(f"Found {len(erotic_items)} X/XXX rated posts")
+            logger.info(f"Found {len(erotic_items)} posts from CivitAI (mature_fallback_used={accepted_mature})")
             return erotic_items
 
         logger.info(
             f"No suitable posts: skipped_nsfw={skipped_nsfw}, "
             f"skipped_blacklist={skipped_blacklist}, skipped_likes={skipped_likes}, "
-            f"civitai_min_likes={MIN_CIVITAI_LIKES}"
+            f"civitai_min_likes={MIN_CIVITAI_LIKES}, "
+            f"allow_mature_fallback={ALLOW_MATURE_FALLBACK}"
         )
+        logger.info(f"CivitAI nsfw distribution: {nsfw_distribution}")
 
     return []
 
