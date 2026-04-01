@@ -52,9 +52,28 @@ BLACKLIST_TAGS = {
     # Gay content (male-only)
     "gay", "yaoi", "bara", "2boys", "3boys", "multiple_boys",
     "male_only", "male_male", "gay_male", "bl", "boy_love",
+    # Explicit male-only focus markers
+    "1boy", "solo_male", "male_focus", "male_pov",
+    "handsome_muscular_man", "muscular_man", "handsome_man",
+    "old_man", "young_man", "dilf", "twink", "femboy",
     # Other
     "furry_male", "anthro",
 }
+
+# Паттерны только для явного male-only фокуса (без среза mixed male+female сцен).
+MALE_ONLY_PATTERNS = (
+    r"(^|_)solo_male(_|$)",
+    r"(^|_)male_only(_|$)",
+    r"(^|_)male_focus(_|$)",
+    r"(^|_)male_pov(_|$)",
+    r"(^|_)1boy(_|$)",
+    r"(^|_)2boys(_|$)",
+    r"(^|_)3boys(_|$)",
+    r"(^|_)multiple_boys(_|$)",
+    r"(^|_)male_male(_|$)",
+    r"(^|_)gay_male(_|$)",
+    r"(^|_)boy_love(_|$)",
+)
 
 HASHTAG_STOP_WORDS = {
     "score", "source", "rating", "version", "step", "steps", "cfg", "seed",
@@ -127,8 +146,24 @@ def clean_tags(tags):
             seen.add(t)
     return clean
 
+def _normalize_tag(tag: str) -> str:
+    return str(tag).strip().lower().replace(" ", "_").replace("-", "_")
+
+def _has_male_only_pattern(tag: str) -> bool:
+    for pattern in MALE_ONLY_PATTERNS:
+        if re.search(pattern, tag):
+            return True
+    return False
+
 def has_blacklisted(tags):
-    blacklisted = set(t.lower() for t in tags) & BLACKLIST_TAGS
+    normalized_tags = [_normalize_tag(t) for t in tags]
+    blacklisted = set(normalized_tags) & BLACKLIST_TAGS
+
+    if not blacklisted:
+        for tag in normalized_tags:
+            if _has_male_only_pattern(tag):
+                blacklisted.add(tag)
+
     if blacklisted:
         logger.debug(f"Blacklisted: {blacklisted}")
         return True
