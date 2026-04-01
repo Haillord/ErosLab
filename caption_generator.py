@@ -104,35 +104,15 @@ def _humanize_tag(tag):
     return text[0].upper() + text[1:]
 
 
-def _build_style_block(tags):
+def _build_style_block(body_text):
     if not ENABLE_STYLE_BLOCK:
         return ""
 
-    picked = []
-    seen = set()
-    for tag in tags:
-        low = str(tag).lower()
-        if low in STYLE_TAG_STOP:
-            continue
-        if len(low) < 4 or len(low) > 24:
-            continue
-        if low.count("_") > 2:
-            continue
-        words = [w for w in low.split("_") if w]
-        if any(w in STYLE_TAG_STOP for w in words):
-            continue
-        if low in seen:
-            continue
-        seen.add(low)
-        picked.append(_humanize_tag(low))
-        if len(picked) >= max(1, STYLE_BLOCK_MAX_ITEMS):
-            break
-
-    if not picked:
+    text = str(body_text or "").strip()
+    if not text:
         return ""
 
-    bullet_lines = "\n".join(f"• {_escape_html(item)}" for item in picked)
-    return f"Что внутри:\n<blockquote>{bullet_lines}</blockquote>"
+    return f"Что внутри:\n<blockquote>{_escape_html(text)}</blockquote>"
 
 
 def _pick_caption_style():
@@ -148,20 +128,59 @@ def _build_title_line(content_type):
     return "🔴 AI Art | 🟢 3D"
 
 
-def _build_hook_line(style, content_type):
+def _pick_subject_tag(safe_tags):
+    for tag in safe_tags:
+        low = str(tag).lower()
+        if low in STYLE_TAG_STOP:
+            continue
+        if len(low) < 4 or len(low) > 24:
+            continue
+        if any(c.isdigit() for c in low):
+            continue
+        return _humanize_tag(low)
+    return ""
+
+
+def _build_fallback_body(content_type, likes, safe_tags):
+    subject = _pick_subject_tag(safe_tags)
+    if content_type == "ai":
+        if subject:
+            return f"AI-сцена с акцентом на {subject.lower()}."
+        return f"Свежий AI-рендер, уже {likes} реакций в ленте."
+    if subject:
+        return f"3D-сцена с акцентом на {subject.lower()}."
+    return f"Свежий 3D-клип, уже {likes} реакций в ленте."
+
+
+def _build_hook_line(style, content_type, safe_tags, width, height):
+    subject = _pick_subject_tag(safe_tags)
+    ratio = None
+    if width and height and width > 0 and height > 0:
+        ratio = "вертикальный формат" if height > width else "горизонтальный формат"
+
     if style == "story":
-        return "Свежий релиз в ленте, ловим атмосферу."
+        if subject:
+            return f"{subject} — новый пост в ленте."
+        return "Свежий релиз в ленте."
     if style == "minimal":
         return ""
     if content_type == "ai":
-        return "Новый AI-пост на вечер."
-    return "Новый 3D-пост на вечер."
+        if subject and ratio:
+            return f"AI-кадр: {subject.lower()}, {ratio}."
+        if subject:
+            return f"AI-кадр с акцентом на {subject.lower()}."
+        return "Новый AI-кадр в ленте."
+    if subject and ratio:
+        return f"3D-кадр: {subject.lower()}, {ratio}."
+    if subject:
+        return f"3D-кадр с акцентом на {subject.lower()}."
+    return "Новый 3D-кадр в ленте."
 
 
-def _assemble_caption(style, content_type, title_line, tech_block, body_text, style_block, hashtags, footer):
+def _assemble_caption(style, content_type, title_line, tech_block, body_text, style_block, hashtags, footer, safe_tags, width, height):
     parts = [title_line]
 
-    hook = _build_hook_line(style, content_type)
+    hook = _build_hook_line(style, content_type, safe_tags, width, height)
     if hook:
         parts.append(hook)
 
@@ -363,32 +382,43 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
 
     safe_tags = _clean_caption_tags(_safe_tags(tags))
     hashtags = " ".join(f"#{t}" for t in safe_tags[:MAX_HASHTAGS]) if safe_tags else ""
-    style_block = _build_style_block(safe_tags)
+    fallback_body = _build_fallback_body(content_type, likes, safe_tags)
+    fallback_style_block = _build_style_block(fallback_body)
+    fallback_body_text = "" if fallback_style_block else fallback_body
 
     fallback_caption = _assemble_caption(
         style=style,
         content_type=content_type,
         title_line=content_header,
         tech_block=tech_block,
-        body_text="",
-        style_block=style_block,
+        body_text=fallback_body_text,
+        style_block=fallback_style_block,
         hashtags=hashtags,
         footer=footer,
+        safe_tags=safe_tags,
+        width=width,
+        height=height,
     )
 
     ai_body = _generate_ai_body(content_type, rating, likes, safe_tags, tech_block)
     if not ai_body:
         return fallback_caption
 
+    ai_style_block = _build_style_block(ai_body)
+    ai_body_text = "" if ai_style_block else _escape_html(ai_body)
+
     ai_caption = _assemble_caption(
         style=style,
         content_type=content_type,
         title_line=content_header,
         tech_block=tech_block,
-        body_text=_escape_html(ai_body),
-        style_block=style_block,
+        body_text=ai_body_text,
+        style_block=ai_style_block,
         hashtags=hashtags,
         footer=footer,
+        safe_tags=safe_tags,
+        width=width,
+        height=height,
     )
 
     if AI_DRY_RUN:
