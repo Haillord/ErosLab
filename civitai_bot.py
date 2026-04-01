@@ -16,6 +16,7 @@ import time
 import requests
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import urlparse
 from PIL import Image, ImageDraw, ImageFont
 import telegram
 from telegram import Bot
@@ -276,6 +277,8 @@ def _request_with_backoff(url, params, headers, max_retries=3):
                 logger.warning(f"Rate limited (429), waiting {wait}s before retry {attempt + 1}/{max_retries}")
                 time.sleep(wait)
                 continue
+            if r.status_code == 400:
+                return r
             r.raise_for_status()
             return r
         except requests.exceptions.Timeout:
@@ -293,15 +296,25 @@ def _request_with_backoff(url, params, headers, max_retries=3):
             raise
     return None
 
+def _is_x_or_xxx(nsfw_level):
+    """Проверяет, что nsfwLevel соответствует X/XXX (или числовому эквиваленту)."""
+    if isinstance(nsfw_level, str):
+        value = nsfw_level.strip().lower()
+        return value in {"x", "xxx"}
+    if isinstance(nsfw_level, (int, float)):
+        # На старых/внутренних форматах высокий уровень соответствует explicit.
+        return nsfw_level >= 8
+    return False
+
 def fetch_civitai():
-    # Используем browsingLevel=31 для максимального охвата порно-контента
+    # Используем browsingLevel=31 для максимального охвата + nsfw=X для explicit.
     variations = [
-        {"browsingLevel": 31, "sort": "Most Reactions", "period": "Day"},
-        {"browsingLevel": 31, "sort": "Most Reactions", "period": "Week"},
-        {"browsingLevel": 31, "sort": "Most Reactions", "period": "Month"},
-        {"browsingLevel": 31, "sort": "Newest",         "period": "Day"},
-        {"browsingLevel": 31, "sort": "Newest",         "period": "Week"},
-        {"browsingLevel": 31, "sort": "Newest",         "period": "Month"},
+        {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Day"},
+        {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Week"},
+        {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Month"},
+        {"browsingLevel": 31, "nsfw": "X", "sort": "Newest"},
+        {"browsingLevel": 31, "nsfw": "X", "sort": "Newest", "period": "Week"},
+        {"browsingLevel": 31, "nsfw": "X", "sort": "Newest", "period": "Month"},
     ]
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
@@ -372,14 +385,7 @@ def fetch_civitai():
             try:
                 nsfw_level = item.get("nsfwLevel")
 
-                is_x_rating = False
-                if isinstance(nsfw_level, str) and nsfw_level.upper() in ["X", "XXX"]:
-                    is_x_rating = True
-                elif isinstance(nsfw_level, (int, float)) and nsfw_level >= 8:
-                    # X и XXX контент (nsfwLevel >= 8)
-                    is_x_rating = True
-
-                if not is_x_rating:
+                if not _is_x_or_xxx(nsfw_level):
                     skipped_nsfw += 1
                     continue
 
@@ -408,6 +414,8 @@ def fetch_civitai():
                     "likes":   likes,
                     "rating":  nsfw_level,
                     "post_id": item.get("postId"),
+                    "mime":    (item.get("mimeType") or "").lower(),
+                    "createdAt": item.get("createdAt"),
                     "source":  "civitai",
                 })
 
@@ -426,11 +434,26 @@ def fetch_civitai():
 VIDEO_EXTENSIONS = (".mp4", ".webm")
 GIF_EXTENSION = ".gif"
 
+def _url_path(url: str) -> str:
+    try:
+        return urlparse(url).path.lower()
+    except Exception:
+        return (url or "").lower()
+
 def _is_video(url: str) -> bool:
-    return url.lower().endswith(VIDEO_EXTENSIONS)
+    return _url_path(url).endswith(VIDEO_EXTENSIONS)
 
 def _is_gif(url: str) -> bool:
-    return url.lower().endswith(GIF_EXTENSION)
+    return _url_path(url).endswith(GIF_EXTENSION)
+
+def _is_video_item(item: dict) -> bool:
+    mime = (item.get("mime") or "").lower()
+    if mime.startswith("video/"):
+        return True
+    # GIF отправляем отдельно через send_animation
+    if mime == "image/gif":
+        return False
+    return _is_video(item.get("url", ""))
 
 def _pick_by_content_type(fresh):
     """50/50 видео или фото. Если нужного типа нет — берём что есть."""
@@ -438,11 +461,11 @@ def _pick_by_content_type(fresh):
     logger.info(f"Content type selection: {content_type}")
 
     if content_type == 'video':
-        typed = [i for i in fresh if _is_video(i["url"])]
-        fallback = [i for i in fresh if not _is_video(i["url"])]
+        typed = [i for i in fresh if _is_video_item(i)]
+        fallback = [i for i in fresh if not _is_video_item(i)]
     else:
-        typed = [i for i in fresh if not _is_video(i["url"])]
-        fallback = [i for i in fresh if _is_video(i["url"])]
+        typed = [i for i in fresh if not _is_video_item(i)]
+        fallback = [i for i in fresh if _is_video_item(i)]
 
     logger.info(f"Items of selected type ({content_type}): {len(typed)}")
 
@@ -455,28 +478,21 @@ def _pick_by_content_type(fresh):
 
 
 def fetch_and_pick():
-    source = "civitai" if TEST_CIVITAI_ONLY else random.choice(["civitai", "rule34"])
-    logger.info(f"Source selected: {source}" + (" (TEST_CIVITAI_ONLY mode)" if TEST_CIVITAI_ONLY else ""))
+    source = "civitai"
+    logger.info("Source selection: CivitAI first, Rule34 as fallback")
 
-    if source == "civitai":
-        items = fetch_civitai()
-        if not items:
-            logger.warning("CivitAI returned nothing, falling back to Rule34")
-            source = "rule34"
-            # Чередование между 3D и AI, 70% video / 30% image
-            content_type = get_next_content_type()
-            media_type = get_next_media_type()
-            items = fetch_rule34(limit=100, content_type=content_type, media_type=media_type)
-    else:
-        # Чередование между 3D и AI, 70% video / 30% image
+    items = fetch_civitai()
+
+    if not items and not TEST_CIVITAI_ONLY:
+        logger.warning("CivitAI returned nothing, falling back to Rule34")
+        source = "rule34"
         content_type = get_next_content_type()
         media_type = get_next_media_type()
         logger.info(f"Rule34 content_type={content_type}, media_type={media_type}")
         items = fetch_rule34(limit=100, content_type=content_type, media_type=media_type)
-        if not items:
-            logger.warning("Rule34 returned nothing, falling back to CivitAI")
-            source = "civitai"
-            items = fetch_civitai()
+    elif not items and TEST_CIVITAI_ONLY:
+        logger.warning("TEST_CIVITAI_ONLY=True and CivitAI returned nothing")
+        return None
 
     if not items:
         logger.warning("No items found from any source")
@@ -498,11 +514,11 @@ def fetch_and_pick():
         logger.info(f"Content type selection (civitai): {content_type}")
 
         if content_type == 'image':
-            type_items = [i for i in fresh if not _is_video(i["url"])]
-            fallback_items = [i for i in fresh if _is_video(i["url"])]
+            type_items = [i for i in fresh if not _is_video_item(i)]
+            fallback_items = [i for i in fresh if _is_video_item(i)]
         else:
-            type_items = [i for i in fresh if _is_video(i["url"])]
-            fallback_items = [i for i in fresh if not _is_video(i["url"])]
+            type_items = [i for i in fresh if _is_video_item(i)]
+            fallback_items = [i for i in fresh if not _is_video_item(i)]
 
         logger.info(f"Items of selected type ({content_type}): {len(type_items)}")
 
@@ -576,6 +592,7 @@ async def main():
             r.raise_for_status()
             data = r.content
             logger.info(f"Downloaded {len(data)} bytes")
+            download_content_type = (r.headers.get("Content-Type") or "").lower()
         except Exception as e:
             logger.error(f"Download Error: {e}")
             posted_ids.add(item["id"])
@@ -588,8 +605,16 @@ async def main():
             save_all()
             continue
 
-        is_video = _is_video(item["url"])
-        is_gif = _is_gif(item["url"])
+        item_mime = (item.get("mime") or "").lower()
+        is_gif = (
+            "image/gif" in download_content_type
+            or item_mime == "image/gif"
+            or _is_gif(item["url"])
+        )
+        is_video = (
+            (download_content_type.startswith("video/") or item_mime.startswith("video/") or _is_video(item["url"]))
+            and not is_gif
+        )
 
         # Получаем технические данные для caption
         img_width = None
