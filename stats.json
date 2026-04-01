@@ -1,5 +1,5 @@
 {
-  "total_posts": 106,
+  "total_posts": 107,
   "sources": {},
   "top_tags": {
     "nsfw": 1,
@@ -125,9 +125,9 @@
   "schema_version": 2,
   "daily": {
     "2026-04-02": {
-      "runs": 7,
-      "posted": 7,
-      "source_civitai_selected": 1,
+      "runs": 8,
+      "posted": 8,
+      "source_civitai_selected": 2,
       "source_rule34_selected": 7,
       "skip_no_item": 0,
       "skip_download_error": 0,
@@ -137,13 +137,13 @@
       "skip_low_video_quality": 0,
       "skip_duplicate_hash": 0,
       "send_errors": 0,
-      "runtime_sec": 49.260000000000005
+      "runtime_sec": 58.970000000000006
     }
   },
   "lifetime": {
-    "runs": 7,
-    "posted": 7,
-    "source_civitai_selected": 1,
+    "runs": 8,
+    "posted": 8,
+    "source_civitai_selected": 2,
     "source_rule34_selected": 7,
     "skip_no_item": 0,
     "skip_download_error": 0,
@@ -153,7 +153,7 @@
     "skip_low_video_quality": 0,
     "skip_duplicate_hash": 0,
     "send_errors": 0,
-    "runtime_sec": 49.260000000000005
+    "runtime_sec": 58.970000000000006
   },
   "report": {}
 }
