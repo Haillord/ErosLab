@@ -112,7 +112,7 @@ def _build_style_block(body_text):
     if not text:
         return ""
 
-    return f":\n<blockquote>{_escape_html(text)}</blockquote>"
+    return f"\n<blockquote>{_escape_html(text)}</blockquote>"
 
 
 def _pick_caption_style():
