@@ -68,6 +68,10 @@ NEWS_MEDIA_MAX_IMAGES = int(os.environ.get("NEWS_MEDIA_MAX_IMAGES", "3"))
 NEWS_MAX_REDDIT_STREAK = int(os.environ.get("NEWS_MAX_REDDIT_STREAK", "1"))
 NEWS_FEED_TIMEOUT = int(os.environ.get("NEWS_FEED_TIMEOUT", "10"))
 NEWS_FILTER_MODE = os.environ.get("NEWS_FILTER_MODE", "thematic").strip().lower()
+NEWS_REVIEW_MODE = os.environ.get("NEWS_REVIEW_MODE", "false").lower() in ("1", "true", "yes", "on")
+ADMIN_USER_ID = str(os.environ.get("ADMIN_USER_ID", "")).strip()
+NEWS_PENDING_DRAFT_FILE = os.environ.get("NEWS_PENDING_DRAFT_FILE", "news_pending_draft.json")
+NEWS_REVIEW_STATE_FILE = os.environ.get("NEWS_REVIEW_STATE_FILE", "news_review_state.json")
 
 
 RELEVANCE_ERO_KEYWORDS = {
@@ -142,6 +146,41 @@ def _save_state(state: dict) -> None:
     state["posted_links"] = posted
     with open(NEWS_STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def _load_pending_draft() -> dict:
+    if not Path(NEWS_PENDING_DRAFT_FILE).exists():
+        return {}
+    try:
+        with open(NEWS_PENDING_DRAFT_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_pending_draft(data: dict) -> None:
+    with open(NEWS_PENDING_DRAFT_FILE, "w", encoding="utf-8") as f:
+        json.dump(data if isinstance(data, dict) else {}, f, ensure_ascii=False, indent=2)
+
+
+def _load_review_state() -> dict:
+    if not Path(NEWS_REVIEW_STATE_FILE).exists():
+        return {"last_update_id": 0}
+    try:
+        with open(NEWS_REVIEW_STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return {"last_update_id": 0}
+        data.setdefault("last_update_id", 0)
+        return data
+    except Exception:
+        return {"last_update_id": 0}
+
+
+def _save_review_state(data: dict) -> None:
+    with open(NEWS_REVIEW_STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data if isinstance(data, dict) else {"last_update_id": 0}, f, ensure_ascii=False, indent=2)
 
 
 def _normalize_link(link: str) -> str:
@@ -563,7 +602,7 @@ def _build_post_text(item: NewsItem) -> str:
     locale = _infer_locale(item)
     return (
         f"🎮 {hook}\n\n"
-        f"{lead}\n\n"
+        f"<blockquote>{lead}</blockquote>\n\n"
         f"✦ {b1}\n"
         f"✦ {b2}\n"
         f"✦ {b3}\n\n"
@@ -677,6 +716,98 @@ def _pick_best_image_urls(item: NewsItem, limit: int = 3) -> list[str]:
     return ordered
 
 
+def _parse_review_command(text: str):
+    raw = (text or "").strip()
+    if not raw.startswith("/"):
+        return None, "", ""
+
+    lines = raw.splitlines()
+    head = lines[0].strip()
+    parts = head.split(maxsplit=2)
+    cmd = parts[0].lower()
+    draft_id = parts[1].strip() if len(parts) >= 2 else ""
+    inline_text = parts[2].strip() if len(parts) >= 3 else ""
+    extra_text = "\n".join(lines[1:]).strip() if len(lines) > 1 else ""
+    custom_text = extra_text or inline_text or ""
+    return cmd, draft_id, custom_text
+
+
+async def _poll_review_action(bot: Bot, review_state: dict):
+    if not ADMIN_USER_ID:
+        return None
+
+    last_update_id = int(review_state.get("last_update_id", 0))
+    try:
+        updates = await bot.get_updates(offset=last_update_id + 1, limit=50, timeout=0)
+    except Exception as e:
+        logger.warning(f"Could not fetch review commands: {e}")
+        return None
+
+    action = None
+    for upd in updates:
+        review_state["last_update_id"] = max(int(review_state.get("last_update_id", 0)), int(upd.update_id))
+        msg = getattr(upd, "message", None)
+        if not msg or not msg.text:
+            continue
+        from_user = getattr(msg, "from_user", None)
+        if not from_user or str(from_user.id) != ADMIN_USER_ID:
+            continue
+
+        cmd, draft_id, custom_text = _parse_review_command(msg.text)
+        if cmd in ("/approve", "/news_approve"):
+            action = {"cmd": "approve", "draft_id": draft_id, "text": custom_text}
+        elif cmd in ("/reject", "/news_reject"):
+            action = {"cmd": "reject", "draft_id": draft_id, "text": ""}
+
+    _save_review_state(review_state)
+    return action
+
+
+def _build_payload_for_item(item: NewsItem):
+    text = _build_post_text(item)
+    if len(text) > 1000:
+        text = text[:997].rstrip() + "..."
+
+    best_images = _pick_best_image_urls(item, limit=NEWS_MEDIA_MAX_IMAGES)
+    if not best_images and NEWS_REQUIRE_IMAGE:
+        return None
+    return {"text": text, "image_urls": best_images}
+
+
+async def _send_payload(bot: Bot, chat_id: str, payload: dict, is_draft: bool = False):
+    text = str(payload.get("text", "") or "")
+    if is_draft:
+        text = f"[DRAFT]\n{text}"
+    image_urls = list(payload.get("image_urls", []) or [])
+
+    if image_urls:
+        if len(image_urls) == 1:
+            await bot.send_photo(chat_id=chat_id, photo=image_urls[0], caption=text)
+            return
+        media = []
+        for idx, url in enumerate(image_urls):
+            if idx == 0:
+                media.append(InputMediaPhoto(media=url, caption=text))
+            else:
+                media.append(InputMediaPhoto(media=url))
+        await bot.send_media_group(chat_id=chat_id, media=media)
+        return
+
+    await bot.send_message(chat_id=chat_id, text=text, disable_web_page_preview=True)
+
+
+async def _send_review_help(bot: Bot, draft_id: str):
+    if not ADMIN_USER_ID:
+        return
+    text = (
+        f"🧪 News draft: <code>{draft_id}</code>\n"
+        "<code>/approve DRAFT_ID</code> — опубликовать как есть\n"
+        "<code>/approve DRAFT_ID\\nТВОЙ_ТЕКСТ</code> — опубликовать с твоим текстом\n"
+        "<code>/reject DRAFT_ID</code> — отклонить"
+    )
+    await bot.send_message(chat_id=ADMIN_USER_ID, text=text, parse_mode="HTML")
+
+
 async def _post_news_items(items: list[NewsItem], posted_links: set[str], state: dict) -> int:
     if not TELEGRAM_BOT_TOKEN:
         logger.error("No TELEGRAM_BOT_TOKEN; abort.")
@@ -693,27 +824,12 @@ async def _post_news_items(items: list[NewsItem], posted_links: set[str], state:
         if item.source_kind == "reddit" and reddit_streak >= NEWS_MAX_REDDIT_STREAK:
             logger.info(f"Skip reddit due to streak limit ({NEWS_MAX_REDDIT_STREAK}): {item.title[:90]}")
             continue
-        text = _build_post_text(item)
-        if len(text) > 1000:
-            text = text[:997].rstrip() + "..."
+        payload = _build_payload_for_item(item)
+        if payload is None:
+            logger.info(f"Skip news without quality image: {item.title[:90]}")
+            continue
         try:
-            best_images = _pick_best_image_urls(item, limit=NEWS_MEDIA_MAX_IMAGES)
-            if best_images:
-                if len(best_images) == 1:
-                    await bot.send_photo(chat_id=TELEGRAM_CHANNEL_ID, photo=best_images[0], caption=text)
-                else:
-                    media = []
-                    for idx, url in enumerate(best_images):
-                        if idx == 0:
-                            media.append(InputMediaPhoto(media=url, caption=text))
-                        else:
-                            media.append(InputMediaPhoto(media=url))
-                    await bot.send_media_group(chat_id=TELEGRAM_CHANNEL_ID, media=media)
-            elif NEWS_REQUIRE_IMAGE:
-                logger.info(f"Skip news without quality image: {item.title[:90]}")
-                continue
-            else:
-                await bot.send_message(chat_id=TELEGRAM_CHANNEL_ID, text=text, disable_web_page_preview=True)
+            await _send_payload(bot, TELEGRAM_CHANNEL_ID, payload, is_draft=False)
             posted_links.add(normalized)
             sent += 1
             logger.info(f"News posted: {item.title[:90]}")
@@ -739,10 +855,95 @@ async def main() -> None:
 
     state = _load_state()
     posted_links = set(_normalize_link(x) for x in state.get("posted_links", []))
+    review_state = _load_review_state()
+    pending_draft = _load_pending_draft()
 
     all_items = _fetch_news()
     fresh_items = [x for x in all_items if _normalize_link(x.link) not in posted_links]
     logger.info(f"Fresh news items: {len(fresh_items)}")
+
+    if NEWS_REVIEW_MODE:
+        if not ADMIN_USER_ID:
+            logger.error("NEWS_REVIEW_MODE enabled but ADMIN_USER_ID is empty")
+            return
+
+        bot = Bot(token=TELEGRAM_BOT_TOKEN)
+        action = await _poll_review_action(bot, review_state)
+
+        if pending_draft and action:
+            pending_id = str(pending_draft.get("id", ""))
+            action_id = str(action.get("draft_id", "") or pending_id)
+            if action_id != pending_id:
+                await bot.send_message(
+                    chat_id=ADMIN_USER_ID,
+                    text=f"Черновик <code>{action_id}</code> не найден. Текущий: <code>{pending_id}</code>",
+                    parse_mode="HTML",
+                )
+            elif action["cmd"] == "reject":
+                posted_links.add(_normalize_link(pending_draft.get("link", "")))
+                pending_draft.clear()
+                _save_pending_draft(pending_draft)
+                await bot.send_message(chat_id=ADMIN_USER_ID, text=f"Отклонено: {pending_id}")
+                logger.info(f"Rejected draft: {pending_id}")
+                state["posted_links"] = list(posted_links)
+                _save_state(state)
+                return
+            elif action["cmd"] == "approve":
+                final_text = action.get("text") or str(pending_draft.get("text", ""))
+                payload = {
+                    "text": final_text,
+                    "image_urls": list(pending_draft.get("image_urls", []) or []),
+                }
+                try:
+                    await _send_payload(bot, TELEGRAM_CHANNEL_ID, payload, is_draft=False)
+                    posted_links.add(_normalize_link(pending_draft.get("link", "")))
+                    await bot.send_message(chat_id=ADMIN_USER_ID, text=f"Опубликовано: {pending_id}")
+                    logger.info(f"Approved and published: {pending_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to publish approved draft: {e}")
+                pending_draft.clear()
+                _save_pending_draft(pending_draft)
+                state["posted_links"] = list(posted_links)
+                _save_state(state)
+                return
+
+        if pending_draft:
+            logger.info(f"Waiting for review decision on draft: {pending_draft.get('id')}")
+            return
+
+        # Prepare a new draft candidate.
+        reddit_streak = int(state.get("reddit_streak", 0))
+        candidate = None
+        candidate_payload = None
+        for item in fresh_items:
+            if item.source_kind == "reddit" and reddit_streak >= NEWS_MAX_REDDIT_STREAK:
+                continue
+            payload = _build_payload_for_item(item)
+            if payload is None:
+                continue
+            candidate = item
+            candidate_payload = payload
+            break
+
+        if not candidate or not candidate_payload:
+            logger.info("No suitable item for review draft")
+            return
+
+        pending_draft = {
+            "id": f"news_{int(candidate.published_ts)}",
+            "item_title": candidate.title,
+            "link": candidate.link,
+            "source_kind": candidate.source_kind,
+            "text": candidate_payload["text"],
+            "image_urls": candidate_payload["image_urls"],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        _save_pending_draft(pending_draft)
+
+        await _send_payload(bot, ADMIN_USER_ID, candidate_payload, is_draft=True)
+        await _send_review_help(bot, pending_draft["id"])
+        logger.info(f"Draft sent to admin: {pending_draft['id']}")
+        return
 
     sent_count = await _post_news_items(fresh_items, posted_links, state)
     logger.info(f"Sent news posts: {sent_count}")
