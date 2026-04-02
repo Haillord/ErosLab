@@ -40,7 +40,11 @@ logger = logging.getLogger(__name__)
 
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "@eroslabai")
+TELEGRAM_CHANNEL_ID = (
+    os.environ.get("NEWS_TARGET_CHAT")
+    or os.environ.get("ADMIN_USER_ID")
+    or os.environ.get("TELEGRAM_CHANNEL_ID", "@eroslabai")
+)
 WATERMARK_TEXT = os.environ.get("NEWS_WATERMARK", "📣 @eroslabai")
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
