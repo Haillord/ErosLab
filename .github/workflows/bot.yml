@@ -66,6 +66,7 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           ENABLE_AI_CAPTION: "true"
+          ENABLE_AI_CTA: "true"
           AI_DRY_RUN: "false"
           AI_PROVIDER: "auto"
           AI_TIMEOUT_SEC: "12"
@@ -73,7 +74,7 @@ jobs:
           OPENROUTER_MODEL: "openai/gpt-4o-mini"
           ENABLE_STYLE_BLOCK: "true"
           STYLE_BLOCK_MAX_ITEMS: "3"
-          CAPTION_STYLE: "story"
+          CAPTION_STYLE: "minimal"
           STATS_TZ: "Europe/Moscow"
         run: python civitai_bot.py
         

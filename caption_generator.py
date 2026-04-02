@@ -37,6 +37,7 @@ MAX_HASHTAGS = 4
 
 ENABLE_AI_CAPTION = os.environ.get("ENABLE_AI_CAPTION", "false").lower() in ("1", "true", "yes", "on")
 AI_DRY_RUN = os.environ.get("AI_DRY_RUN", "false").lower() in ("1", "true", "yes", "on")
+ENABLE_AI_CTA = os.environ.get("ENABLE_AI_CTA", "true").lower() in ("1", "true", "yes", "on")
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "auto").strip().lower()
 AI_TIMEOUT_SEC = int(os.environ.get("AI_TIMEOUT_SEC", "12"))
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
@@ -64,6 +65,40 @@ NSFW_TOKEN_BLOCKLIST = {
 }
 
 STYLE_VARIANTS = ("classic", "story", "minimal")
+
+CTA_VARIANTS = (
+    "💬 Как тебе такой формат?",
+    "💬 Делись мнением в комментариях",
+    "💬 Твой фидбек делает ленту лучше",
+    "💬 Оценим пост в реакциях и комментах",
+    "💬 Пиши, что добавить в следующий дроп",
+)
+
+HASHTAG_SEPARATOR = "⋯ ⋯ ⋯"
+
+
+def _generate_ai_cta(content_type, safe_tags):
+    if not ENABLE_AI_CTA:
+        return None
+
+    prompt = (
+        "Сгенерируй короткий CTA для Telegram-поста.\n"
+        "Строго 1 строка, до 55 символов.\n"
+        "Тон: живой, дружелюбный, без кринжа.\n"
+        "Начни с эмодзи 💬, без ссылок и хэштегов.\n"
+        f"Контент: {content_type}. Теги: {', '.join(safe_tags[:6]) if safe_tags else 'нет'}.\n"
+        "Верни только итоговую строку."
+    )
+    system = "Ты пишешь короткие CTA-строки для контент-канала."
+    cta = _call_ai_chat(prompt, system, max_tokens=40, temperature=0.7)
+    if not cta:
+        return None
+    cta = str(cta).strip().replace("\n", " ")
+    if not cta.startswith("💬"):
+        cta = f"💬 {cta.lstrip('•- ')}"
+    if len(cta) > 65:
+        cta = cta[:62].rstrip() + "..."
+    return _escape_html(cta)
 
 
 def _safe_tags(tags):
@@ -114,14 +149,8 @@ def _humanize_tag(tag):
 
 
 def _build_style_block(body_text):
-    if not ENABLE_STYLE_BLOCK:
-        return ""
-
-    text = str(body_text or "").strip()
-    if not text:
-        return ""
-
-    return f"<blockquote>{_escape_html(text)}</blockquote>"
+    # В текущем стиле не используем отдельное "окно" с quote-блоком.
+    return ""
 
 
 def _pick_caption_style():
@@ -180,28 +209,8 @@ def _build_fallback_body(content_type, likes, safe_tags):
 
 
 def _build_hook_line(style, content_type, safe_tags, width, height):
-    subject = _pick_subject_tag(safe_tags)
-    ratio = None
-    if width and height and width > 0 and height > 0:
-        ratio = "вертикальный формат" if height > width else "горизонтальный формат"
-
-    if style == "story":
-        if subject:
-            return f"{subject} — новый акцент в ленте."
-        return "Свежий акцент в ленте."
-    if style == "minimal":
-        return ""
-    if content_type == "ai":
-        if subject and ratio:
-            return f"AI-кадр: {subject.lower()}, {ratio}."
-        if subject:
-            return f"AI-кадр с акцентом на {subject.lower()}."
-        return "Новый AI-кадр в ленте."
-    if subject and ratio:
-        return f"3D-кадр: {subject.lower()}, {ratio}."
-    if subject:
-        return f"3D-кадр с акцентом на {subject.lower()}."
-    return "Новый 3D-кадр в ленте."
+    # Хук отключаем: он добавлял техничный/ломаный вид.
+    return ""
 
 
 def _assemble_caption(style, content_type, title_line, tech_block, body_text, style_block, hashtags, footer, safe_tags, width, height):
@@ -211,21 +220,21 @@ def _assemble_caption(style, content_type, title_line, tech_block, body_text, st
     if hook:
         parts.append(hook)
 
-    if tech_block and style != "story":
-        parts.append(tech_block)
-
     if body_text:
         parts.append(body_text)
 
     if style_block:
         parts.append(style_block)
 
-    if tech_block and style == "story":
+    if tech_block:
         parts.append(tech_block)
 
     if hashtags:
+        parts.append(HASHTAG_SEPARATOR)
         parts.append(hashtags)
 
+    cta_line = _generate_ai_cta(content_type, safe_tags) or random.choice(CTA_VARIANTS)
+    parts.append(cta_line)
     parts.append(footer)
     # Compact layout: single-line rhythm to avoid large empty gaps in Telegram.
     return "\n".join(parts)
@@ -387,8 +396,8 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
     - date: datetime or string format YYYY-MM-DD
     """
     safe_watermark = _escape_html(watermark)
-    clickable_suggestion = '💬 <a href="https://t.me/Haillord">Предложка</a>'
-    footer = f"{safe_watermark}\n{clickable_suggestion}"
+    clickable_suggestion = '<a href="https://t.me/Haillord">💬 Предложка</a>'
+    footer = f"{safe_watermark} · {clickable_suggestion}"
 
     style = _pick_caption_style()
     content_header = _build_title_line(content_type)
