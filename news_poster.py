@@ -461,50 +461,53 @@ def _fallback_hook(item: NewsItem) -> str:
     return f"{random.choice(prefixes)} {title}"
 
 
-def _fallback_bullets(item: NewsItem) -> tuple[str, str, str, str]:
+def _fallback_bullets(item: NewsItem) -> tuple[str, str, str, str, str]:
     summary = item.summary or item.title
     chunks = re.split(r"[.!?]\s+", summary)
     chunks = [c.strip(" -•") for c in chunks if c.strip()]
-    while len(chunks) < 3:
+    while len(chunks) < 4:
         chunks.append(item.title)
+    lead = chunks[0][:170]
     b1 = chunks[0][:110]
     b2 = chunks[1][:110]
     b3 = chunks[2][:110]
-    why = "Если тема тебе близка, это хороший кандидат в вишлист."
-    return b1, b2, b3, why
+    b4 = chunks[3][:110]
+    return lead, b1, b2, b3, b4
 
 
-def _generate_aggressive_parts(item: NewsItem) -> tuple[str, str, str, str, str]:
+def _generate_aggressive_parts(item: NewsItem) -> tuple[str, str, str, str, str, str]:
     if not ENABLE_AI_NEWS:
         hook = _fallback_hook(item)
-        b1, b2, b3, why = _fallback_bullets(item)
-        return hook, b1, b2, b3, why
+        lead, b1, b2, b3, b4 = _fallback_bullets(item)
+        return hook, lead, b1, b2, b3, b4
 
     prompt = (
-        "Сделай Telegram-пост в агрессивном стиле про новость.\n"
-        "Верни строго 5 строки в формате:\n"
+        "Сделай Telegram-пост в стиле игрового NSFW-медиа: живо, дорого, без кринжа.\n"
+        "Верни строго 6 строк в формате:\n"
         "HOOK: ...\n"
+        "LEAD: ...\n"
         "B1: ...\n"
         "B2: ...\n"
         "B3: ...\n"
-        "WHY: ...\n\n"
+        "B4: ...\n\n"
         "Требования:\n"
-        "- Русский язык, живо, без кринжа.\n"
-        "- Без матов, без токсичности.\n"
-        "- HOOK до 90 символов.\n"
-        "- B1/B2/B3 короткие и конкретные.\n"
-        "- WHY 1 строка до 110 символов.\n"
+        "- Русский язык, энергично, но адекватно.\n"
+        "- Без матов.\n"
+        "- HOOK до 90 символов, как афиша релиза.\n"
+        "- LEAD 1-2 предложения до 180 символов.\n"
+        "- B1/B2/B3 короткие и конкретные факты/детали.\n"
+        "- B4 про фичу/контент/платформу.\n"
         "- Не выдумывай факты.\n\n"
         f"TITLE: {item.title}\n"
         f"SUMMARY: {item.summary}\n"
         f"SOURCE: {item.source}\n"
     )
-    system = "Ты редактор вирусных news-постов для Telegram."
+    system = "Ты редактор премиальных news-постов для Telegram-канала."
     raw = _call_ai_chat(prompt, system, max_tokens=260, temperature=0.65)
     if not raw:
         hook = _fallback_hook(item)
-        b1, b2, b3, why = _fallback_bullets(item)
-        return hook, b1, b2, b3, why
+        lead, b1, b2, b3, b4 = _fallback_bullets(item)
+        return hook, lead, b1, b2, b3, b4
 
     lines = [x.strip() for x in str(raw).splitlines() if x.strip()]
     parsed = {}
@@ -515,25 +518,61 @@ def _generate_aggressive_parts(item: NewsItem) -> tuple[str, str, str, str, str]
         parsed[k.strip().upper()] = v.strip()
 
     hook = parsed.get("HOOK") or _fallback_hook(item)
-    b1 = parsed.get("B1") or _fallback_bullets(item)[0]
-    b2 = parsed.get("B2") or _fallback_bullets(item)[1]
-    b3 = parsed.get("B3") or _fallback_bullets(item)[2]
-    why = parsed.get("WHY") or _fallback_bullets(item)[3]
+    fb = _fallback_bullets(item)
+    lead = parsed.get("LEAD") or fb[0]
+    b1 = parsed.get("B1") or fb[1]
+    b2 = parsed.get("B2") or fb[2]
+    b3 = parsed.get("B3") or fb[3]
+    b4 = parsed.get("B4") or fb[4]
 
-    return hook[:90], b1[:120], b2[:120], b3[:120], why[:110]
+    return hook[:90], lead[:180], b1[:120], b2[:120], b3[:120], b4[:120]
+
+
+def _infer_platforms(item: NewsItem) -> str:
+    blob = f"{item.title} {item.summary}".lower()
+    platforms = []
+    if "android" in blob:
+        platforms.append("Android")
+    if "ios" in blob:
+        platforms.append("iOS")
+    if any(x in blob for x in ("pc", "windows", "win")):
+        platforms.append("PC")
+    if "linux" in blob:
+        platforms.append("Linux")
+    if "mac" in blob:
+        platforms.append("Mac")
+    if not platforms:
+        return "PC / Mobile"
+    return ", ".join(dict.fromkeys(platforms))
+
+
+def _infer_locale(item: NewsItem) -> str:
+    blob = f"{item.title} {item.summary}".lower()
+    if any(x in blob for x in ("рус", "russian", "ru ", " ru", "ru-")):
+        return "русский"
+    if any(x in blob for x in ("english", "en ", " en", "en-")):
+        return "английский"
+    return "уточняется"
 
 
 def _build_post_text(item: NewsItem) -> str:
-    hook, b1, b2, b3, why = _generate_aggressive_parts(item)
+    hook, lead, b1, b2, b3, b4 = _generate_aggressive_parts(item)
+    kind_label = "Dev Update" if item.source_kind in ("steam", "itch", "reddit") else "News Drop"
+    source_label = "F95 / community thread" if "f95zone.to" in item.link.lower() else item.source
+    platforms = _infer_platforms(item)
+    locale = _infer_locale(item)
     return (
-        f"📰 {hook}\n\n"
-        "Что внутри:\n"
-        f"• {b1}\n"
-        f"• {b2}\n"
-        f"• {b3}\n\n"
-        "Почему стоит чекнуть:\n"
-        f"{why}\n\n"
-        f"🔗 Читать: {item.link}\n"
+        f"🎮 {hook}\n\n"
+        f"{lead}\n\n"
+        f"✦ {b1}\n"
+        f"✦ {b2}\n"
+        f"✦ {b3}\n\n"
+        f"✦ {b4}\n\n"
+        f"✦ Формат: {kind_label}\n"
+        f"✦ Источник: {source_label}\n"
+        f"✦ Платформы: {platforms}\n"
+        f"✦ Локализация: {locale}\n"
+        f"✦ Материал: {item.title[:120]}\n\n"
         f"{WATERMARK_TEXT}"
     )
 
