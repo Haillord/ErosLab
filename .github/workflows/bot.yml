@@ -64,6 +64,7 @@ jobs:
           MIN_BITRATE_1080P: "2200"
           R34_API_KEY: ${{ secrets.R34_API_KEY }}
           R34_USER_ID: ${{ secrets.R34_USER_ID }}
+          RULE34_MIN_SCORE: "10"
           POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

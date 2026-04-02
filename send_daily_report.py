@@ -8,8 +8,8 @@ from telegram import Bot
 
 STATS_FILE = "stats.json"
 REPORT_CHAT = (
-    os.environ.get("ADMIN_USER_ID")
-    or os.environ.get("TELEGRAM_REPORT_CHAT")
+    os.environ.get("TELEGRAM_REPORT_CHAT")
+    or os.environ.get("ADMIN_USER_ID")
     or "@Haillord"
 )
 STATS_TZ = os.environ.get("STATS_TZ", "Europe/Moscow")

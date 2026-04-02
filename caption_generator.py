@@ -55,7 +55,7 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
-ENABLE_AI_VISION = os.environ.get("ENABLE_AI_VISION", "true").lower() in ("1", "true", "yes", "on")
+ENABLE_AI_VISION = os.environ.get("ENABLE_AI_VISION", "false").lower() in ("1", "true", "yes", "on")
 OPENROUTER_VISION_MODEL = os.environ.get("OPENROUTER_VISION_MODEL", "nvidia/nemotron-nano-12b-v2-vl:free")
 OPENROUTER_VISION_FALLBACK_MODEL = os.environ.get("OPENROUTER_VISION_FALLBACK_MODEL", "google/gemma-3-27b-it:free")
 ENABLE_STYLE_BLOCK = os.environ.get("ENABLE_STYLE_BLOCK", "true").lower() in ("1", "true", "yes", "on")
@@ -594,14 +594,6 @@ def _generate_ai_body(
     if not ENABLE_AI_CAPTION:
         return None
 
-    visual_hint = _extract_visual_hint(
-        content_type,
-        image_data=image_data,
-        image_url=image_url,
-        secondary_image_data=secondary_image_data,
-        secondary_image_url=secondary_image_url,
-    )
-
     base_prompt = (
         "Сделай короткий пост на русском для NSFW Telegram канала.\n"
         "Тон: живой, разговорный, уверенный.\n"
@@ -613,7 +605,6 @@ def _generate_ai_body(
         "Избегай кринж-слов: 'полная женщина', 'идеальная фигура', 'сочная', 'пышка'.\n"
         f"Контент: {content_type.upper()}, rating={rating}, likes={likes}.\n"
         f"Теги: {', '.join(safe_tags[:10]) if safe_tags else 'нет'}.\n"
-        f"Визуальный контекст: {visual_hint if visual_hint else 'нет'}.\n"
         f"Тех.данные: {tech_block if tech_block else 'нет'}.\n"
         "Верни только текст подписи."
     )

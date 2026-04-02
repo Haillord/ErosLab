@@ -569,7 +569,7 @@ def _extract_civitai_likes(item):
     numeric = [_to_int(v, 0) for v in candidates]
     return max(numeric) if numeric else 0
 
-def fetch_civitai():
+def fetch_civitai(max_pages: int = 5):
     # Используем browsingLevel=31 для максимального охвата + nsfw=X для explicit.
     # Newest проверяем первым для более быстрого нахождения свежего контента.
     variations = [
@@ -582,7 +582,7 @@ def fetch_civitai():
     ]
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
-    max_pages = 5
+    max_pages = max(1, int(max_pages))
 
     for base_params in variations:
         all_items = []
@@ -770,7 +770,7 @@ def _collect_pack_candidates(seed_item: dict, limit: int) -> list[dict]:
 
     try:
         if source == "civitai":
-            items = fetch_civitai()
+            items = fetch_civitai(max_pages=2)
         else:
             items = fetch_rule34(limit=100, content_type="mixed", media_type="image")
     except Exception as e:
@@ -1506,26 +1506,9 @@ async def main():
             f"target={IMAGE_PACK_SIZE}, built={len(image_pack)}, use_pack={use_image_pack}"
         )
 
-    # ========== THUMBNAIL ДЛЯ ВИДЕО (для vision) ==========
-    caption_image_data = data  # для фото — оригинал, для видео — fallback
+    # Vision отключен: не тратим время на извлечение кадров для подписи.
+    caption_image_data = None
     caption_secondary_image_data = None
-
-    if is_video:
-        thumbnail_primary = get_video_thumbnail(data, seek_sec=2.0)
-        thumbnail_secondary = get_video_thumbnail(data, seek_sec=4.0)
-        if thumbnail_primary:
-            caption_image_data = thumbnail_primary
-            caption_secondary_image_data = thumbnail_secondary
-            logger.info(
-                "Using video thumbnails for vision caption "
-                f"(primary={len(thumbnail_primary)} bytes, "
-                f"secondary={len(thumbnail_secondary) if thumbnail_secondary else 0} bytes)"
-            )
-        else:
-            # Если thumbnail не получился, пробуем использовать первый фрагмент видео
-            # как "изображение" (некоторые vision модели могут его обработать)
-            caption_image_data = data[:500000] if len(data) > 500000 else data
-            logger.warning(f"Thumbnail failed, using first {len(caption_image_data)} bytes of video for vision")
 
     # ========== ОТПРАВКА В TELEGRAM ==========
     bot = Bot(token=TELEGRAM_BOT_TOKEN)

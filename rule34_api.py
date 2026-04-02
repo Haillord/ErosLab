@@ -7,6 +7,7 @@ from typing import List, Dict, Any
 # Получаем данные из секретов GitHub (или ENV сервера)
 R34_USER_ID = os.getenv("R34_USER_ID") or os.getenv("RULE34_USER_ID")
 R34_API_KEY = os.getenv("R34_API_KEY") or os.getenv("RULE34_API_KEY")
+RULE34_MIN_SCORE = int(os.getenv("RULE34_MIN_SCORE", "10"))
 
 logger = logging.getLogger("ErosLab.Rule34")
 
@@ -127,7 +128,7 @@ def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed"
 
                 # Фильтруем по минимальному score (Rule34 score ниже чем CivitAI likes)
                 score = int(post.get("score", 0))
-                if score < 5:  # MIN_LIKES для Rule34
+                if score < RULE34_MIN_SCORE:
                     continue
 
                 post_tags = post.get("tags", "").split()
