@@ -49,7 +49,6 @@ jobs:
           NEWS_IMAGE_CHECK_TIMEOUT: "8"
           NEWS_MEDIA_MAX_IMAGES: "3"
           NEWS_MAX_REDDIT_STREAK: "1"
-          STEAM_APP_IDS: ""
           NEWS_STATE_FILE: "news_state.json"
         run: python news_poster.py
 
