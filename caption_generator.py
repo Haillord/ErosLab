@@ -70,6 +70,8 @@ NSFW_TOKEN_BLOCKLIST = {
 }
 
 STYLE_VARIANTS = ("classic", "story", "minimal")
+FRAME_EMOJI_AI = ("✨", "💫", "🌌")
+FRAME_EMOJI_3D = ("🔥", "🎯", "🧨")
 
 CTA_VARIANTS = (
     "💬 Как тебе такой формат?",
@@ -150,7 +152,13 @@ def _humanize_tag(tag):
     return text[0].upper() + text[1:]
 
 
-def _build_style_block(body_text):
+def _pick_frame_emoji(content_type):
+    if content_type == "ai":
+        return random.choice(FRAME_EMOJI_AI)
+    return random.choice(FRAME_EMOJI_3D)
+
+
+def _build_style_block(body_text, content_type=None):
     if not ENABLE_STYLE_BLOCK:
         return ""
 
@@ -158,7 +166,8 @@ def _build_style_block(body_text):
     if not text:
         return ""
 
-    return f"<blockquote>{_escape_html(text)}</blockquote>"
+    prefix = _pick_frame_emoji(content_type) if content_type else "✨"
+    return f"<blockquote>{prefix} {_escape_html(text)}</blockquote>"
 
 
 def _pick_caption_style():
@@ -364,7 +373,7 @@ def _generate_ai_body(content_type, rating, likes, safe_tags, tech_block):
         "Тон: живой, разговорный, уверенный.\n"
         f"Ограничения: 1-2 предложения, объём {AI_BODY_MIN_CHARS}-{AI_BODY_MAX_CHARS} символов, "
         f"ориентир по длине {AI_BODY_MIN_WORDS}-{AI_BODY_MAX_WORDS} слов, "
-        "без markdown, ссылок и эмодзи.\n"
+        "без markdown и ссылок; можно 0-1 уместный эмодзи.\n"
         "Не упоминай разрешение, размер файла, aspect ratio, рейтинг и лайки.\n"
         "Не используй сухие техно-формулировки.\n"
         "Избегай кринж-слов: 'полная женщина', 'идеальная фигура', 'сочная', 'пышка'.\n"
@@ -395,7 +404,7 @@ def _generate_ai_body(content_type, rating, likes, safe_tags, tech_block):
     if len(final_text) < AI_BODY_MIN_CHARS or _word_count(final_text) < AI_BODY_MIN_WORDS:
         expand_prompt = (
             f"Расширь текст до {AI_BODY_MIN_CHARS}-{AI_BODY_MAX_CHARS} символов и {AI_BODY_MIN_WORDS}-{AI_BODY_MAX_WORDS} слов, "
-            "оставив тот же смысл. 1-2 предложения, без ссылок и эмодзи.\n\n"
+            "оставив тот же смысл. 1-2 предложения, без ссылок; можно максимум 1 эмодзи.\n\n"
             f"Текст:\n{final_text}"
         )
         expanded = _call_ai_chat(
@@ -473,7 +482,7 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
     safe_tags = _clean_caption_tags(_safe_tags(tags))
     hashtags = " ".join(f"#{t}" for t in safe_tags[:MAX_HASHTAGS]) if safe_tags else ""
     fallback_body = _build_fallback_body(content_type, likes, safe_tags)
-    fallback_style_block = _build_style_block(fallback_body)
+    fallback_style_block = _build_style_block(fallback_body, content_type=content_type)
     fallback_body_text = "" if fallback_style_block else fallback_body
 
     fallback_caption = _assemble_caption(
@@ -494,7 +503,7 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
     if not ai_body:
         return fallback_caption
 
-    ai_style_block = _build_style_block(ai_body)
+    ai_style_block = _build_style_block(ai_body, content_type=content_type)
     ai_body_text = "" if ai_style_block else _escape_html(ai_body)
 
     ai_caption = _assemble_caption(
