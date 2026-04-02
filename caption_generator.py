@@ -460,7 +460,10 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
 
     tech_lines = []
     if resolution:
-        tech_lines.append(f"⧉ {resolution}")
+        if aspect_ratio:
+            tech_lines.append(f"⚡ {resolution} · {aspect_ratio}")
+        else:
+            tech_lines.append(f"⚡ {resolution}")
 
     if formatted_date:
         tech_lines.append(f"📅 {formatted_date}")
