@@ -872,9 +872,10 @@ async def _send_review_help(bot: Bot, draft_id: str):
         return
     text = (
         f"🧪 News draft: <code>{draft_id}</code>\n"
-        "<code>/approve DRAFT_ID</code> — опубликовать как есть\n"
-        "<code>/approve DRAFT_ID\\nТВОЙ_ТЕКСТ</code> — опубликовать с твоим текстом\n"
-        "<code>/reject DRAFT_ID</code> — отклонить"
+        f"<code>/approve {draft_id}</code> — опубликовать как есть\n"
+        f"<code>/approve {draft_id}\\nТВОЙ_ТЕКСТ</code> — опубликовать с твоим текстом\n"
+        f"<code>/reject {draft_id}</code> — отклонить\n"
+        "<code>/approve</code> или <code>/reject</code> — для текущего черновика"
     )
     await bot.send_message(chat_id=ADMIN_USER_ID, text=text, parse_mode="HTML")
 
@@ -958,6 +959,8 @@ async def main() -> None:
         if pending_draft and action:
             pending_id = str(pending_draft.get("id", ""))
             action_id = str(action.get("draft_id", "") or pending_id)
+            if action_id.strip().upper() == "DRAFT_ID":
+                action_id = pending_id
             if action_id != pending_id:
                 await bot.send_message(
                     chat_id=ADMIN_USER_ID,
