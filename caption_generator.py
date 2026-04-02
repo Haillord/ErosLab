@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import random
+import time
 from datetime import datetime
 
 import requests
@@ -214,30 +215,28 @@ def _build_hook_line(style, content_type, safe_tags, width, height):
 
 
 def _assemble_caption(style, content_type, title_line, tech_block, body_text, style_block, hashtags, footer, safe_tags, width, height):
-    parts = [title_line]
+    sections = [title_line]
 
     hook = _build_hook_line(style, content_type, safe_tags, width, height)
     if hook:
-        parts.append(hook)
+        sections.append(hook)
 
     if body_text:
-        parts.append(body_text)
-
-    if style_block:
-        parts.append(style_block)
+        sections.append(body_text)
+    elif style_block:
+        sections.append(style_block)
 
     if tech_block:
-        parts.append(tech_block)
+        sections.append(tech_block)
 
     if hashtags:
-        parts.append(HASHTAG_SEPARATOR)
-        parts.append(hashtags)
+        sections.append(f"{HASHTAG_SEPARATOR}\n{hashtags}")
 
     cta_line = _generate_ai_cta(content_type, safe_tags) or random.choice(CTA_VARIANTS)
-    parts.append(cta_line)
-    parts.append(footer)
-    # Compact layout: single-line rhythm to avoid large empty gaps in Telegram.
-    return "\n".join(parts)
+    sections.append(f"{cta_line}\n{footer}")
+
+    # One empty line between blocks for cleaner, "bigger" visual rhythm.
+    return "\n\n".join(s for s in sections if s)
 
 
 def _format_file_size(size_bytes):
@@ -301,7 +300,7 @@ def _available_ai_provider():
     return None
 
 
-def _call_ai_chat(prompt, system_prompt, max_tokens=140, temperature=0.8):
+def _call_ai_chat(prompt, system_prompt, max_tokens=140, temperature=0.8, retries=1):
     provider = _available_ai_provider()
     if not provider:
         return None
@@ -329,16 +328,20 @@ def _call_ai_chat(prompt, system_prompt, max_tokens=140, temperature=0.8):
         ],
     }
 
-    try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=AI_TIMEOUT_SEC)
-        resp.raise_for_status()
-        data = resp.json()
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        content = str(content).strip()
-        return content or None
-    except Exception as e:
-        logger.warning(f"AI caption call failed ({provider}): {e}")
-        return None
+    for attempt in range(max(1, retries)):
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=AI_TIMEOUT_SEC)
+            resp.raise_for_status()
+            data = resp.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            content = str(content).strip()
+            return content or None
+        except Exception as e:
+            if attempt == max(1, retries) - 1:
+                logger.warning(f"AI caption call failed ({provider}): {e}")
+                return None
+            time.sleep(0.6)
+    return None
 
 
 def _generate_ai_body(content_type, rating, likes, safe_tags, tech_block):
@@ -362,7 +365,7 @@ def _generate_ai_body(content_type, rating, likes, safe_tags, tech_block):
         "Ты редактор коротких NSFW-постов. "
         "Пиши естественно и лаконично, без клише вроде 'идеальная фигура' и 'выразительная подача'."
     )
-    draft = _call_ai_chat(base_prompt, system_1, max_tokens=140, temperature=0.8)
+    draft = _call_ai_chat(base_prompt, system_1, max_tokens=140, temperature=0.8, retries=2)
     if not draft:
         return None
 
@@ -372,7 +375,7 @@ def _generate_ai_body(content_type, rating, likes, safe_tags, tech_block):
         "Сделай звучание нативным и живым. Две короткие строки, 120-160 символов. "
         "Верни только итоговый текст."
     )
-    refined = _call_ai_chat(draft, system_2, max_tokens=120, temperature=0.3)
+    refined = _call_ai_chat(draft, system_2, max_tokens=120, temperature=0.3, retries=2)
     final_text = refined or draft
 
     if len(final_text) > 280:
