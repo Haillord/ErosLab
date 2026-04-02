@@ -58,11 +58,20 @@ NEWS_FETCH_LIMIT = int(os.environ.get("NEWS_FETCH_LIMIT", "80"))
 NEWS_MAX_PER_RUN = int(os.environ.get("NEWS_MAX_PER_RUN", "1"))
 
 
-RELEVANCE_KEYWORDS = {
-    "nsfw", "adult", "18+", "erotic", "hentai", "ecchi", "lewd", "uncensor",
-    "visual novel", "dating sim", "sex game", "porn game", "bdsm",
-    "patreon", "itch.io", "steam", "mod", "modding", "workshop",
-    "ai", "neural", "llm", "stable diffusion", "lora", "image model",
+RELEVANCE_ERO_KEYWORDS = {
+    "nsfw", "adult", "18+", "erotic", "hentai", "ecchi", "lewd",
+    "uncensor", "uncensored", "censored", "visual novel", "dating sim",
+    "sex game", "porn game", "bdsm", "fetish",
+}
+
+RELEVANCE_GAME_KEYWORDS = {
+    "steam", "itch.io", "patreon", "dlsite", "mod", "modding", "workshop",
+    "release", "demo", "wishlist", "patch", "update", "build", "game",
+}
+
+RELEVANCE_AI_KEYWORDS = {
+    "ai", "neural", "llm", "stable diffusion", "lora", "model",
+    "image generation", "video generation", "text-to-image", "text-to-video",
 }
 
 EXCLUDE_KEYWORDS = {
@@ -131,11 +140,30 @@ def _parse_published_ts(entry) -> float:
     return dt.timestamp()
 
 
+def _keyword_hits(blob: str, keywords: set[str]) -> int:
+    return sum(1 for k in keywords if k in blob)
+
+
 def _is_relevant(item: NewsItem) -> bool:
     blob = f"{item.title} {item.summary}".lower()
+    title_blob = item.title.lower()
     if any(x in blob for x in EXCLUDE_KEYWORDS):
         return False
-    return any(k in blob for k in RELEVANCE_KEYWORDS)
+
+    ero_hits = _keyword_hits(blob, RELEVANCE_ERO_KEYWORDS)
+    game_hits = _keyword_hits(blob, RELEVANCE_GAME_KEYWORDS)
+    ai_hits = _keyword_hits(blob, RELEVANCE_AI_KEYWORDS)
+    title_ero_hits = _keyword_hits(title_blob, RELEVANCE_ERO_KEYWORDS)
+
+    # Strict by default: keep only erotica-related news with gaming/AI context.
+    # This prevents random generic gaming posts from slipping in.
+    if title_ero_hits == 0 and ero_hits < 2:
+        return False
+    if ero_hits >= 1 and (game_hits >= 1 or ai_hits >= 1):
+        return True
+    if ero_hits >= 2:
+        return True
+    return False
 
 
 def _fetch_news() -> list[NewsItem]:
@@ -364,4 +392,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-
