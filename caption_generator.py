@@ -150,8 +150,14 @@ def _humanize_tag(tag):
 
 
 def _build_style_block(body_text):
-    # В текущем стиле не используем отдельное "окно" с quote-блоком.
-    return ""
+    if not ENABLE_STYLE_BLOCK:
+        return ""
+
+    text = str(body_text or "").strip()
+    if not text:
+        return ""
+
+    return f"<blockquote>{_escape_html(text)}</blockquote>"
 
 
 def _pick_caption_style():
