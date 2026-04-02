@@ -47,6 +47,13 @@ MIN_BITRATE_1080P = int(os.environ.get("MIN_BITRATE_1080P", "2200"))
 IMAGE_PACK_ENABLED = os.environ.get("IMAGE_PACK_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 IMAGE_PACK_SIZE = max(1, int(os.environ.get("IMAGE_PACK_SIZE", "3")))
 IMAGE_PACK_CANDIDATE_POOL = max(IMAGE_PACK_SIZE, int(os.environ.get("IMAGE_PACK_CANDIDATE_POOL", "18")))
+SFM_PRIVATE_MODE = os.environ.get("SFM_PRIVATE_MODE", "false").lower() in ("1", "true", "yes", "on")
+SFM_PRIVATE_CHAT_ID = str(os.environ.get("SFM_PRIVATE_CHAT_ID", "")).strip()
+SFM_PRIVATE_MIN_LIKES = int(os.environ.get("SFM_PRIVATE_MIN_LIKES", "25"))
+SFM_PRIVATE_FETCH_LIMIT = int(os.environ.get("SFM_PRIVATE_FETCH_LIMIT", "120"))
+SFM_PRIVATE_DAILY_LIMIT = int(os.environ.get("SFM_PRIVATE_DAILY_LIMIT", "1"))
+SFM_PRIVATE_STATE_FILE = os.environ.get("SFM_PRIVATE_STATE_FILE", "sfm_private_state.json")
+SFM_PRIVATE_TZ = os.environ.get("SFM_PRIVATE_TZ", os.environ.get("STATS_TZ", "Europe/Moscow"))
 
 # Временно отключить Rule34 (True = только CivitAI для тестов)
 TEST_CIVITAI_ONLY = False
@@ -133,6 +140,26 @@ posted_hashes = set(load_json(HASHES_FILE, []))
 content_state = load_json(CONTENT_STATE_FILE, {"last_type": "3d", "last_media": "video"})
 pending_draft = load_json(PENDING_DRAFT_FILE, {})
 review_state = load_json(REVIEW_STATE_FILE, {"last_update_id": 0})
+
+
+def _load_sfm_private_state():
+    state = load_json(SFM_PRIVATE_STATE_FILE, {"last_post_day": "", "last_post_id": ""})
+    if not isinstance(state, dict):
+        return {"last_post_day": "", "last_post_id": ""}
+    state.setdefault("last_post_day", "")
+    state.setdefault("last_post_id", "")
+    return state
+
+
+def _save_sfm_private_state(state):
+    save_json(SFM_PRIVATE_STATE_FILE, state if isinstance(state, dict) else {"last_post_day": "", "last_post_id": ""})
+
+
+def _get_sfm_day_key():
+    try:
+        return datetime.now(ZoneInfo(SFM_PRIVATE_TZ)).date().isoformat()
+    except Exception:
+        return datetime.utcnow().date().isoformat()
 
 def _get_stats_day_key():
     try:
@@ -745,6 +772,56 @@ def _pick_by_content_type(fresh):
     return weighted_choice(fallback) if fallback else None
 
 
+def _is_sfm_item(item: dict) -> bool:
+    tags = [str(t).lower() for t in (item.get("tags") or [])]
+    tag_blob = " ".join(tags)
+    return (
+        "sfm" in tags
+        or "source_filmmaker" in tags
+        or "source_filmmaker" in tag_blob
+    )
+
+
+def fetch_and_pick_top_sfm_video():
+    """
+    Отдельный режим: SFM-видео в личку.
+    Берем Rule34 3D video выдачу, фильтруем по SFM-тегам и лайкам,
+    затем выбираем самый залайканный свежий элемент.
+    """
+    items = fetch_rule34(
+        limit=max(50, SFM_PRIVATE_FETCH_LIMIT),
+        content_type="3d",
+        media_type="video",
+    )
+    if not items:
+        logger.info("SFM private mode: no items from Rule34")
+        return None
+
+    fresh = [
+        i for i in items
+        if i.get("id") not in posted_ids
+        and not has_blacklisted(i.get("tags", []))
+        and _is_video_item(i)
+        and _is_sfm_item(i)
+        and int(i.get("likes", 0) or 0) >= SFM_PRIVATE_MIN_LIKES
+    ]
+
+    if not fresh:
+        logger.info(
+            "SFM private mode: no fresh SFM videos "
+            f"(min_likes={SFM_PRIVATE_MIN_LIKES})"
+        )
+        return None
+
+    fresh.sort(key=lambda x: int(x.get("likes", 0) or 0), reverse=True)
+    selected = fresh[0]
+    logger.info(
+        f"SFM private mode selected: {selected.get('id')} "
+        f"(likes={selected.get('likes', 0)})"
+    )
+    return selected
+
+
 def fetch_and_pick():
     if TEST_CIVITAI_ONLY:
         source = "civitai"
@@ -1179,6 +1256,28 @@ async def main():
     )
     logger.info("=" * 50)
 
+    target_chat_id = TELEGRAM_CHANNEL_ID
+    if SFM_PRIVATE_MODE:
+        target_chat_id = SFM_PRIVATE_CHAT_ID or ADMIN_USER_ID
+        if not target_chat_id:
+            logger.error("SFM_PRIVATE_MODE enabled but no SFM_PRIVATE_CHAT_ID/ADMIN_USER_ID provided")
+            flush_stats_once()
+            return
+        sfm_state = _load_sfm_private_state()
+        today_key = _get_sfm_day_key()
+        if SFM_PRIVATE_DAILY_LIMIT <= 1 and sfm_state.get("last_post_day") == today_key:
+            logger.info(
+                "SFM private mode: daily limit reached "
+                f"(day={today_key}, last_post_id={sfm_state.get('last_post_id', '')})"
+            )
+            run_metrics["skip_no_item"] += 1
+            flush_stats_once()
+            return
+        logger.info(
+            f"SFM private mode enabled: target_chat_id={target_chat_id}, "
+            f"min_likes={SFM_PRIVATE_MIN_LIKES}, daily_limit={SFM_PRIVATE_DAILY_LIMIT}"
+        )
+
     if REVIEW_MODE:
         if not ADMIN_USER_ID:
             logger.error("REVIEW_MODE enabled but ADMIN_USER_ID is empty")
@@ -1272,7 +1371,10 @@ async def main():
     MAX_ATTEMPTS  = 10
 
     for attempt in range(MAX_ATTEMPTS):
-        item = fetch_and_pick()
+        if SFM_PRIVATE_MODE:
+            item = fetch_and_pick_top_sfm_video()
+        else:
+            item = fetch_and_pick()
 
         if not item:
             logger.info("No more fresh posts available")
@@ -1528,7 +1630,7 @@ async def main():
             video_io.name = "video.mp4"
             await send_with_retry(
                 bot.send_video,
-                chat_id=TELEGRAM_CHANNEL_ID,
+                chat_id=target_chat_id,
                 video=video_io,
                 caption=caption,
                 parse_mode="HTML",
@@ -1542,7 +1644,7 @@ async def main():
             anim_io.name = "animation.gif"
             await send_with_retry(
                 bot.send_animation,
-                chat_id=TELEGRAM_CHANNEL_ID,
+                chat_id=target_chat_id,
                 animation=anim_io,
                 caption=caption,
                 parse_mode="HTML",
@@ -1566,7 +1668,7 @@ async def main():
 
             await send_with_retry(
                 bot.send_media_group,
-                chat_id=TELEGRAM_CHANNEL_ID,
+                chat_id=target_chat_id,
                 media=media,
                 write_timeout=60,
                 read_timeout=60
@@ -1578,7 +1680,7 @@ async def main():
             photo_io.name = "image.jpg"
             await send_with_retry(
                 bot.send_photo,
-                chat_id=TELEGRAM_CHANNEL_ID,
+                chat_id=target_chat_id,
                 photo=photo_io,
                 caption=caption,
                 parse_mode="HTML",
@@ -1593,6 +1695,10 @@ async def main():
                 posted_ids.add(entry_item["id"])
             posted_hashes.add(entry_hash)
         save_all()
+        if SFM_PRIVATE_MODE:
+            sfm_state["last_post_day"] = _get_sfm_day_key()
+            sfm_state["last_post_id"] = str(item.get("id", ""))
+            _save_sfm_private_state(sfm_state)
         logger.info(
             f"Successfully posted: {item['id']}"
             + (f" (image pack size={len(image_pack)})" if use_image_pack else "")

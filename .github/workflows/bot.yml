@@ -78,6 +78,10 @@ jobs:
           STYLE_BLOCK_MAX_ITEMS: "3"
           CAPTION_STYLE: "minimal"
           STATS_TZ: "Europe/Moscow"
+          SFM_PRIVATE_MODE: ${{ secrets.SFM_PRIVATE_MODE }}
+          SFM_PRIVATE_CHAT_ID: ${{ secrets.SFM_PRIVATE_CHAT_ID }}
+          SFM_PRIVATE_MIN_LIKES: ${{ secrets.SFM_PRIVATE_MIN_LIKES }}
+          SFM_PRIVATE_DAILY_LIMIT: ${{ secrets.SFM_PRIVATE_DAILY_LIMIT }}
         run: python civitai_bot.py
         
       - name: Commit and push updates
