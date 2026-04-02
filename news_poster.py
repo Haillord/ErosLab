@@ -72,6 +72,7 @@ NEWS_REVIEW_MODE = os.environ.get("NEWS_REVIEW_MODE", "false").lower() in ("1", 
 ADMIN_USER_ID = str(os.environ.get("ADMIN_USER_ID", "")).strip()
 NEWS_PENDING_DRAFT_FILE = os.environ.get("NEWS_PENDING_DRAFT_FILE", "news_pending_draft.json")
 NEWS_REVIEW_STATE_FILE = os.environ.get("NEWS_REVIEW_STATE_FILE", "news_review_state.json")
+NEWS_REVIEW_FORCE_POLLING = os.environ.get("NEWS_REVIEW_FORCE_POLLING", "true").lower() in ("1", "true", "yes", "on")
 
 
 RELEVANCE_ERO_KEYWORDS = {
@@ -763,13 +764,13 @@ async def _poll_review_action(bot: Bot, review_state: dict):
     return action
 
 
-def _build_payload_for_item(item: NewsItem):
+def _build_payload_for_item(item: NewsItem, allow_no_image: bool = False):
     text = _build_post_text(item)
     if len(text) > 1000:
         text = text[:997].rstrip() + "..."
 
     best_images = _pick_best_image_urls(item, limit=NEWS_MEDIA_MAX_IMAGES)
-    if not best_images and NEWS_REQUIRE_IMAGE:
+    if not best_images and NEWS_REQUIRE_IMAGE and not allow_no_image:
         return None
     return {"text": text, "image_urls": best_images}
 
@@ -806,6 +807,19 @@ async def _send_review_help(bot: Bot, draft_id: str):
         "<code>/reject DRAFT_ID</code> — отклонить"
     )
     await bot.send_message(chat_id=ADMIN_USER_ID, text=text, parse_mode="HTML")
+
+
+async def _ensure_review_polling_mode(bot: Bot):
+    """
+    getUpdates cannot work while webhook is active (409 Conflict).
+    For CI review mode we switch bot to polling mode once per run.
+    """
+    if not NEWS_REVIEW_FORCE_POLLING:
+        return
+    try:
+        await bot.delete_webhook(drop_pending_updates=False)
+    except Exception as e:
+        logger.warning(f"Could not delete webhook for polling mode: {e}")
 
 
 async def _post_news_items(items: list[NewsItem], posted_links: set[str], state: dict) -> int:
@@ -868,6 +882,7 @@ async def main() -> None:
             return
 
         bot = Bot(token=TELEGRAM_BOT_TOKEN)
+        await _ensure_review_polling_mode(bot)
         action = await _poll_review_action(bot, review_state)
 
         if pending_draft and action:
@@ -918,7 +933,8 @@ async def main() -> None:
         for item in fresh_items:
             if item.source_kind == "reddit" and reddit_streak >= NEWS_MAX_REDDIT_STREAK:
                 continue
-            payload = _build_payload_for_item(item)
+            # In review mode allow text-only draft when image quality filter is too strict.
+            payload = _build_payload_for_item(item, allow_no_image=True)
             if payload is None:
                 continue
             candidate = item

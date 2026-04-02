@@ -43,6 +43,7 @@ jobs:
           OPENROUTER_MODEL: "openai/gpt-4o-mini"
           ENABLE_AI_NEWS: "true"
           NEWS_REVIEW_MODE: "true"
+          NEWS_REVIEW_FORCE_POLLING: "true"
           NEWS_WATERMARK: "📣 @eroslabai"
           NEWS_LOOKBACK_HOURS: "96"
           NEWS_FETCH_LIMIT: "80"
