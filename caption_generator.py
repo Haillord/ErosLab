@@ -34,7 +34,7 @@ TECHNICAL_TAGS = {
     "stable_diffusion", "novelai", "midjourney", "lora"
 }
 
-MAX_HASHTAGS = 4
+MAX_HASHTAGS = 6
 
 ENABLE_AI_CAPTION = os.environ.get("ENABLE_AI_CAPTION", "false").lower() in ("1", "true", "yes", "on")
 AI_DRY_RUN = os.environ.get("AI_DRY_RUN", "false").lower() in ("1", "true", "yes", "on")
