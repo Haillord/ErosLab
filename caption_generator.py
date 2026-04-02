@@ -124,8 +124,8 @@ def _pick_caption_style():
 
 def _build_title_line(content_type):
     if content_type == "ai":
-        return "🟢 AI Art | 🔴 3D"
-    return "🔴 AI Art | 🟢 3D"
+        return "✨ AI визуал"
+    return "🧱 3D визуал"
 
 
 def _pick_subject_tag(safe_tags):
@@ -367,13 +367,16 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
     formatted_date = _format_date(date)
 
     tech_lines = []
-    if resolution and aspect_ratio:
-        tech_lines.append(f"📐 {resolution} | {aspect_ratio}")
+    if resolution and aspect_ratio and formatted_size:
+        tech_lines.append(f"⧉ {resolution} · {aspect_ratio} · {formatted_size}")
+    elif resolution and aspect_ratio:
+        tech_lines.append(f"⧉ {resolution} · {aspect_ratio}")
+    elif resolution and formatted_size:
+        tech_lines.append(f"⧉ {resolution} · {formatted_size}")
     elif resolution:
-        tech_lines.append(f"📐 {resolution}")
-
-    if formatted_size:
-        tech_lines.append(f"💾 {formatted_size}")
+        tech_lines.append(f"⧉ {resolution}")
+    elif formatted_size:
+        tech_lines.append(f"⧉ {formatted_size}")
 
     if formatted_date:
         tech_lines.append(f"📅 {formatted_date}")
