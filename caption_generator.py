@@ -45,7 +45,7 @@ GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 ENABLE_STYLE_BLOCK = os.environ.get("ENABLE_STYLE_BLOCK", "true").lower() in ("1", "true", "yes", "on")
 STYLE_BLOCK_MAX_ITEMS = int(os.environ.get("STYLE_BLOCK_MAX_ITEMS", "3"))
-CAPTION_STYLE = os.environ.get("CAPTION_STYLE", "minimal").strip().lower()
+CAPTION_STYLE = os.environ.get("CAPTION_STYLE", "story").strip().lower()
 
 CRINGE_TAG_HINTS = {
     "dynamic", "moments", "details", "fidelity", "thrust", "shaking",
@@ -155,27 +155,27 @@ def _build_fallback_body(content_type, likes, safe_tags):
     if content_type == "ai":
         if subject:
             variants = [
-                f"Акцент на {subject.lower()}.",
-                f"В центре — {subject.lower()}.",
-                f"Ловим вайб: {subject.lower()}.",
+                f"Акцент на {subject.lower()} и пластике сцены.\nПодача мягкая, но выразительная.",
+                f"В центре — {subject.lower()} и настроение кадра.\nСцена держит внимание до конца.",
+                f"Кадр выстроен вокруг {subject.lower()}.\nАтмосфера спокойная, с чётким фокусом.",
             ]
             return random.choice(variants)
         return random.choice([
-            "Свежий AI-кадр, коротко и по делу.",
-            "Новый AI-визуал в ленте.",
-            "AI-пост с акцентом на атмосферу.",
+            "Свежий AI-кадр с аккуратной композицией.\nФокус на атмосфере и подаче.",
+            "Новый AI-визуал в ленте.\nСцена собрана спокойно и чисто.",
+            "AI-пост с акцентом на настроение.\nБез лишнего шума, только кадр и вайб.",
         ])
     if subject:
         variants = [
-            f"Акцент на {subject.lower()}.",
-            f"В центре — {subject.lower()}.",
-            f"3D-сцена с фокусом на {subject.lower()}.",
+            f"Акцент на {subject.lower()} и динамике сцены.\nКадр читается с первого взгляда.",
+            f"В центре — {subject.lower()} и движение формы.\nПодача плотная и выразительная.",
+            f"3D-сцена с фокусом на {subject.lower()}.\nКомпозиция держится уверенно.",
         ]
         return random.choice(variants)
     return random.choice([
-        "Свежая 3D-сцена в ленте.",
-        "Новый 3D-визуал без лишнего шума.",
-        "3D-пост с акцентом на подачу.",
+        "Свежая 3D-сцена в ленте.\nАкцент на композиции и движении кадра.",
+        "Новый 3D-визуал без лишнего шума.\nЧистая подача и ровный ритм.",
+        "3D-пост с акцентом на подачу.\nДетали работают на общее настроение.",
     ])
 
 
@@ -187,8 +187,8 @@ def _build_hook_line(style, content_type, safe_tags, width, height):
 
     if style == "story":
         if subject:
-            return f"{subject} — новый пост в ленте."
-        return "Свежий релиз в ленте."
+            return f"{subject} — новый акцент в ленте."
+        return "Свежий акцент в ленте."
     if style == "minimal":
         return ""
     if content_type == "ai":
@@ -339,9 +339,10 @@ def _generate_ai_body(content_type, rating, likes, safe_tags, tech_block):
     base_prompt = (
         "Сделай короткий пост на русском для NSFW Telegram канала.\n"
         "Тон: живой, разговорный, уверенный.\n"
-        "Ограничения: одно короткое предложение (до 90 символов), без markdown, ссылок и эмодзи.\n"
+        "Ограничения: две короткие строки, общий объём 120-160 символов, без markdown, ссылок и эмодзи.\n"
         "Не упоминай разрешение, размер файла, aspect ratio, рейтинг и лайки.\n"
         "Не используй сухие техно-формулировки.\n"
+        "Избегай кринж-слов: 'полная женщина', 'идеальная фигура', 'сочная', 'пышка'.\n"
         f"Контент: {content_type.upper()}, rating={rating}, likes={likes}.\n"
         f"Теги: {', '.join(safe_tags[:10]) if safe_tags else 'нет'}.\n"
         f"Тех.данные: {tech_block if tech_block else 'нет'}.\n"
@@ -359,7 +360,7 @@ def _generate_ai_body(content_type, rating, likes, safe_tags, tech_block):
     # Second pass: anti-cringe cleanup.
     system_2 = (
         "Очисти текст от неестественных и повторяющихся формулировок. "
-        "Сделай звучание нативным и живым. Максимум 90 символов. "
+        "Сделай звучание нативным и живым. Две короткие строки, 120-160 символов. "
         "Верни только итоговый текст."
     )
     refined = _call_ai_chat(draft, system_2, max_tokens=120, temperature=0.3)
@@ -387,8 +388,7 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
     """
     safe_watermark = _escape_html(watermark)
     clickable_suggestion = '💬 <a href="https://t.me/Haillord">Предложка</a>'
-    cta_line = "💬 Обсуждаем в комментариях"
-    footer = f"{cta_line}\n{safe_watermark}\n{clickable_suggestion}"
+    footer = f"{safe_watermark}\n{clickable_suggestion}"
 
     style = _pick_caption_style()
     content_header = _build_title_line(content_type)

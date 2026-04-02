@@ -21,7 +21,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from PIL import Image, ImageDraw, ImageFont
 import telegram
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Bot
 from caption_generator import generate_caption
 from rule34_api import fetch_rule34
 
@@ -370,18 +370,6 @@ async def send_with_retry(func, *args, retries=3, **kwargs):
                 raise
             logger.warning(f"Telegram send failed (attempt {attempt + 1}/{retries}): {e}")
             await asyncio.sleep(2)
-
-def _build_comment_url(sent_message):
-    """Строит ссылку на обсуждение поста в канале, если доступен username."""
-    try:
-        chat_username = getattr(sent_message.chat, "username", None)
-        if not chat_username and isinstance(TELEGRAM_CHANNEL_ID, str) and TELEGRAM_CHANNEL_ID.startswith("@"):
-            chat_username = TELEGRAM_CHANNEL_ID[1:]
-        if not chat_username:
-            return None
-        return f"https://t.me/{chat_username}/{sent_message.message_id}?comment=1"
-    except Exception:
-        return None
 
 # ==================== ТЕГИ ====================
 def extract_tags(item):
@@ -1025,13 +1013,12 @@ async def main():
     logger.info(f"Caption preview: {caption[:100]}")
 
     try:
-        sent_message = None
         if is_video:
             logger.info("Sending as video")
             logger.info("Using original video (no optimization)")
             video_io = BytesIO(data)
             video_io.name = "video.mp4"
-            sent_message = await send_with_retry(
+            await send_with_retry(
                 bot.send_video,
                 chat_id=TELEGRAM_CHANNEL_ID,
                 video=video_io,
@@ -1045,7 +1032,7 @@ async def main():
             logger.info("Sending as GIF animation")
             anim_io = BytesIO(data)
             anim_io.name = "animation.gif"
-            sent_message = await send_with_retry(
+            await send_with_retry(
                 bot.send_animation,
                 chat_id=TELEGRAM_CHANNEL_ID,
                 animation=anim_io,
@@ -1058,7 +1045,7 @@ async def main():
             logger.info("Sending as image without watermark")
             photo_io = BytesIO(data)
             photo_io.name = "image.jpg"
-            sent_message = await send_with_retry(
+            await send_with_retry(
                 bot.send_photo,
                 chat_id=TELEGRAM_CHANNEL_ID,
                 photo=photo_io,
@@ -1067,22 +1054,6 @@ async def main():
                 write_timeout=60,
                 read_timeout=60
             )
-
-        # Добавляем кнопку "Обсудить" под опубликованным постом.
-        comment_url = _build_comment_url(sent_message) if sent_message else None
-        if comment_url and sent_message:
-            reply_markup = InlineKeyboardMarkup(
-                [[InlineKeyboardButton("💬 Обсудить", url=comment_url)]]
-            )
-            await send_with_retry(
-                bot.edit_message_reply_markup,
-                chat_id=TELEGRAM_CHANNEL_ID,
-                message_id=sent_message.message_id,
-                reply_markup=reply_markup
-            )
-            logger.info("Discussion button attached")
-        else:
-            logger.info("Discussion button skipped: channel username not available")
 
         posted_ids.add(item["id"])
         posted_hashes.add(img_hash)
