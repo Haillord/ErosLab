@@ -145,11 +145,29 @@ def _build_fallback_body(content_type, likes, safe_tags):
     subject = _pick_subject_tag(safe_tags)
     if content_type == "ai":
         if subject:
-            return f"Атмосферный AI-кадр с акцентом на {subject.lower()}."
-        return "Свежий AI-кадр с выразительной подачей."
+            variants = [
+                f"Акцент на {subject.lower()}.",
+                f"В центре — {subject.lower()}.",
+                f"Ловим вайб: {subject.lower()}.",
+            ]
+            return random.choice(variants)
+        return random.choice([
+            "Свежий AI-кадр, коротко и по делу.",
+            "Новый AI-визуал в ленте.",
+            "AI-пост с акцентом на атмосферу.",
+        ])
     if subject:
-        return f"Выразительная 3D-сцена с акцентом на {subject.lower()}."
-    return "Свежая 3D-сцена с акцентом на образ."
+        variants = [
+            f"Акцент на {subject.lower()}.",
+            f"В центре — {subject.lower()}.",
+            f"3D-сцена с фокусом на {subject.lower()}.",
+        ]
+        return random.choice(variants)
+    return random.choice([
+        "Свежая 3D-сцена в ленте.",
+        "Новый 3D-визуал без лишнего шума.",
+        "3D-пост с акцентом на подачу.",
+    ])
 
 
 def _build_hook_line(style, content_type, safe_tags, width, height):
@@ -311,8 +329,8 @@ def _generate_ai_body(content_type, rating, likes, safe_tags, tech_block):
 
     base_prompt = (
         "Сделай короткий пост на русском для NSFW Telegram канала.\n"
-        "Тон: живой, уверенный, без кринжа и без канцелярита.\n"
-        "Ограничения: 1-2 коротких предложения, без markdown, без ссылок, без эмодзи.\n"
+        "Тон: живой, разговорный, уверенный.\n"
+        "Ограничения: одно короткое предложение (до 90 символов), без markdown, ссылок и эмодзи.\n"
         "Не упоминай разрешение, размер файла, aspect ratio, рейтинг и лайки.\n"
         "Не используй сухие техно-формулировки.\n"
         f"Контент: {content_type.upper()}, rating={rating}, likes={likes}.\n"
@@ -323,7 +341,7 @@ def _generate_ai_body(content_type, rating, likes, safe_tags, tech_block):
 
     system_1 = (
         "Ты редактор коротких NSFW-постов. "
-        "Пиши естественно и лаконично, без странных AI-фраз."
+        "Пиши естественно и лаконично, без клише вроде 'идеальная фигура' и 'выразительная подача'."
     )
     draft = _call_ai_chat(base_prompt, system_1, max_tokens=140, temperature=0.8)
     if not draft:
@@ -332,7 +350,7 @@ def _generate_ai_body(content_type, rating, likes, safe_tags, tech_block):
     # Second pass: anti-cringe cleanup.
     system_2 = (
         "Очисти текст от неестественных и повторяющихся формулировок. "
-        "Оставь смысл. Максимум 220 символов. "
+        "Сделай звучание нативным и живым. Максимум 90 символов. "
         "Верни только итоговый текст."
     )
     refined = _call_ai_chat(draft, system_2, max_tokens=120, temperature=0.3)
@@ -347,7 +365,7 @@ def _generate_ai_body(content_type, rating, likes, safe_tags, tech_block):
 # ==================== BUILD ====================
 
 def generate_caption(tags, rating, likes, image_data=None, image_url=None,
-                     watermark="📢 @eroslabai", suggestion="💬 Предложка: @Haillord",
+                     watermark="📣 @eroslabai", suggestion="💬 Предложка: @Haillord",
                      content_type="ai", width=None, height=None,
                      file_size=None, date=None):
     """
@@ -360,7 +378,8 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
     """
     safe_watermark = _escape_html(watermark)
     clickable_suggestion = '💬 <a href="https://t.me/Haillord">Предложка</a>'
-    footer = f"{safe_watermark}\n{clickable_suggestion}"
+    cta_line = "💬 Обсуждаем в комментариях"
+    footer = f"{cta_line}\n{safe_watermark}\n{clickable_suggestion}"
 
     style = _pick_caption_style()
     content_header = _build_title_line(content_type)
