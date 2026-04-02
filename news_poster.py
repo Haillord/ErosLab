@@ -56,6 +56,10 @@ NEWS_MAX_POSTED_LINKS = int(os.environ.get("NEWS_MAX_POSTED_LINKS", "3000"))
 NEWS_LOOKBACK_HOURS = int(os.environ.get("NEWS_LOOKBACK_HOURS", "96"))
 NEWS_FETCH_LIMIT = int(os.environ.get("NEWS_FETCH_LIMIT", "80"))
 NEWS_MAX_PER_RUN = int(os.environ.get("NEWS_MAX_PER_RUN", "1"))
+NEWS_REQUIRE_IMAGE = os.environ.get("NEWS_REQUIRE_IMAGE", "true").lower() in ("1", "true", "yes", "on")
+NEWS_MIN_IMAGE_WIDTH = int(os.environ.get("NEWS_MIN_IMAGE_WIDTH", "700"))
+NEWS_MIN_IMAGE_HEIGHT = int(os.environ.get("NEWS_MIN_IMAGE_HEIGHT", "390"))
+NEWS_IMAGE_CHECK_TIMEOUT = int(os.environ.get("NEWS_IMAGE_CHECK_TIMEOUT", "8"))
 
 
 RELEVANCE_ERO_KEYWORDS = {
@@ -101,6 +105,7 @@ class NewsItem:
     source: str
     published_ts: float
     image_url: str
+    image_candidates: list[str]
 
 
 def _load_state() -> dict:
@@ -200,6 +205,40 @@ def _extract_image_url(entry) -> str:
     return ""
 
 
+def _extract_image_candidates(entry) -> list[str]:
+    candidates = []
+
+    def push(url: str):
+        u = str(url or "").strip()
+        if u.startswith("http") and u not in candidates:
+            candidates.append(u)
+
+    media_content = getattr(entry, "media_content", None) or []
+    for m in media_content:
+        push((m or {}).get("url", ""))
+
+    media_thumb = getattr(entry, "media_thumbnail", None) or []
+    for m in media_thumb:
+        push((m or {}).get("url", ""))
+
+    links = getattr(entry, "links", None) or []
+    for lnk in links:
+        rel = str((lnk or {}).get("rel", "")).lower()
+        ltype = str((lnk or {}).get("type", "")).lower()
+        if rel == "enclosure" or ltype.startswith("image/"):
+            push((lnk or {}).get("href", ""))
+
+    image_obj = getattr(entry, "image", None)
+    if isinstance(image_obj, dict):
+        push(image_obj.get("href", ""))
+
+    summary = str(getattr(entry, "summary", "") or "")
+    for m in re.finditer(r'<img[^>]+src=["\']([^"\']+)["\']', summary, flags=re.IGNORECASE):
+        push(m.group(1))
+
+    return candidates
+
+
 def _keyword_hits(blob: str, keywords: set[str]) -> int:
     return sum(1 for k in keywords if k in blob)
 
@@ -280,6 +319,7 @@ def _fetch_news() -> list[NewsItem]:
                     source=urlparse(src).netloc,
                     published_ts=published_ts,
                     image_url=_extract_image_url(entry),
+                    image_candidates=_extract_image_candidates(entry),
                 )
                 collected.append(item)
         except Exception as e:
@@ -436,6 +476,59 @@ def _build_post_text(item: NewsItem) -> str:
     )
 
 
+def _score_image_size(width: int, height: int) -> float:
+    if width < NEWS_MIN_IMAGE_WIDTH or height < NEWS_MIN_IMAGE_HEIGHT:
+        return -1.0
+    area_score = min((width * height) / (1280 * 720), 4.0)
+    ratio = width / max(1, height)
+    if 1.2 <= ratio <= 1.9:
+        ratio_bonus = 1.0
+    elif 0.9 <= ratio <= 2.1:
+        ratio_bonus = 0.6
+    else:
+        ratio_bonus = 0.1
+    return area_score + ratio_bonus
+
+
+def _pick_best_image_url(item: NewsItem) -> str:
+    candidates = list(item.image_candidates or [])
+    if item.image_url and item.image_url not in candidates:
+        candidates.insert(0, item.image_url)
+    if not candidates:
+        return ""
+
+    # Lazy import to keep start-up lightweight.
+    from io import BytesIO
+    from PIL import Image
+
+    best_url = ""
+    best_score = -1.0
+
+    for url in candidates[:6]:
+        try:
+            resp = requests.get(url, timeout=NEWS_IMAGE_CHECK_TIMEOUT)
+            if resp.status_code != 200:
+                continue
+            ctype = str(resp.headers.get("Content-Type", "")).lower()
+            if "image" not in ctype:
+                continue
+            data = resp.content
+            if not data:
+                continue
+            img = Image.open(BytesIO(data))
+            width, height = img.size
+            score = _score_image_size(width, height)
+            if score > best_score:
+                best_score = score
+                best_url = url
+        except Exception:
+            continue
+
+    if best_score < 0:
+        return ""
+    return best_url
+
+
 async def _post_news_items(items: list[NewsItem], posted_links: set[str]) -> int:
     if not TELEGRAM_BOT_TOKEN:
         logger.error("No TELEGRAM_BOT_TOKEN; abort.")
@@ -449,9 +542,13 @@ async def _post_news_items(items: list[NewsItem], posted_links: set[str]) -> int
             continue
         text = _build_post_text(item)
         try:
-            if item.image_url:
+            best_image = _pick_best_image_url(item)
+            if best_image:
                 # Better visual presentation: photo card + caption (like channel-style news posts).
-                await bot.send_photo(chat_id=TELEGRAM_CHANNEL_ID, photo=item.image_url, caption=text)
+                await bot.send_photo(chat_id=TELEGRAM_CHANNEL_ID, photo=best_image, caption=text)
+            elif NEWS_REQUIRE_IMAGE:
+                logger.info(f"Skip news without quality image: {item.title[:90]}")
+                continue
             else:
                 await bot.send_message(chat_id=TELEGRAM_CHANNEL_ID, text=text, disable_web_page_preview=True)
             posted_links.add(normalized)

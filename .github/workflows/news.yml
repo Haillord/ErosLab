@@ -43,6 +43,10 @@ jobs:
           NEWS_LOOKBACK_HOURS: "96"
           NEWS_FETCH_LIMIT: "80"
           NEWS_MAX_PER_RUN: "1"
+          NEWS_REQUIRE_IMAGE: "true"
+          NEWS_MIN_IMAGE_WIDTH: "700"
+          NEWS_MIN_IMAGE_HEIGHT: "390"
+          NEWS_IMAGE_CHECK_TIMEOUT: "8"
           NEWS_STATE_FILE: "news_state.json"
         run: python news_poster.py
 
@@ -73,4 +77,3 @@ jobs:
 
           echo "Failed to push after retries"
           exit 1
-
