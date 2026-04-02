@@ -54,7 +54,9 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
           CIVITAI_API_KEY: ${{ secrets.CIVITAI_API_KEY }}
+          REVIEW_MODE: "false"
           ALLOW_MATURE_FALLBACK: "false"
           ENABLE_VIDEO_QOS: "true"
           MIN_BITRATE_480P: "900"
@@ -87,7 +89,7 @@ jobs:
           # Сначала делаем pull, чтобы получить последние изменения
           git pull origin main --no-rebase || true
           
-          git add posted_ids.json posted_hashes.json stats.json apt-ffmpeg-version.txt content_state.json 2>/dev/null || true
+          git add posted_ids.json posted_hashes.json stats.json apt-ffmpeg-version.txt content_state.json pending_draft.json review_state.json 2>/dev/null || true
           
           if git diff --cached --quiet; then
             echo "📝 No changes to commit"
