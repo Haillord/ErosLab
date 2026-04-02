@@ -47,6 +47,8 @@ MIN_BITRATE_1080P = int(os.environ.get("MIN_BITRATE_1080P", "2200"))
 IMAGE_PACK_ENABLED = os.environ.get("IMAGE_PACK_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 IMAGE_PACK_SIZE = max(1, int(os.environ.get("IMAGE_PACK_SIZE", "3")))
 IMAGE_PACK_CANDIDATE_POOL = max(IMAGE_PACK_SIZE, int(os.environ.get("IMAGE_PACK_CANDIDATE_POOL", "18")))
+# True: отправлять пак отдельными постами, False: одним media_group
+IMAGE_PACK_SPLIT_POSTS = os.environ.get("IMAGE_PACK_SPLIT_POSTS", "false").lower() in ("1", "true", "yes", "on")
 
 # Временно отключить Rule34 (True = только CivitAI для тестов)
 TEST_CIVITAI_ONLY = False
@@ -1628,28 +1630,48 @@ async def main():
                 read_timeout=60
             )
         elif use_image_pack:
-            logger.info(f"Sending as image pack ({len(image_pack)} photos)")
-            media = []
-            for index, pack_entry in enumerate(image_pack):
-                watermarked_data = _apply_watermark_for_image_bytes(
-                    pack_entry["data"],
-                    pack_entry["item"].get("url", ""),
-                )
-                watermarked_data = _fit_photo_size_for_telegram(watermarked_data)
-                photo_io = BytesIO(watermarked_data)
-                photo_io.name = f"image_{index + 1}.jpg"
-                if index == 0:
-                    media.append(telegram.InputMediaPhoto(media=photo_io, caption=caption, parse_mode="HTML"))
-                else:
-                    media.append(telegram.InputMediaPhoto(media=photo_io))
+            if IMAGE_PACK_SPLIT_POSTS:
+                logger.info(f"Sending image pack as separate posts ({len(image_pack)} photos)")
+                for index, pack_entry in enumerate(image_pack):
+                    watermarked_data = _apply_watermark_for_image_bytes(
+                        pack_entry["data"],
+                        pack_entry["item"].get("url", ""),
+                    )
+                    watermarked_data = _fit_photo_size_for_telegram(watermarked_data)
+                    photo_io = BytesIO(watermarked_data)
+                    photo_io.name = f"image_{index + 1}.jpg"
+                    await send_with_retry(
+                        bot.send_photo,
+                        chat_id=target_chat_id,
+                        photo=photo_io,
+                        caption=caption if index == 0 else None,
+                        parse_mode="HTML" if index == 0 else None,
+                        write_timeout=60,
+                        read_timeout=60
+                    )
+            else:
+                logger.info(f"Sending as image pack ({len(image_pack)} photos)")
+                media = []
+                for index, pack_entry in enumerate(image_pack):
+                    watermarked_data = _apply_watermark_for_image_bytes(
+                        pack_entry["data"],
+                        pack_entry["item"].get("url", ""),
+                    )
+                    watermarked_data = _fit_photo_size_for_telegram(watermarked_data)
+                    photo_io = BytesIO(watermarked_data)
+                    photo_io.name = f"image_{index + 1}.jpg"
+                    if index == 0:
+                        media.append(telegram.InputMediaPhoto(media=photo_io, caption=caption, parse_mode="HTML"))
+                    else:
+                        media.append(telegram.InputMediaPhoto(media=photo_io))
 
-            await send_with_retry(
-                bot.send_media_group,
-                chat_id=target_chat_id,
-                media=media,
-                write_timeout=60,
-                read_timeout=60
-            )
+                await send_with_retry(
+                    bot.send_media_group,
+                    chat_id=target_chat_id,
+                    media=media,
+                    write_timeout=60,
+                    read_timeout=60
+                )
         else:
             logger.info("Sending as image with watermark")
             watermarked_data = _apply_watermark_for_image_bytes(data, item["url"])

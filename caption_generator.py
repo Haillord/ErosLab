@@ -514,6 +514,14 @@ def _extract_visual_hint(
     secondary_image_data=None,
     secondary_image_url=None,
 ):
+    if not ENABLE_AI_VISION:
+        logger.info("Vision hint skipped: ENABLE_AI_VISION is disabled")
+        return None
+
+    if not OPENROUTER_API_KEY:
+        logger.info("Vision hint skipped: OPENROUTER_API_KEY is not set")
+        return None
+
     prompt = (
         "Опиши визуально что в кадре для подписи NSFW-поста: "
         "композиция, свет, настроение, динамика. "
@@ -536,8 +544,11 @@ def _extract_visual_hint(
         retries=1,
     )
     if not hint:
+        logger.info("Vision hint unavailable: empty response from vision model")
         return None
-    return hint.replace("\n", " ").strip()
+    normalized = hint.replace("\n", " ").strip()
+    logger.info(f"Vision hint used: {normalized[:80]}")
+    return normalized
 
 
 def _generate_ai_body(
