@@ -594,78 +594,66 @@ def _generate_ai_body(
     if not ENABLE_AI_CAPTION:
         return None
 
-    base_prompt = (
-        "Сделай короткий пост на русском для NSFW Telegram канала.\n"
-        "Тон: живой, разговорный, уверенный.\n"
-        f"Ограничения: 1-2 предложения, объём {AI_BODY_MIN_CHARS}-{AI_BODY_MAX_CHARS} символов, "
-        f"ориентир по длине {AI_BODY_MIN_WORDS}-{AI_BODY_MAX_WORDS} слов, "
-        "без markdown и ссылок; можно 0-1 уместный эмодзи.\n"
-        "Не упоминай разрешение, размер файла, aspect ratio, рейтинг и лайки.\n"
-        "Не используй сухие техно-формулировки.\n"
-        "Избегай кринж-слов: 'полная женщина', 'идеальная фигура', 'сочная', 'пышка'.\n"
-        f"Контент: {content_type.upper()}, rating={rating}, likes={likes}.\n"
-        f"Теги: {', '.join(safe_tags[:10]) if safe_tags else 'нет'}.\n"
-        f"Тех.данные: {tech_block if tech_block else 'нет'}.\n"
-        "Верни только текст подписи."
+    # Пробуем получить визуальный хинт по картинке
+    visual_hint = _extract_visual_hint(
+        content_type,
+        image_data=image_data,
+        image_url=image_url,
+        secondary_image_data=secondary_image_data,
+        secondary_image_url=secondary_image_url,
     )
 
-    system_1 = (
-        "Ты редактор коротких NSFW-постов. "
-        "Пиши естественно и лаконично, без клише вроде 'идеальная фигура' и 'выразительная подача'."
+    system_prompt = """
+Ты админ популярного Telegram канала.
+Пиши как живой человек, как будто скинул другу крутой кадр.
+Коротко, по делу, без пафоса, без клише и шаблонов.
+Никогда не пиши "выразительная подача", "атмосфера кадра", "акцент на детали".
+Без кринжа, без перегибов. 1-2 предложения максимум.
+"""
+
+    prompt_parts = [
+        "Напиши подпись для этого поста.",
+        f"Тип контента: {content_type}",
+        f"Темы: {', '.join(safe_tags[:7]) if safe_tags else 'разное'}",
+    ]
+
+    if visual_hint:
+        prompt_parts.append(f"По картинке: {visual_hint}")
+
+    prompt_parts.append(f"Получилась строка {AI_BODY_MIN_WORDS}-{AI_BODY_MAX_WORDS} слов. Только текст, ничего больше.")
+
+    final_prompt = "\n".join(prompt_parts)
+
+    result = _call_ai_chat(
+        final_prompt,
+        system_prompt,
+        max_tokens=130,
+        temperature=0.45,
+        retries=2
     )
-    draft = _call_ai_chat(base_prompt, system_1, max_tokens=140, temperature=0.8, retries=2)
-    if not draft:
+
+    if not result:
         return None
 
-    # Second pass: anti-cringe cleanup.
-    system_2 = (
-        "Очисти текст от неестественных и повторяющихся формулировок. "
-        f"Сделай звучание нативным и живым. 1-2 предложения, {AI_BODY_MIN_CHARS}-{AI_BODY_MAX_CHARS} символов, "
-        f"{AI_BODY_MIN_WORDS}-{AI_BODY_MAX_WORDS} слов. "
-        "Верни только итоговый текст."
-    )
-    refined = _call_ai_chat(draft, system_2, max_tokens=120, temperature=0.3, retries=2)
-    final_text = refined or draft
+    result = result.strip().replace("\n", " ")
 
-    if len(final_text) < AI_BODY_MIN_CHARS or _word_count(final_text) < AI_BODY_MIN_WORDS:
-        expand_prompt = (
-            f"Расширь текст до {AI_BODY_MIN_CHARS}-{AI_BODY_MAX_CHARS} символов и {AI_BODY_MIN_WORDS}-{AI_BODY_MAX_WORDS} слов, "
-            "оставив тот же смысл. 1-2 предложения, без ссылок; можно максимум 1 эмодзи.\n\n"
-            f"Текст:\n{final_text}"
-        )
-        expanded = _call_ai_chat(
-            expand_prompt,
-            "Ты редактор: делаешь текст чуть длиннее, но живым и естественным.",
-            max_tokens=140,
-            temperature=0.5,
-            retries=1,
-        )
-        if expanded:
-            final_text = expanded
+    # Простая постобработка вместо дополнительных вызовов ИИ
+    bad_phrases = [
+        "выразительная подача", "атмосфера кадра", "акцент на",
+        "идеальная фигура", "отличная композиция", "высокое качество",
+        "хорошая детализация", "красивая сцена",
+    ]
+    for phrase in bad_phrases:
+        if phrase in result.lower():
+            return None
 
-    if len(final_text) > AI_BODY_MAX_CHARS + 30:
-        final_text = final_text[:AI_BODY_MAX_CHARS + 27].rstrip() + "..."
-
-    if _word_count(final_text) > AI_BODY_MAX_WORDS:
-        trim_prompt = (
-            f"Сократи текст до {AI_BODY_MIN_WORDS}-{AI_BODY_MAX_WORDS} слов без потери смысла. "
-            f"Оставь {AI_BODY_MIN_CHARS}-{AI_BODY_MAX_CHARS} символов, 1-2 предложения.\n\n"
-            f"Текст:\n{final_text}"
-        )
-        trimmed = _call_ai_chat(
-            trim_prompt,
-            "Ты редактор: делаешь текст короче и плотнее, без канцелярита.",
-            max_tokens=110,
-            temperature=0.3,
-            retries=1,
-        )
-        if trimmed:
-            final_text = trimmed.strip()
-
-    if len(final_text) < 40:
+    if len(result) < 45 or _word_count(result) < 7:
         return None
 
-    return final_text.strip() if final_text else None
+    if len(result) > AI_BODY_MAX_CHARS:
+        result = result[:AI_BODY_MAX_CHARS-3].rstrip("., ") + "..."
+
+    return result
 
 
 # ==================== BUILD ====================
