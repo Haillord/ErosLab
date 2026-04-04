@@ -82,6 +82,28 @@ STYLE_VARIANTS = ("classic", "story", "minimal")
 FRAME_EMOJI_AI = ("✨", "💫", "🌌")
 FRAME_EMOJI_3D = ("🔥", "🎯", "🧨")
 
+TITLE_VARIANTS_AI = (
+    "💙 Свежий дроп",
+    "💙 Новый кадр",
+    "💙 Свежак",
+    "💙 Прилетело",
+    "💙 Отборный контент",
+    "💙 Классный кадр",
+    "💙 В ленту",
+    "💙 Сегодняшний материал",
+)
+
+TITLE_VARIANTS_3D = (
+    "❤️ Свежий дроп",
+    "❤️ Новый кадр",
+    "❤️ Свежак",
+    "❤️ Прилетело",
+    "❤️ Отборный контент",
+    "❤️ Классный кадр",
+    "❤️ В ленту",
+    "❤️ Сегодняшний материал",
+)
+
 CTA_VARIANTS = (
     "💬 Как тебе такой формат?",
     "💬 Делись мнением в комментариях",
@@ -242,8 +264,8 @@ def _pick_caption_style():
 
 def _build_title_line(content_type):
     if content_type == "ai":
-        return "💙 Свежий дроп"
-    return "❤️ Свежий дроп"
+        return random.choice(TITLE_VARIANTS_AI)
+    return random.choice(TITLE_VARIANTS_3D)
 
 
 def _pick_subject_tag(safe_tags):
