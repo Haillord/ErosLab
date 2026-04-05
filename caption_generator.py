@@ -753,59 +753,20 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
     safe_tags = _clean_caption_tags(_safe_tags(tags))
     selected_hashtags = _select_hashtags_with_diversity(safe_tags, MAX_HASHTAGS)
     hashtags = " ".join(f"#{t}" for t in selected_hashtags) if selected_hashtags else ""
-    fallback_body = _build_fallback_body(content_type, likes, safe_tags)
-    fallback_style_block = _build_style_block(fallback_body, content_type=content_type)
-    fallback_body_text = "" if fallback_style_block else fallback_body
+    tags_block = _build_style_block(hashtags, content_type=content_type)
 
-    fallback_caption = _assemble_caption(
+    caption = _assemble_caption(
         style=style,
         content_type=content_type,
         title_line=content_header,
         tech_block=tech_block,
-        body_text=fallback_body_text,
-        style_block=fallback_style_block,
-        hashtags=hashtags,
+        body_text="",
+        style_block=tags_block,
+        hashtags="",
         footer=footer,
         safe_tags=safe_tags,
         width=width,
         height=height,
     )
 
-    ai_body = _generate_ai_body(
-        content_type,
-        rating,
-        likes,
-        safe_tags,
-        tech_block,
-        image_data=image_data,
-        image_url=image_url,
-        secondary_image_data=secondary_image_data,
-        secondary_image_url=secondary_image_url,
-    )
-    if not ai_body:
-        return fallback_caption
-
-    ai_style_block = _build_style_block(ai_body, content_type=content_type)
-    ai_body_text = "" if ai_style_block else _escape_html(ai_body)
-
-    ai_caption = _assemble_caption(
-        style=style,
-        content_type=content_type,
-        title_line=content_header,
-        tech_block=tech_block,
-        body_text=ai_body_text,
-        style_block=ai_style_block,
-        hashtags=hashtags,
-        footer=footer,
-        safe_tags=safe_tags,
-        width=width,
-        height=height,
-    )
-
-    if AI_DRY_RUN:
-        logger.info(f"AI_DRY_RUN caption style: {style}")
-        logger.info(f"AI_DRY_RUN fallback caption: {fallback_caption[:240]}")
-        logger.info(f"AI_DRY_RUN ai caption: {ai_caption[:240]}")
-        return fallback_caption
-
-    return ai_caption
+    return caption
