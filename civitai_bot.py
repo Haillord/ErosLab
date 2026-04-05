@@ -27,6 +27,7 @@ from rule34_api import fetch_rule34
 from watermark import add_watermark, add_watermark_to_video, should_add_watermark
 
 # ==================== НАСТРОЙКИ ====================
+BOT_MODE = os.environ.get("BOT_MODE", "nsfw").lower()  # nsfw / wallpapers
 TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "@eroslabai")
 ADMIN_USER_ID = str(os.environ.get("ADMIN_USER_ID", "")).strip()

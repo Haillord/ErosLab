@@ -78,6 +78,16 @@ jobs:
           CAPTION_STYLE: "minimal"
           STATS_TZ: "Europe/Moscow"
         run: python civitai_bot.py
+
+      - name: Run Wallpapers Bot
+        if: ${{ always() }}
+        env:
+          TELEGRAM_BOT_TOKEN_WALLPAPERS: ${{ secrets.TELEGRAM_BOT_TOKEN_WALLPAPERS }}
+          TELEGRAM_CHANNEL_ID_WALLPAPERS: ${{ secrets.TELEGRAM_CHANNEL_ID_WALLPAPERS }}
+          ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
+          CIVITAI_API_KEY: ${{ secrets.CIVITAI_API_KEY }}
+          STATS_TZ: "Europe/Moscow"
+        run: python wallpapers_bot.py
         
       - name: Commit and push updates
         if: always()
@@ -88,7 +98,7 @@ jobs:
           # Сначала делаем pull, чтобы получить последние изменения
           git pull origin main --no-rebase || true
           
-          git add posted_ids.json posted_hashes.json stats.json apt-ffmpeg-version.txt content_state.json pending_draft.json review_state.json 2>/dev/null || true
+           git add posted_ids.json posted_hashes.json stats.json apt-ffmpeg-version.txt content_state.json pending_draft.json review_state.json posted_ids_wallpapers.json posted_hashes_wallpapers.json stats_wallpapers.json content_state_wallpapers.json 2>/dev/null || true
           
           if git diff --cached --quiet; then
             echo "📝 No changes to commit"
