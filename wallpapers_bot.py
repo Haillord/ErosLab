@@ -426,7 +426,7 @@ def fetch_civitai(max_pages: int = 5):
         skipped_rating = 0
         skipped_blacklist = 0
         skipped_likes = 0
-
+        logger.info(f"Sample nsfwLevels: {[i.get('nsfwLevel') for i in all_items[:10]]}")
         for item in all_items:
             try:
                 nsfw_level = item.get("nsfwLevel")
