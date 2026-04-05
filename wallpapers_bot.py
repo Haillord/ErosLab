@@ -355,9 +355,9 @@ def _extract_civitai_likes(item):
 def _is_safe_rating(nsfw_level):
     if isinstance(nsfw_level, str):
         value = nsfw_level.strip().lower()
-        return value in {"none", "general", "safe", "soft"}
+        return value in {"none", "general", "safe", "soft", "mature", "pg13", "pg-13"}
     if isinstance(nsfw_level, (int, float)):
-        return nsfw_level <= 2
+        return nsfw_level <= 3
     return False
 
 
