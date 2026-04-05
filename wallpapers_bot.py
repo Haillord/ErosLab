@@ -31,6 +31,7 @@ TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN_WALLPAPERS", "")
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID_WALLPAPERS", "")
 ADMIN_USER_ID = str(os.environ.get("ADMIN_USER_ID", "")).strip()
 CIVITAI_API_KEY     = os.environ.get("CIVITAI_API_KEY", "")
+WALLHAVEN_API_KEY   = os.environ.get("WALLHAVEN_API_KEY", "")
 
 WATERMARK_ENABLED = False
 MIN_LIKES        = 5
@@ -352,6 +353,66 @@ def _extract_civitai_likes(item):
     return max(numeric) if numeric else 0
 
 
+def fetch_wallhaven(max_pages: int = 3):
+    variations = [
+        {"sorting": "toplist", "topRange": "1w"},
+        {"sorting": "toplist", "topRange": "1M"},
+        {"sorting": "favorites", "topRange": "1w"},
+    ]
+
+    for base_params in variations:
+        all_items = []
+
+        for page in range(1, max_pages + 1):
+            params = {
+                "apikey": WALLHAVEN_API_KEY,
+                "categories": "111",
+                "purity": "100",
+                "atleast": "1920x1080",
+                "ratios": "16x9,9x16",
+                "page": page,
+                **base_params
+            }
+
+            try:
+                r = _request_with_backoff("https://wallhaven.cc/api/v1/search", params=params, headers={})
+                if r is None:
+                    continue
+
+                data = r.json()
+                items = data.get("data", [])
+
+                if not items:
+                    break
+
+                for item in items:
+                    all_items.append({
+                        "id":      f"wallhaven_{item['id']}",
+                        "url":     item["path"],
+                        "tags":    [t["name"] for t in item.get("tags", [])[:10]],
+                        "likes":   item["favorites"],
+                        "rating":  "safe",
+                        "mime":    f"image/{item['file_type']}",
+                        "createdAt": item["created_at"],
+                        "source":  "wallhaven",
+                    })
+
+                logger.info(f"Wallhaven page {page}: got {len(items)} items")
+
+                if not data.get("meta", {}).get("current_page") < data.get("meta", {}).get("last_page", 1):
+                    break
+
+            except Exception as e:
+                logger.error(f"Wallhaven page {page} error: {e}")
+                continue
+
+        if all_items:
+            logger.info(f"Found {len(all_items)} wallpapers from Wallhaven")
+            return all_items
+
+    return []
+
+
 def _is_safe_rating(nsfw_level):
     if isinstance(nsfw_level, str):
         return nsfw_level.strip().lower() in {"none", "soft"}
@@ -483,10 +544,23 @@ def fetch_civitai(max_pages: int = 5):
 
 def fetch_and_pick():
     preferred_orientation = get_preferred_orientation()
-    items = fetch_civitai()
+    
+    sources = [fetch_civitai, fetch_wallhaven]
+    random.shuffle(sources)
+    
+    items = []
+    for source in sources:
+        try:
+            source_items = source()
+            if source_items:
+                items.extend(source_items)
+                logger.info(f"Got {len(source_items)} items from {source.__name__}")
+        except Exception as e:
+            logger.warning(f"Source {source.__name__} failed: {e}")
+            continue
 
     if not items:
-        logger.warning("No items found from CivitAI")
+        logger.warning("No items found from any source")
         return None
 
     fresh = [i for i in items if i["id"] not in posted_ids]
