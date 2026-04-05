@@ -506,6 +506,9 @@ def _call_ai_vision(
         "model": "meta/llama-3.2-90b-vision-instruct",
         "temperature": temperature,
         "max_tokens": max_tokens,
+        "provider": {
+            "order": ["OpenRouter"]
+        },
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": content},
