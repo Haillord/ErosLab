@@ -33,7 +33,7 @@ ADMIN_USER_ID = str(os.environ.get("ADMIN_USER_ID", "")).strip()
 CIVITAI_API_KEY     = os.environ.get("CIVITAI_API_KEY", "")
 
 WATERMARK_ENABLED = False
-MIN_LIKES        = 25
+MIN_LIKES        = 5
 MIN_IMAGE_SIZE   = 720
 MIN_ASPECT_RATIO_MIN = 0.5   # 9:16 вертикальные (телефон)
 MIN_ASPECT_RATIO_MAX = 2.0   # 16:9 горизонтальные (монитор)
