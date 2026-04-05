@@ -477,8 +477,21 @@ def fetch_and_pick():
         logger.info("No suitable photos found")
         return None
 
-    selected = weighted_choice(fresh_photos)
-    return selected
+    # Идём по порядку от самой лучшей к худшей пока не найдём подходящую
+    for candidate in sorted(fresh_photos, key=lambda x: x["likes"], reverse=True):
+        try:
+            r = requests.get(candidate.get("url"), timeout=15)
+            r.raise_for_status()
+            
+            if check_media_size(r.content, candidate.get("url")):
+                logger.info(f"Found suitable wallpaper: {candidate['id']} (likes:{candidate['likes']})")
+                return candidate
+        except Exception as e:
+            logger.warning(f"Skip candidate {candidate['id']}: {e}")
+            continue
+    
+    logger.info("No suitable wallpapers found after checking all candidates")
+    return None
 
 
 # ==================== ПУБЛИКАЦИЯ ====================
