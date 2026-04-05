@@ -491,6 +491,27 @@ def _call_ai_vision(
 
     if not primary_url:
         return None
+    
+    # OpenRouter имеет лимит на максимальный размер изображения 1024px
+    if image_data:
+        try:
+            from io import BytesIO
+            from PIL import Image
+            
+            img = Image.open(BytesIO(image_data))
+            width, height = img.size
+            
+            if width > 1024 or height > 1024:
+                ratio = min(1024 / width, 1024 / height)
+                new_width = int(width * ratio)
+                new_height = int(height * ratio)
+                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                
+                out = BytesIO()
+                img.save(out, format="JPEG", quality=85)
+                primary_url = _build_image_data_url(out.getvalue())
+        except Exception:
+            pass
 
     content = [
         {"type": "text", "text": prompt},
