@@ -1,0 +1,23 @@
+{
+  "schema_version": 2,
+  "daily": {
+    "2026-04-05": {
+      "runs": 1,
+      "posted": 0,
+      "skip_no_item": 0,
+      "skip_download_error": 0,
+      "skip_bad_image": 0,
+      "send_errors": 1,
+      "runtime_sec": 4.7
+    }
+  },
+  "lifetime": {
+    "runs": 1,
+    "posted": 0,
+    "skip_no_item": 0,
+    "skip_download_error": 0,
+    "skip_bad_image": 0,
+    "send_errors": 1,
+    "runtime_sec": 4.7
+  }
+}
