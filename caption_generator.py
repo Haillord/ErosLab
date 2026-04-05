@@ -56,7 +56,6 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 ENABLE_AI_VISION = os.environ.get("ENABLE_AI_VISION", "true").lower() in ("1", "true", "yes", "on")
-# Groq Vision работает без фильтров 100% с NSFW контентом
 ENABLE_STYLE_BLOCK = os.environ.get("ENABLE_STYLE_BLOCK", "true").lower() in ("1", "true", "yes", "on")
 STYLE_BLOCK_MAX_ITEMS = int(os.environ.get("STYLE_BLOCK_MAX_ITEMS", "3"))
 CAPTION_STYLE = os.environ.get("CAPTION_STYLE", "story").strip().lower()
@@ -110,6 +109,17 @@ CTA_VARIANTS = (
     "💬 Оценим пост в реакциях и комментах",
     "💬 Пиши, что добавить в следующий дроп",
 )
+
+# Список vision-моделей: фоллбек от лучшей к запасной
+VISION_MODELS = [
+    "qwen/qwen2.5-vl-72b-instruct:free",
+    "qwen/qwen2.5-vl-32b-instruct:free",
+    "qwen/qwen3.6-plus:free",
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+    "google/gemma-3-27b-it:free",
+    "meta-llama/llama-3.2-11b-vision-instruct:free",
+]
+
 
 def _generate_ai_cta(content_type, safe_tags):
     if not ENABLE_AI_CTA:
@@ -217,7 +227,7 @@ def _select_hashtags_with_diversity(safe_tags, max_count):
     unseen = [t for t in unique if t not in last_seen]
     seen = sorted(
         [t for t in unique if t in last_seen],
-        key=lambda t: last_seen[t],  # older seen tags first
+        key=lambda t: last_seen[t],
     )
 
     selected = (unseen + seen)[:max_count]
@@ -257,7 +267,6 @@ def _build_style_block(body_text, content_type=None):
 def _pick_caption_style():
     if CAPTION_STYLE in STYLE_VARIANTS:
         return CAPTION_STYLE
-    # auto: случайный, но контролируемый набор шаблонов
     return random.choice(STYLE_VARIANTS)
 
 
@@ -310,7 +319,6 @@ def _build_fallback_body(content_type, likes, safe_tags):
 
 
 def _build_hook_line(style, content_type, safe_tags, width, height):
-    # Хук отключаем: он добавлял техничный/ломаный вид.
     return ""
 
 
@@ -335,12 +343,10 @@ def _assemble_caption(style, content_type, title_line, tech_block, body_text, st
     cta_line = UNIVERSAL_CTA or "💬 Как тебе этот пост?"
     sections.append(f"{cta_line}\n{footer}")
 
-    # One empty line between blocks for cleaner, "bigger" visual rhythm.
     return "\n\n".join(s for s in sections if s)
 
 
 def _format_file_size(size_bytes):
-    """Formats file size in readable form."""
     if size_bytes is None or size_bytes <= 0:
         return None
     if size_bytes < 1024:
@@ -353,7 +359,6 @@ def _format_file_size(size_bytes):
 
 
 def _format_resolution(width, height):
-    """Formats resolution and aspect ratio."""
     if width is None or height is None or width <= 0 or height <= 0:
         return None, None
 
@@ -368,7 +373,6 @@ def _format_resolution(width, height):
 
 
 def _format_date(date_value):
-    """Formats date to dd.mm.yyyy."""
     if date_value is None:
         return None
 
@@ -437,9 +441,9 @@ def _call_ai_chat(prompt, system_prompt, max_tokens=140, temperature=0.8, retrie
             resp = requests.post(url, headers=headers, json=payload, timeout=AI_TIMEOUT_SEC)
             resp.raise_for_status()
             data = resp.json()
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            content = str(content).strip()
-            return content or None
+            text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            text = str(text).strip()
+            return text or None
         except Exception as e:
             if attempt == max(1, retries) - 1:
                 logger.warning(f"AI caption call failed ({provider}): {e}")
@@ -491,31 +495,31 @@ def _call_ai_vision(
 
     if not primary_url:
         return None
-    
-    # OpenRouter имеет лимит на максимальный размер изображения 1024px
+
+    # Ресайз если нужно (OpenRouter рекомендует до 1024px)
     if image_data:
         try:
             from io import BytesIO
             from PIL import Image
-            
+
             img = Image.open(BytesIO(image_data))
-            width, height = img.size
-            
-            if width > 1024 or height > 1024:
-                ratio = min(1024 / width, 1024 / height)
-                new_width = int(width * ratio)
-                new_height = int(height * ratio)
-                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                
+            w, h = img.size
+
+            if w > 1024 or h > 1024:
+                ratio = min(1024 / w, 1024 / h)
+                img = img.resize((int(w * ratio), int(h * ratio)), Image.Resampling.LANCZOS)
                 out = BytesIO()
                 img.save(out, format="JPEG", quality=85)
-                primary_url = _build_image_data_url(out.getvalue())
+                resized_url = _build_image_data_url(out.getvalue())
+                if resized_url:
+                    primary_url = resized_url
         except Exception:
             pass
 
-    content = [
+    # Сообщение с картинкой — собираем один раз, не перезаписываем в цикле
+    user_content = [
         {"type": "text", "text": prompt},
-        {"type": "image_url", "image_url": {"url": primary_url}}
+        {"type": "image_url", "image_url": {"url": primary_url}},
     ]
 
     url = "https://openrouter.ai/api/v1/chat/completions"
@@ -523,32 +527,39 @@ def _call_ai_vision(
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
     }
-    payload = {
-        "model": "qwen/qwen2.5-vl-72b-instruct:free",
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "provider": {
-            "order": ["Fireworks"]
-        },
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": content},
-        ],
-    }
 
-    for attempt in range(max(1, retries)):
+    for model_name in VISION_MODELS:
         try:
+            payload = {
+                "model": model_name,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content},
+                ],
+            }
+
             resp = requests.post(url, headers=headers, json=payload, timeout=AI_TIMEOUT_SEC)
+
+            if resp.status_code == 404:
+                logger.debug(f"Vision model not found, skipping: {model_name}")
+                continue
+
             resp.raise_for_status()
             data = resp.json()
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            content = str(content).strip()
-            return content or None
+            result = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            result = str(result).strip()
+
+            if result:
+                logger.info(f"Vision used model: {model_name}")
+                return result
+
         except Exception as e:
-            if attempt == max(1, retries) - 1:
-                logger.warning(f"AI vision call failed (openrouter): {e}")
-                return None
-            time.sleep(0.6)
+            logger.debug(f"Vision model {model_name} failed: {e}")
+            continue
+
+    logger.warning("All vision models failed")
     return None
 
 
@@ -595,8 +606,6 @@ def _extract_visual_hint(
         retries=1,
     )
 
-    # Groq Vision не нуждается в фоллбеке
-
     if _is_non_informative(hint):
         logger.info("Vision hint unavailable: empty/non-informative response from vision models")
         return None
@@ -620,7 +629,6 @@ def _generate_ai_body(
     if not ENABLE_AI_CAPTION:
         return None
 
-    # Пробуем получить визуальный хинт по картинке
     visual_hint = _extract_visual_hint(
         content_type,
         image_data=image_data,
@@ -671,7 +679,7 @@ def _generate_ai_body(
         system_prompt,
         max_tokens=160,
         temperature=0.75,
-        retries=2
+        retries=2,
     )
 
     if not result:
@@ -679,11 +687,9 @@ def _generate_ai_body(
 
     result = result.strip().replace("\n", " ")
 
-    # Если тегов очень мало - ИИ почти всегда генерирует фигню, лучше сразу фоллбек
     if len(safe_tags) <= 2:
         return None
 
-    # Простая постобработка вместо дополнительных вызовов ИИ
     bad_phrases = [
         "выразительная подача", "атмосфера кадра", "акцент на",
         "идеальная фигура", "отличная композиция", "высокое качество",
@@ -698,7 +704,7 @@ def _generate_ai_body(
         return None
 
     if len(result) > AI_BODY_MAX_CHARS:
-        result = result[:AI_BODY_MAX_CHARS-3].rstrip("., ") + "..."
+        result = result[:AI_BODY_MAX_CHARS - 3].rstrip("., ") + "..."
 
     return result
 
