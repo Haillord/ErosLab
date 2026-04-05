@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png?v=5" width="700" alt="ErosLab Logo">
+  <img src="logo.png?v=5" width="1080" alt="ErosLab Logo">
   <h3 align="center">ErosLab Bot</h3>
   <p align="center">
     Автоматизированный контентный бот для Telegram
