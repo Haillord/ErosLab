@@ -354,21 +354,19 @@ def _extract_civitai_likes(item):
 
 def _is_safe_rating(nsfw_level):
     if isinstance(nsfw_level, str):
-        value = nsfw_level.strip().lower()
-        return value in {"none", "general", "safe", "soft", "mature", "pg13", "pg-13"}
+        return nsfw_level.strip().lower() in {"none", "soft"}
     if isinstance(nsfw_level, (int, float)):
-        return nsfw_level <= 3
+        return nsfw_level <= 4  # битовая маска до PG-13
     return False
 
 
 def fetch_civitai(max_pages: int = 5):
     variations = [
         # Приоритет: сначала свежее за неделю
-        {"browsingLevel": 1, "sort": "Most Reactions", "period": "Week"},
-        {"browsingLevel": 1, "sort": "Most Reactions", "period": "Month"},
-        # Если нет свежего — берем лучшее за всё время
-        {"browsingLevel": 1, "sort": "Most Reactions", "period": "AllTime"},
-        {"browsingLevel": 1, "sort": "Most Reactions", "period": "AllTime", "tags": "wallpaper"},
+        {"browsingLevel": 4, "nsfw": "Soft", "sort": "Most Reactions", "period": "Week"},
+        {"browsingLevel": 4, "nsfw": "Soft", "sort": "Most Reactions", "period": "Month"},
+        {"browsingLevel": 4, "nsfw": "Soft", "sort": "Most Reactions", "period": "AllTime"},
+        {"browsingLevel": 4, "nsfw": "Soft", "sort": "Most Reactions", "period": "AllTime", "tags": "wallpaper"},
     ]
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
