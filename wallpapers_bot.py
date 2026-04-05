@@ -363,10 +363,16 @@ def _is_safe_rating(nsfw_level):
 def fetch_civitai(max_pages: int = 5):
     variations = [
         # Приоритет: сначала свежее за неделю
-        {"browsingLevel": 3, "nsfw": "Soft", "sort": "Most Reactions", "period": "Week"},
-        {"browsingLevel": 3, "nsfw": "Soft", "sort": "Most Reactions", "period": "Month"},
-        {"browsingLevel": 3, "nsfw": "Soft", "sort": "Most Reactions", "period": "AllTime"},
-        {"browsingLevel": 3, "nsfw": "Soft", "sort": "Most Reactions", "period": "AllTime", "tags": "wallpaper"},
+    {"browsingLevel": 3, "nsfw": "Soft", "sort": "Most Reactions", "period": "Week"},
+    {"browsingLevel": 3, "nsfw": "Soft", "sort": "Most Comments", "period": "Week"},
+    {"browsingLevel": 3, "nsfw": "Soft", "sort": "Newest", "period": "Week"},
+    # За месяц
+    {"browsingLevel": 3, "nsfw": "Soft", "sort": "Most Reactions", "period": "Month"},
+    {"browsingLevel": 3, "nsfw": "Soft", "sort": "Most Comments", "period": "Month"},
+    {"browsingLevel": 3, "nsfw": "Soft", "sort": "Newest", "period": "Month"},
+    # За всё время
+    {"browsingLevel": 3, "nsfw": "Soft", "sort": "Most Reactions", "period": "AllTime"},
+    {"browsingLevel": 3, "nsfw": "Soft", "sort": "Most Reactions", "period": "AllTime", "tags": "wallpaper"},
     ]
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
