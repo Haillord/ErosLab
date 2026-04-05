@@ -245,9 +245,6 @@ def generate_wallpaper_caption(
             bq_parts.append(res_line)
         if likes_line:
             bq_parts.append(likes_line)
-    if hashtags_line:
-        bq_parts.append("")
-        bq_parts.append(hashtags_line)
 
     blockquote = (
         f"<blockquote>{chr(10).join(bq_parts)}</blockquote>"
