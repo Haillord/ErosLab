@@ -1,135 +1,58 @@
 <p align="center">
-  <img src="logo.png?v=5" width="1280" alt="ErosLab Logo">
-  <h3 align="center">ErosLab Bot</h3>
-  <p align="center">
-    Автоматизированный контентный бот для Telegram
-    <br />
-    <a href="https://t.me/eroslabai"><strong>🔞 Основной канал</strong></a>
-    ·
-    <a href="https://t.me/eroslabwallpaper"><strong>🤍 Обои</strong></a>
-  </p>
+  <img src="logo.png?v=5" width="100%" alt="ErosLab Banner">
 </p>
-
----
-
-## ✨ О проекте
-
-Два полностью независимых бота которые 24/7 публикуют контент в Telegram каналы. Оптимизированы для работы на GitHub Actions абсолютно бесплатно, без необходимости в собственном сервере.
-
-## 🚀 Особенности
-
-✅ **Два независимых бота**
-- 🔞 Основной бот с контентом 18+ (CivitAI + Rule34)
-- 🤍 Бот с безопасными красивыми обоями (CivitAI + Wallhaven)
-
-✅ **Умные алгоритмы**
-- Защита от дубликатов по хешу медиа
-- Разнообразие хештегов с защитой от повторов
-- Автоматическое чередование типов контента
-- Фильтрация по качеству и разрешению
-- Автоматическая генерация подписей
-
-✅ **Архитектура**
-- Полностью работает на GitHub Actions
-- Состояние хранится в отдельном секретном Gist
-- ❌ Больше нет мусорных коммитов каждые 2 часа в истории
-- Встроенная история версий всех данных
-- Никаких git конфликтов, pull/push задержек
-
-✅ **Дополнительные фичи**
-- Автоматический водяной знак
-- AI генерация подписей
-- Оптимизация видео для Telegram
-- Кросспромо между каналами
-- Детальная статистика запусков
-
----
-
-## 🛠 Технологии
-
-| Компонент | Стек |
-|---|---|
-| Язык | Python 3.11 |
-| Хранилище | GitHub Gist |
-| CI/CD | GitHub Actions |
-| Источники контента | CivitAI, Rule34, Wallhaven |
-| AI | Groq, OpenRouter |
-| Видео обработка | FFmpeg + yt-dlp |
-| Фреймворк | python-telegram-bot |
-
----
-
-## 📂 Структура проекта
-
-```
-📦 eroslab-bot
-├─ 📜 civitai_bot.py          # Основной бот 🔞
-├─ 📜 wallpapers_bot.py       # Бот с обоями 🤍
-├─ 📜 gist_storage.py         # Универсальное хранилище на Gist
-├─ 📜 caption_generator.py    # Генератор подписей + AI
-├─ 📜 watermark.py            # Водяной знак для фото и видео
-├─ 📜 rule34_api.py           # Обёртка для Rule34 API
-├─ 📜 requirements.txt        # Зависимости
-└─ 📂 .github/workflows/
-   ├─ 📜 bot.yml              # Расписание основного бота
-   └─ 📜 wallpapers.yml       # Расписание бота обоев
-```
-
----
-
-## 🔑 Необходимые Secrets
-
-Для работы нужно добавить в Secrets репозитория:
-
-| Secret | Описание |
-|---|---|
-| `TELEGRAM_BOT_TOKEN` | Токен основного бота |
-| `TELEGRAM_CHANNEL_ID` | ID канала для основного бота |
-| `TELEGRAM_BOT_TOKEN_WALLPAPERS` | Токен бота с обоями |
-| `TELEGRAM_CHANNEL_ID_WALLPAPERS` | ID канала с обоями |
-| `CIVITAI_API_KEY` | API ключ CivitAI |
-| `WALLHAVEN_API_KEY` | API ключ Wallhaven |
-| `GROQ_API_KEY` | API ключ Groq для AI подписей |
-| `OPENROUTER_API_KEY` | API ключ OpenRouter для Vision |
-| `GH_TOKEN` | GitHub токен с правами на Gist |
-| `GIST_ID` | ID секретного Gist для хранения состояния |
-| `ADMIN_USER_ID` | Telegram ID админа |
-
----
-
-## 🚀 Запуск локально
-
-```bash
-# Клонировать репозиторий
-git clone https://github.com/Haillord/eroslab-bot.git
-cd eroslab-bot
-
-# Установить зависимости
-pip install -r requirements.txt
-
-# Установить FFmpeg
-sudo apt install ffmpeg
-
-# Установить переменные окружения
-export TELEGRAM_BOT_TOKEN="your_token"
-export TELEGRAM_CHANNEL_ID="@your_channel"
-export CIVITAI_API_KEY="your_key"
-
-# Запустить бота
-python civitai_bot.py
-```
-
----
-
-## 👨‍💻 Автор
-
-**@Haillord**
-
-- 🔞 [t.me/eroslabai](https://t.me/eroslabai)
-- 🤍 [t.me/eroslabwallpaper](https://t.me/eroslabwallpaper)
-
----
 
 <p align="center">
-  <sub>Сделано с 💙 и много кофе</sub>
+  <img src="https://img.shields.io/github/license/Haillord/eroslab-bot?style=for-the-badge&color=red" alt="license">
+  <img src="https://img.shields.io/github/stars/Haillord/eroslab-bot?style=for-the-badge&color=red" alt="stars">
+  <img src="https://img.shields.io/github/actions/workflow/status/Haillord/eroslab-bot/bot.yml?style=for-the-badge&label=Bot%20Status" alt="workflow">
 </p>
+
+<h1 align="center">ErosLab Bot Ecosystem</h1>
+
+<p align="center">
+  <b>Полностью автономная экосистема Telegram-ботов на базе GitHub Actions.</b><br>
+  Бесплатный хостинг, умная фильтрация контента и AI-генерация описаний.
+</p>
+
+<p align="center">
+  <a href="https://t.me/eroslabai"><strong>🔞 Основной канал</strong></a>
+  • 
+  <a href="https://t.me/eroslabwallpaper"><strong>🤍 Обои</strong></a>
+</p>
+
+---
+
+### ⚡️ Killer Features
+
+*   **Serverless Architecture** — Работает 24/7 на GitHub Actions. Ноль затрат на сервер.
+*   **Gist DB Storage** — Состояние и история хранятся в скрытых Gists. **Никаких лишних коммитов** в историю репозитория.
+*   **Smart Filtering** — Защита от дублей по хешу медиа, проверка разрешения и качества.
+*   **AI Engine** — Автоматическая генерация подписей через Groq/OpenRouter (Vision).
+*   **Media Processing** — Наложение водяных знаков и перекодирование видео через FFmpeg на лету.
+
+---
+
+### 🛠 Stack & Integration
+
+| Component | Technology |
+| :--- | :--- |
+| **Engine** | Python 3.11 + `python-telegram-bot` |
+| **Runtime** | GitHub Actions (Workflow Dispatch / Schedule) |
+| **Database** | GitHub Gist API (No-SQL style) |
+| **Content** | CivitAI, Rule34, Wallhaven |
+| **AI/ML** | Groq (Llama 3), OpenRouter |
+| **Media** | FFmpeg, yt-dlp |
+
+---
+
+### 📂 Project Logic
+
+```text
+📜 civitai_bot.py      # Core Engine (NSFW/Main)
+📜 wallpapers_bot.py   # SFW Engine (Wallpapers)
+📜 gist_storage.py     # State & Hash Management
+📜 caption_gen.py      # AI Captioning Logic
+📜 watermark.py        # Image/Video Processing
+└─ .github/workflows/  # Deployment & Scheduling
+⚙️ Quick ConfigurationДобавьте следующие переменные в Settings > Secrets and variables > Actions:SecretRoleTELEGRAM_BOT_TOKENТокен бота для контента 18+TELEGRAM_BOT_TOKEN_WALLPAPERSТокен бота для SFW обоевGH_TOKENClassic Token с доступом к GistGIST_IDID вашего секретного GistCIVITAI_API_KEYДоступ к API CivitAIGROQ_API_KEYКлюч для работы AI-подписей👨‍💻 Developed byHaillord — Telegram<p align="right"><img src="https://www.google.com/search?q=https://img.shields.io/badge/Made%2520with-Python-3776AB%3Fstyle%3Dflat-square%26logo%3Dpython" alt="python"><img src="https://www.google.com/search?q=https://img.shields.io/badge/Powered%2520by-GitHub%2520Actions-2088FF%3Fstyle%3Dflat-square%26logo%3Dgithub-actions" alt="actions"></p>
