@@ -508,14 +508,18 @@ async def publish_item_to_channel(bot: Bot, item: dict):
         photo_io = BytesIO(image_data)
         photo_io.name = "wallpaper.jpg"
 
+        width, height = Image.open(BytesIO(image_data)).size
+        
         caption = generate_caption(
             tags=item.get("tags", []),
             rating="safe",
             likes=item.get("likes", 0),
             image_url=item.get("url"),
-            watermark="",
+            watermark="📣 @eroslabwallpaper",
             suggestion="💬 Предложи обои: @Haillord",
-            content_type="wallpaper",
+            content_type="ai",
+            width=width,
+            height=height,
             date=item.get("createdAt"),
         )
 
