@@ -37,7 +37,7 @@ TECHNICAL_TAGS = {
     "stable_diffusion", "novelai", "midjourney", "lora"
 }
 
-MAX_HASHTAGS = 6
+MAX_HASHTAGS = 8
 CAPTION_STATE_FILE = os.environ.get("CAPTION_STATE_FILE", "caption_state.json")
 HASHTAG_HISTORY_SIZE = int(os.environ.get("HASHTAG_HISTORY_SIZE", "80"))
 
@@ -55,7 +55,7 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
-ENABLE_AI_VISION = os.environ.get("ENABLE_AI_VISION", "true").lower() in ("1", "true", "yes", "on")
+ENABLE_AI_VISION = os.environ.get("ENABLE_AI_VISION", "false").lower() in ("1", "true", "yes", "on")
 ENABLE_STYLE_BLOCK = os.environ.get("ENABLE_STYLE_BLOCK", "true").lower() in ("1", "true", "yes", "on")
 STYLE_BLOCK_MAX_ITEMS = int(os.environ.get("STYLE_BLOCK_MAX_ITEMS", "3"))
 CAPTION_STYLE = os.environ.get("CAPTION_STYLE", "story").strip().lower()
@@ -152,12 +152,6 @@ def _safe_tags(tags):
         t_lower = str(t).lower()
         if t_lower in NSFW_TRIGGER_TAGS:
             continue
-        if t_lower in TECHNICAL_TAGS:
-            continue
-        if t_lower.count("_") > 2:
-            continue
-        if any(c.isdigit() for c in t_lower):
-            continue
         parts = [p for p in t_lower.split("_") if p]
         if any(p in NSFW_TOKEN_BLOCKLIST for p in parts):
             continue
@@ -172,13 +166,6 @@ def _clean_caption_tags(tags):
     for t in tags:
         t = str(t).strip().lower()
         if not t or t in seen:
-            continue
-        if len(t) > 22:
-            continue
-        if t.count("_") > 2:
-            continue
-        parts = [p for p in t.split("_") if p]
-        if any(part in CRINGE_TAG_HINTS for part in parts):
             continue
         result.append(t)
         seen.add(t)
