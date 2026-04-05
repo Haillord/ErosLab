@@ -848,6 +848,32 @@ def _generate_ai_body(
 
 # ==================== BUILD ====================
 
+def generate_wallpaper_caption(tags, likes, width=None, height=None, date=None, suggestion="", watermark=""):
+    from caption_generator import _clean_caption_tags, _safe_tags, _select_hashtags_with_diversity, _format_resolution, _escape_html
+    
+    safe_tags = _clean_caption_tags(_safe_tags(tags))
+    selected_hashtags = _select_hashtags_with_diversity(safe_tags, 7)
+    hashtags = " ".join(f"#{t}" for t in selected_hashtags) if selected_hashtags else ""
+    
+    resolution, aspect_ratio = _format_resolution(width, height)
+    
+    tech_lines = []
+    if resolution:
+        if aspect_ratio:
+            tech_lines.append(f"📐 {resolution} · {aspect_ratio}")
+        else:
+            tech_lines.append(f"📐 {resolution}")
+            
+    tech_lines.append(f"❤️ {likes} реакций")
+    tech_block = "\n".join(tech_lines)
+    
+    safe_watermark = _escape_html(watermark)
+    clickable_suggestion = '<a href="https://t.me/Haillord">💬 Предложка</a>'
+    footer = f"{safe_watermark} · {clickable_suggestion}"
+    
+    return f"\n\n{tech_block}\n\n{hashtags}\n\n{footer}"
+
+
 def generate_caption(tags, rating, likes, image_data=None, image_url=None,
                      secondary_image_data=None, secondary_image_url=None,
                      watermark="📣 @eroslabai", suggestion="💬 Предложка: @Haillord",
