@@ -363,20 +363,12 @@ def _is_safe_rating(nsfw_level):
 
 def fetch_civitai(max_pages: int = 5):
     variations = [
-        # Приоритет: конкретные теги для обоев
-        {"browsingLevel": 1, "sort": "Most Reactions", "period": "Week",  "tags": "wallpaper"},
-        {"browsingLevel": 1, "sort": "Most Reactions", "period": "Month", "tags": "wallpaper"},
-        {"browsingLevel": 1, "sort": "Most Reactions", "period": "Week",  "tags": "landscape"},
-        {"browsingLevel": 1, "sort": "Most Reactions", "period": "Week",  "tags": "scenery"},
-        {"browsingLevel": 1, "sort": "Most Reactions", "period": "Week",  "tags": "fantasy landscape"},
-        {"browsingLevel": 1, "sort": "Most Reactions", "period": "Week",  "tags": "environment"},
-        # Общие без тегов
+        # Приоритет: сначала свежее за неделю
         {"browsingLevel": 1, "sort": "Most Reactions", "period": "Week"},
         {"browsingLevel": 1, "sort": "Most Reactions", "period": "Month"},
-        {"browsingLevel": 1, "sort": "Newest",         "period": "Week"},
-        # Фолбэк AllTime
-        {"browsingLevel": 1, "sort": "Most Reactions", "period": "AllTime", "tags": "wallpaper"},
+        # Если нет свежего — берем лучшее за всё время
         {"browsingLevel": 1, "sort": "Most Reactions", "period": "AllTime"},
+        {"browsingLevel": 1, "sort": "Most Reactions", "period": "AllTime", "tags": "wallpaper"},
     ]
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
