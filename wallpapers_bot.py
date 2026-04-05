@@ -33,7 +33,7 @@ ADMIN_USER_ID = str(os.environ.get("ADMIN_USER_ID", "")).strip()
 CIVITAI_API_KEY     = os.environ.get("CIVITAI_API_KEY", "")
 
 WATERMARK_ENABLED = False
-MIN_LIKES        = 40
+MIN_LIKES        = 25
 MIN_IMAGE_SIZE   = 1080
 MIN_ASPECT_RATIO = 1.5  # Только горизонтальные обои 16:9 и выше
 IMAGE_PACK_SIZE = 4
@@ -332,17 +332,17 @@ def _extract_civitai_likes(item):
 def _is_safe_rating(nsfw_level):
     if isinstance(nsfw_level, str):
         value = nsfw_level.strip().lower()
-        return value in {"general", "safe"}
+        return value in {"none", "general", "safe", "soft"}
     if isinstance(nsfw_level, (int, float)):
-        return nsfw_level <= 1
+        return nsfw_level <= 2
     return False
 
 
 def fetch_civitai(max_pages: int = 5):
     variations = [
-        {"browsingLevel": 0, "nsfw": "General", "sort": "Most Reactions", "period": "Week"},
-        {"browsingLevel": 0, "nsfw": "General", "sort": "Most Reactions", "period": "Month"},
-        {"browsingLevel": 0, "nsfw": "General", "sort": "Newest", "period": "Week"},
+        {"browsingLevel": 1, "sort": "Most Reactions", "period": "Week"},
+        {"browsingLevel": 1, "sort": "Most Reactions", "period": "Month"},
+        {"browsingLevel": 1, "sort": "Newest", "period": "Week"},
     ]
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
