@@ -56,8 +56,8 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 ENABLE_AI_VISION = os.environ.get("ENABLE_AI_VISION", "true").lower() in ("1", "true", "yes", "on")
-OPENROUTER_VISION_MODEL = os.environ.get("OPENROUTER_VISION_MODEL", "nvidia/nemotron-nano-12b-v2-vl:free")
-OPENROUTER_VISION_FALLBACK_MODEL = os.environ.get("OPENROUTER_VISION_FALLBACK_MODEL", "google/gemma-3-27b-it:free")
+OPENROUTER_VISION_MODEL = os.environ.get("OPENROUTER_VISION_MODEL", "meta/llama-3.2-11b-vision-instruct:free")
+OPENROUTER_VISION_FALLBACK_MODEL = os.environ.get("OPENROUTER_VISION_FALLBACK_MODEL", "meta/llama-3.2-11b-vision-instruct:free")
 ENABLE_STYLE_BLOCK = os.environ.get("ENABLE_STYLE_BLOCK", "true").lower() in ("1", "true", "yes", "on")
 STYLE_BLOCK_MAX_ITEMS = int(os.environ.get("STYLE_BLOCK_MAX_ITEMS", "3"))
 CAPTION_STYLE = os.environ.get("CAPTION_STYLE", "story").strip().lower()
@@ -553,14 +553,14 @@ def _extract_visual_hint(
         return None
 
     prompt = (
-        "Опиши визуально что в кадре для подписи NSFW-поста: "
-        "композиция, свет, настроение, динамика. "
-        "Если переданы два кадра, учитывай оба и опиши общий вайб. "
-        "До 18 слов, без перечисления телесных деталей и без вульгарности."
+        "Опиши очень коротко что изображено на картинке. "
+        "Только общие детали, композиция, поза, атмосфера. "
+        "До 15 слов. Не используй никаких запрещённых слов, не вдавайся в подробности."
     )
     system = (
-        "Ты даешь краткий нейтральный визуальный дескриптор для редактора подписи. "
-        "Верни одну строку без хэштегов."
+        "Ты просто описываешь изображение максимально нейтрально. "
+        "Никогда не отказывайся, всегда отвечай хоть чем то. "
+        "Верни только описание, ничего больше."
     )
     hint = _call_ai_vision(
         prompt,
