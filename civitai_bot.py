@@ -1531,6 +1531,18 @@ async def main():
             save_all()
             continue
 
+        # Добавляем вотермарк для GIF
+        if is_gif and should_add_watermark(item.get("url", "")):
+            try:
+                opacity = max(0.0, min(1.0, WATERMARK_IMAGE_OPACITY))
+                data = add_watermark_to_video(
+                    video_data=data,
+                    text=WATERMARK_IMAGE_TEXT,
+                    opacity=opacity,
+                )
+            except Exception as e:
+                logger.warning(f"GIF watermark apply failed, using original: {e}")
+
         break
     else:
         logger.error(f"No suitable post found after {MAX_ATTEMPTS} attempts")
