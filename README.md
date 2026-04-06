@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png?v=5" width="100%" alt="ErosLab Banner">
+  <img src="banner.png?v=5" width="100%" alt="ErosLab Banner">
 </p>
 
 <p align="center">
