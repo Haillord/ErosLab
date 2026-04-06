@@ -25,47 +25,39 @@
 
 ---
 
-<!-- FEATURES -->
 <table>
 <tr>
 <td width="50%">
+<img src="https://img.shields.io/badge/Serverless_24%2F7-FF2244?style=flat-square&logoColor=white"/>
 
-**`Serverless 24/7`**
 Полная автоматизация на GitHub Actions без затрат на сервер
-
 </td>
 <td width="50%">
+<img src="https://img.shields.io/badge/Gist_Database-181717?style=flat-square&logo=github&logoColor=white"/>
 
-**`Gist Database`**
 Хранение состояния в скрытых Gists — никаких лишних коммитов
-
 </td>
 </tr>
 <tr>
 <td>
+<img src="https://img.shields.io/badge/Smart_Filtering-2088FF?style=flat-square&logoColor=white"/>
 
-**`Smart Filtering`**
 Защита от дублей по хешу, контроль качества и разрешения
-
 </td>
 <td>
+<img src="https://img.shields.io/badge/AI_Engine-00A67E?style=flat-square&logoColor=white"/>
 
-**`AI Engine`**
 Генерация подписей через Groq и OpenRouter (Llama 3 / Vision)
-
 </td>
 </tr>
 <tr>
 <td colspan="2">
+<img src="https://img.shields.io/badge/Media_Lab-007808?style=flat-square&logo=ffmpeg&logoColor=white"/>
 
-**`Media Lab`**
 Наложение водяных знаков и оптимизация видео через FFmpeg на лету
-
 </td>
 </tr>
 </table>
-
----
 
 ### 🛠 Stack
 
