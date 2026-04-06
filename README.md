@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="banner.svg?v=5" width="100%" alt="ErosLab Banner">
+  <img src="logo.png?v=5" width="100%" alt="ErosLab Banner">
 </p>
 
 <p align="center">
@@ -14,11 +14,8 @@
   <img src="https://img.shields.io/github/actions/workflow/status/Haillord/eroslab-bot/bot.yml?style=for-the-badge&label=Bot%20Status" alt="workflow">
 </p>
 
-<h1 align="center">ErosLab Bot Ecosystem</h1>
-
 <p align="center">
-  <b>Полностью автономная экосистема Telegram-ботов на базе GitHub Actions.</b><br>
-  Бесплатный хостинг, умная фильтрация контента и AI-генерация описаний.
+  <img src="banner.svg?v=5" width="100%" alt="ErosLab Bot Ecosystem">
 </p>
 
 <p align="center">
@@ -53,7 +50,6 @@
 ---
 
 ### 📂 Structure
-
 ```text
 📜 civitai_bot.py      # Основной движок (NSFW)
 📜 wallpapers_bot.py   # Бот с обоями (SFW)
