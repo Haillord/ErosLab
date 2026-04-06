@@ -7,13 +7,13 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/license/Haillord/eroslab-bot?style=for-the-badge&color=red" alt="license">
-  <img src="https://img.shields.io/github/stars/Haillord/eroslab-bot?style=for-the-badge&color=red" alt="stars">
-  <img src="https://img.shields.io/github/actions/workflow/status/Haillord/eroslab-bot/bot.yml?style=for-the-badge&label=Bot%20Status" alt="workflow">
+  <img src="https://img.shields.io/github/license/Haillord/eroslab-bot?style=for-the-badge&label=LICENSE&color=FF2244&labelColor=1a1a1a" alt="license">
+  <img src="https://img.shields.io/github/stars/Haillord/eroslab-bot?style=for-the-badge&label=STARS&color=FF2244&labelColor=1a1a1a" alt="stars">
+  <img src="https://img.shields.io/github/actions/workflow/status/Haillord/eroslab-bot/bot.yml?style=for-the-badge&label=BOT+STATUS&labelColor=1a1a1a&color=FF2244" alt="workflow">
 </p>
 
 <p align="center">
-  <img src="banner.svg?v=5" width="100%" alt="ErosLab Bot Ecosystem">
+  <img src="https://readme-typing-svg.demolab.com?font=monospace&size=22&pause=2000&color=FF2244&center=true&width=700&height=45&lines=ErosLab+Bot+Ecosystem+%F0%9F%94%9E;Serverless+24%2F7+on+GitHub+Actions;AI+via+Groq+%26+Llama+3;Smart+filtering+%26+no+duplicates;Free+hosting+%E2%80%A2+Full+autonomy">
 </p>
 
 <div align="center">
