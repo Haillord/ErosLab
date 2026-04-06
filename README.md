@@ -12,6 +12,10 @@
   <img src="https://img.shields.io/github/actions/workflow/status/Haillord/eroslab-bot/bot.yml?style=for-the-badge&label=BOT+STATUS&labelColor=1a1a1a&color=FF2244" alt="workflow">
 </p>
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Haillord/eroslab-bot/main/banner.svg" width="100%" alt="ErosLab Bot Ecosystem">
+</p>
+
 <div align="center">
 
 [![](https://img.shields.io/badge/🔞_Основной_канал-FF2244?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/eroslabai)
