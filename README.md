@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://readme-typing-svg.demolab.com?font=monospace&size=22&pause=2000&color=FF2244&center=true&width=700&height=45&lines=ErosLab+Bot+Ecosystem+%F0%9F%94%9E;Serverless+24%2F7+on+GitHub+Actions;AI+via+Groq+%26+Llama+3;Smart+filtering+%26+no+duplicates;Free+hosting+%E2%80%A2+Full+autonomy">
+<img src="https://readme-typing-svg.demolab.com?font=Orbitron&size=22&pause=2000&color=FF2244&center=true&width=700&height=45&lines=ErosLab+Bot+Ecosystem+%F0%9F%94%9E;Serverless+24%2F7+on+GitHub+Actions;AI+via+Groq+%26+Llama+3;Smart+filtering+%26+no+duplicates;Free+hosting+%E2%80%A2+Full+autonomy">
 </p>
 
 <p align="center">
