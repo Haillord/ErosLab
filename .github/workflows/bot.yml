@@ -8,7 +8,6 @@ on:
 jobs:
   post:
     runs-on: ubuntu-latest
-    container: ghcr.io/haillord/eroslab-bot:latest
     permissions:
       contents: write
     
@@ -18,6 +17,36 @@ jobs:
         with:
           fetch-depth: 1
           token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Cache Python packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+          
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # ←←← НОВЫЙ ШАГ: Лучшая установка yt-dlp для GitHub Actions
+      - name: Setup yt-dlp
+        uses: AnimMouse/setup-yt-dlp@v3
+        with:
+          ffmpeg: true        # автоматически установит ffmpeg + yt-dlp
+
+      - name: Install ffmpeg (fallback)
+        if: steps.setup-yt-dlp.outputs.ffmpeg != 'true'
+        run: |
+          sudo apt-get update --quiet
+          sudo apt-get install -y ffmpeg --no-install-recommends
 
       - name: Run ErosLab Bot (CivitAI)
         env:
@@ -51,3 +80,5 @@ jobs:
           CAPTION_STYLE: "minimal"
           STATS_TZ: "Europe/Moscow"
         run: python civitai_bot.py
+
+        
