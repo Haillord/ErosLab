@@ -4,7 +4,7 @@ GitHub Gist Storage
 """
 import json
 import os
-import httpx
+import requests
 from typing import Dict, Any
 
 GIST_TOKEN = os.environ.get("GH_TOKEN", "")
@@ -17,7 +17,7 @@ GIST_HEADERS = {
 }
 
 
-async def load_all_state() -> Dict[str, Any]:
+def load_all_state() -> Dict[str, Any]:
     """
     Загружает всё состояние из Gist
     Возвращает словарь {имя_файла: содержимое}
@@ -27,10 +27,9 @@ async def load_all_state() -> Dict[str, Any]:
         return _load_from_local_files()
 
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.get(f"{GIST_API}/{GIST_ID}", headers=GIST_HEADERS)
-            response.raise_for_status()
-            gist_data = response.json()
+        response = requests.get(f"{GIST_API}/{GIST_ID}", headers=GIST_HEADERS, timeout=10)
+        response.raise_for_status()
+        gist_data = response.json()
 
         state = {}
         for filename, file_data in gist_data["files"].items():
@@ -45,7 +44,7 @@ async def load_all_state() -> Dict[str, Any]:
         return _load_from_local_files()
 
 
-async def save_all_state(state: Dict[str, Any]) -> bool:
+def save_all_state(state: Dict[str, Any]) -> bool:
     """
     Сохраняет всё состояние в Gist
     Принимает словарь {имя_файла: содержимое}
@@ -62,13 +61,13 @@ async def save_all_state(state: Dict[str, Any]) -> bool:
                 "content": json.dumps(content, indent=2, ensure_ascii=False)
             }
 
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.patch(
-                f"{GIST_API}/{GIST_ID}",
-                headers=GIST_HEADERS,
-                json={"files": files, "description": "ErosLab Bot State"}
-            )
-            response.raise_for_status()
+        response = requests.patch(
+            f"{GIST_API}/{GIST_ID}",
+            headers=GIST_HEADERS,
+            json={"files": files, "description": "ErosLab Bot State"},
+            timeout=10
+        )
+        response.raise_for_status()
         print("✅ Состояние успешно сохранено в Gist")
         return True
     except Exception as e:
