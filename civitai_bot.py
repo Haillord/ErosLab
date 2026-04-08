@@ -1648,18 +1648,6 @@ async def main():
                 save_all()
                 continue
             
-            # Добавляем водяной знак
-            if should_add_watermark(item.get("url", "")):
-                try:
-                    opacity = max(0.0, min(1.0, WATERMARK_IMAGE_OPACITY))
-                    data = add_watermark_to_video(
-                        video_data=data,
-                        text=WATERMARK_IMAGE_TEXT,
-                        opacity=opacity,
-                    )
-                except Exception as e:
-                    logger.warning(f"Video watermark apply failed, using original video: {e}")
-
             # Скипаем видео с экстремальными соотношениями сторон
             if img_width and img_height:
                 ratio = img_width / img_height
@@ -1672,6 +1660,18 @@ async def main():
             
             # ✅ Автоматическая проверка и исправление формата видео для мобильного Telegram
             data = normalize_video_format(data)
+
+            # Добавляем водяной знак ФИНАЛЬНЫМ ШАГОМ после всех конвертаций
+            if should_add_watermark(item.get("url", "")):
+                try:
+                    opacity = max(0.0, min(1.0, WATERMARK_IMAGE_OPACITY))
+                    data = add_watermark_to_video(
+                        video_data=data,
+                        text=WATERMARK_IMAGE_TEXT,
+                        opacity=opacity,
+                    )
+                except Exception as e:
+                    logger.warning(f"Video watermark apply failed, using original video: {e}")
 
         img_hash = hashlib.sha256(data).hexdigest()
         if img_hash in posted_hashes:
