@@ -132,12 +132,12 @@ def save_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-_state = load_all_state()
-posted_ids    = set(_state.get("posted_ids.json", []))
-posted_hashes = set(_state.get("posted_hashes.json", []))
-content_state = _state.get("content_state.json", {"last_type": "3d", "last_media": "video"})
-pending_draft = _state.get("pending_draft.json", {})
-review_state  = _state.get("review_state.json", {"last_update_id": 0})
+_state = None
+posted_ids = set()
+posted_hashes = set()
+content_state = {"last_type": "3d", "last_media": "video"}
+pending_draft = {}
+review_state = {"last_update_id": 0}
 
 def _get_stats_day_key():
     try:
@@ -1412,6 +1412,16 @@ async def process_admin_updates(bot: Bot):
 
 # ==================== MAIN ====================
 async def main():
+    global _state, posted_ids, posted_hashes, content_state, pending_draft, review_state
+    
+    # Загружаем состояние при старте
+    _state = await load_all_state()
+    posted_ids    = set(_state.get("posted_ids.json", []))
+    posted_hashes = set(_state.get("posted_hashes.json", []))
+    content_state = _state.get("content_state.json", {"last_type": "3d", "last_media": "video"})
+    pending_draft = _state.get("pending_draft.json", {})
+    review_state  = _state.get("review_state.json", {"last_update_id": 0})
+
     run_started = time.time()
     run_metrics = {
         "runs": 1,
