@@ -115,11 +115,11 @@ def fetch_99px(max_pages: int = 5) -> list[dict]:
     for base_url in [f"{BASE}/new/", f"{BASE}/best/"]:
         for page in range(1, max_pages + 1):
             url = base_url if page == 1 else f"{base_url}?page={page}"
+            time.sleep(3)  # пауза ПЕРЕД каждым запросом
             page_items = _parse_page(url)
             if not page_items:
                 break
             all_items.extend(page_items)
-            time.sleep(2)  # пауза между страницами
         time.sleep(3)  # пауза между /new/ и /best/
 
     # Убираем дубли по id
