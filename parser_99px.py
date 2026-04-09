@@ -4,13 +4,21 @@
 """
 
 import logging
+import random
 import re
+import time
 import requests
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
 BASE = "https://wallpapers.99px.ru"
+
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36",
+]
 
 NSFW_KEYWORDS = {"обнаженн"}
 
@@ -28,7 +36,8 @@ HEADERS = {
 def _parse_page(url: str) -> list[dict]:
     """Парсит одну страницу листинга и возвращает список items."""
     try:
-        r = requests.get(url, headers=HEADERS, timeout=15)
+        headers = {**HEADERS, "User-Agent": random.choice(USER_AGENTS)}
+        r = requests.get(url, headers=headers, timeout=15)
         r.raise_for_status()
     except Exception as e:
         logger.warning(f"99px fetch error {url}: {e}")
@@ -68,7 +77,7 @@ def _parse_page(url: str) -> list[dict]:
         download_url = f"{BASE}/wallpapers/download/{item_id_num}/"
         
         try:
-            r = requests.get(page_url, headers=HEADERS, timeout=10)
+            r = requests.get(page_url, headers={**HEADERS, "User-Agent": random.choice(USER_AGENTS)}, timeout=10)
             page_soup = BeautifulSoup(r.text, "html.parser")
             main_img = page_soup.select_one("img#mainImage") or page_soup.select_one("div.wallpaper_block img")
             if main_img and main_img.get("src"):
@@ -110,6 +119,8 @@ def fetch_99px(max_pages: int = 5) -> list[dict]:
             if not page_items:
                 break
             all_items.extend(page_items)
+            time.sleep(2)  # пауза между страницами
+        time.sleep(3)  # пауза между /new/ и /best/
 
     # Убираем дубли по id
     seen = set()
