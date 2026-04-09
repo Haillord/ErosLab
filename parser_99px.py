@@ -63,10 +63,27 @@ def _parse_page(url: str) -> list[dict]:
 
         tags = [t for t in re.split(r"[\s,]+", title.lower()) if len(t) > 2] if title else []
 
+        # Берём прямую ссылку на оригинальное изображение
+        page_url = href if href.startswith("http") else BASE + href
+        download_url = f"{BASE}/wallpapers/download/{item_id_num}/"
+        
+        try:
+            r = requests.get(page_url, headers=HEADERS, timeout=10)
+            page_soup = BeautifulSoup(r.text, "html.parser")
+            main_img = page_soup.select_one("img#mainImage") or page_soup.select_one("div.wallpaper_block img")
+            if main_img and main_img.get("src"):
+                img_src = main_img["src"]
+                # Убираем tmb_ префикс чтобы получить оригинал
+                img_src = img_src.replace("/tmb_", "/")
+                download_url = img_src if img_src.startswith("http") else BASE + img_src
+        except Exception:
+            # Фолбэк если что-то сломалось
+            pass
+
         items.append({
             "id":        item_id,
-            "url":       f"{BASE}/wallpapers/download/{item_id_num}/",
-            "page_url":  href if href.startswith("http") else BASE + href,
+            "url":       download_url,
+            "page_url":  page_url,
             "tags":      tags[:10],
             "likes":     0,
             "rating":    "safe",

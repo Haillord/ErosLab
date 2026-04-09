@@ -65,10 +65,10 @@ def test():
         # Все img теги
         imgs = soup2.find_all("img")
         print(f"Total img tags on page: {len(imgs)}")
-        for img in imgs[:10]:
+        for img in imgs:
             src = img.get("src", "") or img.get("data-src", "")
-            if src and not src.startswith("data:"):
-                print(f"  IMG: {src[:100]}")
+            if src and not src.startswith("data:") and "99px" in src:
+                print(f"  IMG: {src}")
 
         # Ссылки на скачивание
         downloads = soup2.select("a[href*='download']") + soup2.select("a.download_btn")
