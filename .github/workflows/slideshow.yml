@@ -1,0 +1,33 @@
+name: Make Slideshow
+
+on:
+  workflow_dispatch:  # запуск вручную кнопкой
+
+jobs:
+  slideshow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests Pillow
+
+      - name: Install ffmpeg
+        run: sudo apt-get install -y ffmpeg
+
+      - name: Make slideshow
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+          WALLHAVEN_API_KEY: ${{ secrets.WALLHAVEN_API_KEY }}
+        run: python make_slideshow.py
+
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        with:
+          name: slideshow
+          path: slideshow.mp4
