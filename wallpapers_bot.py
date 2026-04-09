@@ -379,7 +379,6 @@ def fetch_wallhaven(max_pages: int = 3):
                 "categories": "111",
                 "purity": "100",
                 "atleast": "1920x1080",
-                "ratios": "16x9,9x16",
                 "page": page,
                 **base_params
             }
@@ -413,7 +412,8 @@ def fetch_wallhaven(max_pages: int = 3):
                     break
 
             except Exception as e:
-                logger.error(f"Wallhaven page {page} error: {e}")
+                logger.warning(f"Skip candidate {candidate['id']}: {e}")
+                posted_ids.add(candidate['id'])
                 continue
 
         if all_items:
