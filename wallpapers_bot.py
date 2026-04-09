@@ -236,6 +236,8 @@ async def send_with_retry(func, *args, retries=3, **kwargs):
             _rewind_payload()
             return await func(*args, **kwargs)
         except Exception as e:
+            if "invalid_dimensions" in str(e).lower():
+                raise  # не ретраим, сразу пробрасываем
             if attempt == retries - 1:
                 raise
             logger.warning(f"Telegram send failed (attempt {attempt + 1}/{retries}): {e}")
@@ -632,6 +634,7 @@ def fetch_and_pick():
 
             except Exception as e:
                 logger.warning(f"Skip candidate {candidate['id']}: {e}")
+                posted_ids.add(candidate['id'])
                 continue
         return None, None
 
