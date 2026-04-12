@@ -6,7 +6,6 @@
 Результат: slideshow.mp4
 """
 
-import json
 import os
 import requests
 import subprocess
@@ -14,6 +13,8 @@ import tempfile
 from pathlib import Path
 from PIL import Image
 from io import BytesIO
+
+from gist_storage import load_all_state
 
 # ==================== НАСТРОЙКИ ====================
 OUTPUT_FILE = "slideshow.mp4"
@@ -24,39 +25,10 @@ WIDTH = 1080
 HEIGHT = 1080
 FPS = 30
 
-GIST_TOKEN = os.environ.get("GH_TOKEN", "")
-GIST_ID = os.environ.get("GIST_ID", "")
-
-HEADERS = {
-    "Authorization": f"token {GIST_TOKEN}",
-    "Accept": "application/vnd.github.v3+json"
-}
-
 
 def load_gist_state():
-    if not GIST_TOKEN or not GIST_ID:
-        print("⚠️  GH_TOKEN или GIST_ID не найдены, используем локальный файл")
-        path = Path("posted_ids_wallpapers.json")
-        if path.exists():
-            with open(path, "r") as f:
-                return json.load(f)
-        return []
-
-    resp = requests.get(
-        f"https://api.github.com/gists/{GIST_ID}",
-        headers=HEADERS,
-        timeout=10
-    )
-    resp.raise_for_status()
-    data = resp.json()
-
-    # Ищем файл с историей обоев
-    for filename in ["posted_ids_wallpapers.json", "content_state_wallpapers.json"]:
-        if filename in data["files"]:
-            content = data["files"][filename]["content"]
-            return json.loads(content)
-
-    return []
+    state = load_all_state()
+    return state.get("posted_ids_wallpapers.json", [])
 
 
 def get_wallhaven_urls(ids: list, count: int) -> list:

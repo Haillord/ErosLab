@@ -13,15 +13,6 @@ logger = logging.getLogger("ErosLab.Rule34")
 
 # Разнообразные наборы тегов — выбираем случайный каждый раз
 TAG_SETS = [
-    "animated",
-    "3d_(artwork)",
-    "animated 3d_(artwork)",
-    "animated tagme",
-    "3d_(artwork) tagme",
-]
-
-# Разнообразные наборы тегов — выбираем случайный каждый раз
-TAG_SETS = [
     # Базовые качественные 3D/анимация (самые рабочие в 2026)
     "3d_(artwork) animated rating:explicit -2d",
     "3d_(artwork) video rating:explicit -2d -hand_drawn",
