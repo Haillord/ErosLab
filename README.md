@@ -28,9 +28,15 @@
 <br>
 
 
+<div align="center" style="background: linear-gradient(135deg, rgba(255,34,68,0.08) 0%, rgba(26,26,26,0.95) 100%); border: 1px solid #333; border-radius: 14px; padding: 22px 28px; margin: 10px 0;">
+
 **ErosLab** — полностью автономная система постинга контента в Telegram.  
+
 Работает **24/7 бесплатно** на GitHub Actions. Никакого сервера. Никаких затрат.  
+
 Контент отбирается, фильтруется, подписывается и публикуется **без участия человека**.
+
+</div>
 
 <br>
 
