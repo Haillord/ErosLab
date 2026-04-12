@@ -184,9 +184,7 @@ class CivitaiBot(BaseBot):
         )
         logger.info("=" * 50)
 
-        # Основная логика бота здесь
-        flush_stats_once()
-        await self.save_state()
+        await self.process(run_metrics, flush_stats_once)
 
 
 async def main():
