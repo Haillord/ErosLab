@@ -147,7 +147,7 @@ eroslab-bot/
 <br>
 
 
-> `Settings` → `Secrets and variables` → `Actions`
+ `Settings` → `Secrets and variables` → `Actions`
 
 | Secret | Описание | Обязательно |
 |--------|----------|-------------|
