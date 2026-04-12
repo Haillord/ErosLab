@@ -83,13 +83,13 @@
 
 ```mermaid
 flowchart TD
-    A[⏰ GitHub Actions Cron] -->|каждые 15 мин| B{🎲 Ротация 50/50}
+    A[⏰ GitHub Actions Cron] -->|каждые 15 мин| B[🎲 Ротация 50/50]
     B --> C[🔥 CivitAI]
     B --> D[🟧 Rule34]
     C & D --> E[🔍 Фильтрация<br/><small>теги / хеш / размер / QoS</small>]
-    E --> F[🧠 AI Подпись<br/><small>Groq / OpenRouter / Vision</small>]
+    E --> F[🧠 AI Подпись<br/><small>Groq / OpenRouter</small>]
     F --> G[🖼️ Вотермарк<br/><small>PIL + FFmpeg</small>]
-    G --> H[📢 Telegram<br/><small>фото / видео / gif / альбомы</small>]
+    G --> H[📢 Telegram<br/><small>фото / видео / gif</small>]
     H --> I[💾 Gist Storage<br/><small>история постов</small>]
     
     style A fill:#2088FF,color:white,stroke:none
