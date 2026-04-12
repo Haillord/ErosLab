@@ -60,7 +60,7 @@
 <td width="50%" valign="top">
 
 ### 🎨 Медиа
-- **Вотермарки** — на фото и видео через PIL + FFmpeg
+- **Ватермарки** — на фото и видео через PIL + FFmpeg
 - **Image Pack** — автосборка альбомов из 3 фото
 - **Видео нормализация** — yuv420p, h264, max 1080p
 - **Aspect ratio fix** — паддинги для Telegram
@@ -86,10 +86,10 @@ flowchart TD
     A[⏰ GitHub Actions Cron] -->|каждые 120 минут| B[🎲 Ротация 50/50]
     B --> C[🔥 CivitAI]
     B --> D[🟧 Rule34]
-    C & D --> E[🔍 Фильтрация<br/><small>теги / хеш / размер / QoS</small>]
+    C & D --> E[🔍 Фильтрация<br/><small>теги / хеш / размер</small>]
     E --> F[🧠 AI Подпись<br/><small>Groq / OpenRouter</small>]
-    F --> G[🖼️ Вотермарк<br/><small>PIL + FFmpeg</small>]
-    G --> H[📢 Telegram<br/><small>фото / видео / gif</small>]
+    F --> G[🖼️ Ватермарка<br/><small>PIL + FFmpeg</small>]
+    G --> H[📢 Telegram<br/><small>фото / видео</small>]
     H --> I[💾 Gist Storage<br/><small>история постов</small>]
     
     style A fill:#2088FF,color:white,stroke:none
