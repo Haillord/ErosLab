@@ -86,10 +86,10 @@ flowchart TD
     A[⏰ GitHub Actions Cron] -->|каждые 120 минут| B[🎲 Ротация 50/50]
     B --> C[🔥 CivitAI]
     B --> D[🟧 Rule34]
-    C & D --> E[🔍 Фильтрация<br/><small>теги / хеш / размер</small>]
-    E --> F[🧠 AI Подпись<br/><small>Groq / OpenRouter</small>]
-    F --> G[🖼️ Ватермарка<br/><small>PIL + FFmpeg</small>]
-    G --> H[📢 Telegram<br/><small>фото / видео</small>]
+    C & D --> E[🔍 Фильтрация<br/><small>теги / хеш / размер </small>]
+    E --> F[🧠 AI Подпись<br/><small>Groq / OpenRouter </small>]
+    F --> G[🖼️ Ватермарка<br/><small>PIL + FFmpeg </small>]
+    G --> H[📢 Telegram<br/><small>фото / видео </small>]
     H --> I[💾 Gist Storage<br/><small>история постов</small>]
     
     style A fill:#2088FF,color:white,stroke:none
