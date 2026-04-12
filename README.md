@@ -10,11 +10,25 @@
   <img src="https://img.shields.io/github/license/Haillord/eroslab-bot?style=for-the-badge&label=LICENSE&color=FF2244&labelColor=1a1a1a" alt="license">
   <img src="https://img.shields.io/github/stars/Haillord/eroslab-bot?style=for-the-badge&label=STARS&color=FF2244&labelColor=1a1a1a" alt="stars">
   <img src="https://img.shields.io/github/actions/workflow/status/Haillord/eroslab-bot/bot.yml?style=for-the-badge&label=BOT+STATUS&labelColor=1a1a1a&color=FF2244" alt="workflow">
+  <img src="https://img.shields.io/github/last-commit/Haillord/eroslab-bot?style=for-the-badge&label=LAST+COMMIT&color=FF2244&labelColor=1a1a1a" alt="last commit">
 </p>
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Haillord/eroslab-bot/main/banner.svg" width="100%" alt="ErosLab Bot Ecosystem">
-</p>
+<br>
+
+<div align="center">
+
+```
+██████╗  ██████╗ ████████╗    ███████╗ ██████╗ ██████╗ ███████╗██╗      █████╗ ██████╗
+██╔══██╗██╔═══██╗╚══██╔══╝    ██╔════╝██╔════╝██╔═══██╗██╔════╝██║     ██╔══██╗██╔══██╗
+██████╔╝██║   ██║   ██║       █████╗  ██║     ██║   ██║███████╗██║     ███████║██████╔╝
+██╔══██╗██║   ██║   ██║       ██╔══╝  ██║     ██║   ██║╚════██║██║     ██╔══██║██╔══██╗
+██████╔╝╚██████╔╝   ██║       ███████╗╚██████╗╚██████╔╝███████║███████╗██║  ██║██████╔╝
+╚═════╝  ╚═════╝    ╚═╝       ╚══════╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝╚═════╝
+```
+
+</div>
+
+<br>
 
 <div align="center">
 
@@ -23,111 +37,186 @@
 
 </div>
 
----
+<br>
+
+```
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+                         WHAT IS THIS?
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+```
+
+**ErosLab** — полностью автономная система постинга контента в Telegram.  
+Работает **24/7 бесплатно** на GitHub Actions. Никакого сервера. Никаких затрат.  
+Контент отбирается, фильтруется, подписывается и публикуется **без участия человека**.
+
+<br>
+
+```
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+                          FEATURES
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+```
 
 <table>
 <tr>
-<td width="50%">
-<img src="https://img.shields.io/badge/Serverless_24%2F7-FF2244?style=flat-square&logoColor=white"/>
+<td width="50%" valign="top">
 
-Полная автоматизация на GitHub Actions без затрат на сервер
+### ⚙️ Инфраструктура
+- **Serverless** — GitHub Actions, 0 руб/месяц
+- **Gist как БД** — состояние без коммитов
+- **Dual-source** — CivitAI + Rule34 в ротации
+- **Fallback** — если один источник упал, берёт другой
+
 </td>
-<td width="50%">
-<img src="https://img.shields.io/badge/Gist_Database-181717?style=flat-square&logo=github&logoColor=white"/>
+<td width="50%" valign="top">
 
-Хранение состояния в скрытых Gists — никаких лишних коммитов
-</td>
-</tr>
-<tr>
-<td>
-<img src="https://img.shields.io/badge/Smart_Filtering-2088FF?style=flat-square&logoColor=white"/>
+### 🧠 Интеллект
+- **AI подписи** — Groq + OpenRouter + Vision
+- **Дедупликация** — SHA256 хеш каждого файла
+- **QoS фильтр** — минимальный битрейт для видео
+- **Блэклист** — автофильтрация нежелательных тегов
 
-Защита от дублей по хешу, контроль качества и разрешения
-</td>
-<td>
-<img src="https://img.shields.io/badge/AI_Engine-00A67E?style=flat-square&logoColor=white"/>
-
-Генерация подписей через Groq и OpenRouter (Llama 3 / Vision)
 </td>
 </tr>
 <tr>
-<td colspan="2">
-<img src="https://img.shields.io/badge/Media_Lab-007808?style=flat-square&logo=ffmpeg&logoColor=white"/>
+<td width="50%" valign="top">
 
-Наложение водяных знаков и оптимизация видео через FFmpeg на лету
+### 🎨 Медиа
+- **Вотермарки** — на фото и видео через PIL + FFmpeg
+- **Image Pack** — автосборка альбомов из 3 фото
+- **Видео нормализация** — yuv420p, h264, max 1080p
+- **Aspect ratio fix** — паддинги для Telegram
+
+</td>
+<td width="50%" valign="top">
+
+### 🛡️ Безопасность
+- **Review Mode** — одобрение постов через бота
+- **История 5000** — защита от повторов
+- **Content filter** — NSFW только нужного типа
+- **Размерный фильтр** — мин. 720px по обеим сторонам
+
 </td>
 </tr>
 </table>
 
----
+<br>
 
-### 🛠 Stack
+```
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+                        HOW IT WORKS
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+```
+
+```
+  GitHub Actions (cron)
+         │
+         ▼
+  ┌─────────────┐     50/50      ┌─────────────┐
+  │   CivitAI   │ ◄────────────► │   Rule34    │
+  └──────┬──────┘                └──────┬──────┘
+         │                              │
+         └──────────────┬───────────────┘
+                        ▼
+              ┌─────────────────┐
+              │  Фильтрация     │  тэги / хеш / размер / QoS
+              └────────┬────────┘
+                       ▼
+              ┌─────────────────┐
+              │  AI Caption     │  Groq / OpenRouter / Vision
+              └────────┬────────┘
+                       ▼
+              ┌─────────────────┐
+              │  Вотермарк      │  PIL + FFmpeg
+              └────────┬────────┘
+                       ▼
+              ┌─────────────────┐
+              │  Telegram       │  фото / видео / gif / пак
+              └────────┬────────┘
+                       ▼
+              ┌─────────────────┐
+              │  Gist Storage   │  сохраняем историю
+              └─────────────────┘
+```
+
+<br>
+
+```
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+                           STACK
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+```
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
   <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white"/>
   <img src="https://img.shields.io/badge/Gist_API-181717?style=for-the-badge&logo=github&logoColor=white"/>
+  <br>
   <img src="https://img.shields.io/badge/CivitAI-FF2244?style=for-the-badge&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Rule34-FF6600?style=for-the-badge&logoColor=white"/>
   <img src="https://img.shields.io/badge/Groq-00A67E?style=for-the-badge&logoColor=white"/>
   <img src="https://img.shields.io/badge/OpenRouter-FF6B35?style=for-the-badge&logoColor=white"/>
+  <br>
   <img src="https://img.shields.io/badge/FFmpeg-007808?style=for-the-badge&logo=ffmpeg&logoColor=white"/>
-  <img src="https://img.shields.io/badge/yt--dlp-FF0000?style=for-the-badge&logo=youtube&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Pillow-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
+  <img src="https://img.shields.io/badge/python--telegram--bot-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white"/>
 </p>
 
----
+<br>
 
-### 📂 Structure
+```
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+                         STRUCTURE
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+```
 
 <details>
-<summary><b>Показать структуру проекта</b></summary>
+<summary><b>📂 Показать структуру проекта</b></summary>
 <br>
-<pre>
+
+```
 eroslab-bot/
-├── civitai_bot.py      — основной движок (nsfw)
-├── wallpapers_bot.py   — бот с обоями (sfw)
-├── gist_storage.py     — логика работы с БД Gist
-├── caption_gen.py      — ai-генератор описаний
-└── watermark.py        — обработка фото и видео
-</pre>
+│
+├── 🔴  civitai_bot.py       — основной движок (nsfw)
+├── 🤍  wallpapers_bot.py    — бот с обоями (sfw)
+│
+├── ⚙️  gist_storage.py      — БД через GitHub Gist
+├── 🧠  caption_generator.py — AI генератор подписей
+├── 🔎  rule34_api.py        — парсер Rule34
+└── 🖼️  watermark.py         — обработка фото и видео
+```
+
 </details>
 
----
+<br>
 
-### 🔑 Secrets
+```
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+                          SECRETS
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+```
 
-> Перейди в `Settings` → `Secrets and variables` → `Actions` и добавь:
+> `Settings` → `Secrets and variables` → `Actions`
 
-<table>
-<tr>
-<th>Secret</th>
-<th>Описание</th>
-</tr>
-<tr>
-<td><code>TELEGRAM_BOT_TOKEN</code></td>
-<td>🤖 Токен основного бота</td>
-</tr>
-<tr>
-<td><code>GH_TOKEN</code></td>
-<td>🔐 Classic Token с правами на Gist</td>
-</tr>
-<tr>
-<td><code>GIST_ID</code></td>
-<td>🗄️ ID вашего секретного Gist</td>
-</tr>
-<tr>
-<td><code>CIVITAI_API_KEY</code></td>
-<td>🎨 Доступ к API CivitAI</td>
-</tr>
-<tr>
-<td><code>GROQ_API_KEY</code></td>
-<td>🧠 Ключ для AI генерации подписей</td>
-</tr>
-</table>
+| Secret | Описание | Обязательно |
+|--------|----------|-------------|
+| `TELEGRAM_BOT_TOKEN` | 🤖 Токен основного бота | ✅ |
+| `TELEGRAM_CHANNEL_ID` | 📢 ID или @username канала | ✅ |
+| `GH_TOKEN` | 🔐 Classic Token с правами на Gist | ✅ |
+| `GIST_ID` | 🗄️ ID секретного Gist | ✅ |
+| `CIVITAI_API_KEY` | 🎨 Доступ к API CivitAI | ✅ |
+| `GROQ_API_KEY` | 🧠 AI генерация подписей | ⚡ опц. |
+| `OPENROUTER_API_KEY` | 👁️ Vision модели | ⚡ опц. |
+| `ADMIN_USER_ID` | 🛡️ ID для Review Mode | ⚡ опц. |
 
----
+<br>
+
+```
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+```
 
 <p align="center">
   <img src="https://img.shields.io/badge/Made%20with-Python-3776AB?style=for-the-badge&logo=python" alt="python">
   <img src="https://img.shields.io/badge/Powered%20by-GitHub%20Actions-2088FF?style=for-the-badge&logo=github-actions" alt="actions">
-  <img src="https://img.shields.io/badge/Developer-Haillord-red?style=for-the-badge&logo=telegram" alt="author">
+  <img src="https://img.shields.io/badge/Developer-Haillord-FF2244?style=for-the-badge&logo=telegram" alt="author">
 </p>
