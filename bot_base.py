@@ -206,6 +206,10 @@ class BaseBot:
             logger.error(f"❌ Ошибка отправки медиа группы: {e}")
             return False
 
+    async def process(self, run_metrics: dict, flush_stats_callback):
+        """Абстрактный метод который переопределяется в каждом боте"""
+        raise NotImplementedError("Метод process должен быть переопределён в дочернем классе")
+
 
 async def send_with_retry(func, *args, retries=3, **kwargs):
     def _rewind_file_like(obj):
