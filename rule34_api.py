@@ -13,20 +13,38 @@ logger = logging.getLogger("ErosLab.Rule34")
 
 # Разнообразные наборы тегов — выбираем случайный каждый раз
 TAG_SETS = [
-    "animated",
-    "3d_(artwork)",
-    "animated 3d_(artwork)",
-    "animated tagme",
-    "3d_(artwork) tagme",
-]
-
-# Разнообразные наборы тегов — выбираем случайный каждый раз
-TAG_SETS = [
     "3d_(artwork) animated rating:explicit", # База 3D анимации
     "ai_generated animated rating:explicit", # База ИИ видео
     "ai_generated rating:explicit",          # Просто ИИ (картинки/сеты)
     "3d_(artwork) rating:explicit",          # Просто 3D (статика)
-    "animated rating:explicit",             # Вообще любая анимация
+    "animated rating:explicit"               # Вообще любая анимация
+]
+
+# Разнообразные наборы тегов — выбираем случайный каждый раз
+TAG_SETS = [
+    # Базовые качественные 3D/анимация (самые рабочие в 2026)
+    "3d_(artwork) animated rating:explicit",
+    "3d_(artwork) video rating:explicit",
+
+    # Для чистой анимации (не обязательно 3D)
+    "animated rating:explicit -static_image",
+    "gif rating:explicit -static_image",
+    "webm rating:explicit"
+]
+
+# Теги для ИИ-контента (AI generated) — обновлено под 2026
+AI_TAG_SETS = [
+    # Изображения
+    "ai_generated rating:explicit",
+    
+    # Анимированные AI (самое важное для видео)
+    "ai_generated animated rating:explicit",
+]
+
+# Теги для чистого 3D (с сильным исключением 2D и low-quality)
+THREE_D_TAG_SETS = [
+    "3d_(artwork) animated rating:explicit",
+    "3d_(artwork) video rating:explicit"
 ]
 
 def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed", media_type: str = "mixed") -> List[Dict[str, Any]]:
