@@ -892,11 +892,28 @@ def fetch_civitai(max_pages: int = 5):
         nsfw_distribution = {}
         likes_observed = []
         
-        # Debug: sample first 5 items nsfwLevel
-        for debug_item in items[:5]:
+        # Автоматически определяем есть ли вообще X контент в выдаче
+        x_count = 0
+        mature_count = 0
+        soft_count = 0
+        none_count = 0
+        
+        for debug_item in items:
             debug_nsfw = debug_item.get("nsfwLevel")
-            debug_id = debug_item.get("id")
-            logger.debug(f"Item {debug_id}: nsfwLevel={debug_nsfw} (type={type(debug_nsfw).__name__})")
+            if _is_x_or_xxx(debug_nsfw):
+                x_count +=1
+            elif _is_mature_or_higher(debug_nsfw):
+                mature_count +=1
+            else:
+                if str(debug_nsfw).strip().lower() == "soft":
+                    soft_count +=1
+                else:
+                    none_count +=1
+        
+        # Автоматический фоллбек: если X контента меньше 2% от всего - включаем Mature
+        auto_enable_mature = (x_count / len(items)) < 0.02
+        if auto_enable_mature and not ALLOW_MATURE_FALLBACK:
+            logger.warning(f"⚠️ CivitAI X контент почти исчез ({x_count}/{len(items)}), автоматически включаем Mature fallback")
         
         for item in items:
             try:
@@ -905,7 +922,7 @@ def fetch_civitai(max_pages: int = 5):
                 nsfw_distribution[nsfw_key] = nsfw_distribution.get(nsfw_key, 0) + 1
 
                 is_allowed_nsfw = _is_x_or_xxx(nsfw_level)
-                if not is_allowed_nsfw and ALLOW_MATURE_FALLBACK and _is_mature_or_higher(nsfw_level):
+                if not is_allowed_nsfw and (ALLOW_MATURE_FALLBACK or auto_enable_mature) and _is_mature_or_higher(nsfw_level):
                     is_allowed_nsfw = True
                     accepted_mature += 1
 
