@@ -700,11 +700,12 @@ def extract_tags(item):
 
 # ==================== CIVITAI API ====================
 def _request_with_backoff(url, params, headers, max_retries=3):
+    last_error = None
     for attempt in range(max_retries):
         try:
             r = requests.get(url, params=params, headers=headers, timeout=30)
             if r.status_code == 429:
-                wait = 2 ** attempt * 5
+                wait = 2 ** attempt * 7
                 logger.warning(f"Rate limited (429), waiting {wait}s before retry {attempt + 1}/{max_retries}")
                 time.sleep(wait)
                 continue
@@ -713,18 +714,23 @@ def _request_with_backoff(url, params, headers, max_retries=3):
             r.raise_for_status()
             return r
         except requests.exceptions.Timeout:
+            last_error = "Timeout"
             logger.warning(f"Timeout on attempt {attempt + 1}/{max_retries}")
             if attempt < max_retries - 1:
-                time.sleep(3)
+                time.sleep(5 + attempt * 3)
         except requests.exceptions.HTTPError as e:
+            last_error = f"HTTP {r.status_code}"
             if r.status_code >= 500:
                 logger.warning(f"Server error {r.status_code}, retry {attempt + 1}/{max_retries}")
-                time.sleep(2 ** attempt * 2)
+                time.sleep(5 + (2 ** attempt) * 5)
             else:
                 raise
         except Exception as e:
+            last_error = str(e)
             logger.error(f"Request error: {e}")
-            raise
+            if attempt < max_retries - 1:
+                time.sleep(5)
+    logger.warning(f"All {max_retries} attempts failed, last error: {last_error}")
     return None
 
 def _is_x_or_xxx(nsfw_level):
@@ -795,6 +801,9 @@ def fetch_civitai(max_pages: int = 5):
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
     max_pages = max(1, int(max_pages))
+    
+    consecutive_errors = 0
+    total_errors = 0
 
     for base_params in variations:
         all_items = []
@@ -814,7 +823,19 @@ def fetch_civitai(max_pages: int = 5):
                 )
                 if r is None:
                     logger.warning(f"CivitAI page {page}: no response")
+                    consecutive_errors += 1
+                    total_errors += 1
+                    
+                    # Если больше 2 ошибок подряд - прекращаем пытаться
+                    if consecutive_errors >= 2:
+                        logger.warning("Too many consecutive errors, stopping CivitAI requests")
+                        break
+                    
+                    # Задержка перед следующей попыткой
+                    time.sleep(3)
                     continue
+                
+                consecutive_errors = 0
 
                 # Handle 400 Bad Request
                 if r.status_code == 400:
@@ -941,6 +962,14 @@ def fetch_civitai(max_pages: int = 5):
                 f"CivitAI likes diagnostics: min={likes_sorted[0]}, median={median_like}, max={likes_sorted[-1]}"
             )
 
+        # Если CivitAI полностью лежит - фоллбек на Rule34
+        if total_errors >= 4 and not erotic_items:
+            logger.warning("⚠️ CivitAI is completely unreachable, falling back to Rule34")
+            try:
+                return fetch_rule34(limit=150, content_type="mixed", media_type="any")
+            except Exception as e:
+                logger.error(f"Rule34 fallback failed: {e}")
+    
     return []
 
 VIDEO_EXTENSIONS = (".mp4", ".webm")
