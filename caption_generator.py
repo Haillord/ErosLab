@@ -470,14 +470,12 @@ def _assemble_caption(style, content_type, title_line, tech_block, body_text, st
 
     if body_text:
         sections.append(body_text)
-    else:
-        # Если нет AI подписи - оставляем пусто, никаких фоллбеков
-        pass
-
-    sections.append(footer)
     
     if hashtags:
-        sections.append(hashtags)
+        tags_block = _build_style_block(hashtags, content_type=content_type)
+        sections.append(tags_block)
+
+    sections.append(footer)
 
     return "\n\n".join(s for s in sections if s)
 
@@ -864,7 +862,8 @@ def generate_caption(tags, rating, likes, image_data=None, image_url=None,
     - date: datetime or string format YYYY-MM-DD
     """
     safe_watermark = _escape_html(watermark)
-    footer = safe_watermark
+    clickable_suggestion = '<a href="https://t.me/Haillord">💬 Предложка</a>'
+    footer = f"{safe_watermark} · {clickable_suggestion}"
 
     safe_tags = _clean_caption_tags(_safe_tags(tags))
     
