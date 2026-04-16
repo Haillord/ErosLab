@@ -782,23 +782,23 @@ def _extract_civitai_likes(item):
     return max(numeric) if numeric else 0
 
 def fetch_civitai(max_pages: int = 5):
-    """Обновлённая версия с правильным фильтром NSFW"""
+    """Получаем жёсткий NSFW с CivitAI (nsfwLevel = X / Mature)"""
     
     variations = [
-        # 1. Самое свежее и самое жёсткое
+        # Самое жёсткое и свежее
         {"sort": "Newest", "nsfwLevel": "X"},
         {"sort": "Newest", "nsfwLevel": "Mature"},
 
-        # 2. Топ по реакциям за всё время (самый сочный контент)
+        # Топ за всё время (самый сочный)
         {"sort": "Most Reactions", "period": "AllTime", "nsfwLevel": "X"},
         {"sort": "Most Reactions", "period": "AllTime", "nsfwLevel": "Mature"},
 
-        # 3. Тренды месяца
+        # Тренды месяца
         {"sort": "Most Reactions", "period": "Month", "nsfwLevel": "X"},
         {"sort": "Most Reactions", "period": "Month", "nsfwLevel": "Mature"},
     ]
 
-    # Дополнительно можно добавить fallback с nsfw=true (на всякий случай)
+    # Запасной вариант на случай проблем
     fallback_variations = [
         {"sort": "Most Reactions", "period": "AllTime", "nsfw": True},
     ]
@@ -806,36 +806,32 @@ def fetch_civitai(max_pages: int = 5):
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
     max_pages = max(1, int(max_pages))
 
-    for base_params in variations:
+    for base_params in variations + fallback_variations:
         all_items = []
         seen_ids = set()
         next_page_url = None
-        
-        # CivitAI paginates через metadata.nextPage (cursor-based).
+
+        logger.info(f"Trying CivitAI with params: {base_params}")
+
         for page in range(1, max_pages + 1):
             request_url = next_page_url or "https://civitai.com/api/v1/images"
             params = None if next_page_url else {**base_params, "limit": 100}
-            
+
             try:
-                r = _request_with_backoff(
-                    request_url,
-                    params=params,
-                    headers=headers
-                )
+                r = _request_with_backoff(request_url, params=params, headers=headers)
                 if r is None:
                     logger.warning(f"CivitAI page {page}: no response")
                     continue
 
-                # Handle 400 Bad Request
                 if r.status_code == 400:
-                    logger.debug(f"CivitAI page {page}: skipping invalid params {params}")
+                    logger.warning(f"CivitAI page {page}: 400 Bad Request with params {params}")
                     continue
 
                 data = r.json()
                 items = data.get("items", [])
-                
+
                 if not items:
-                    logger.debug(f"CivitAI page {page}: no items")
+                    logger.debug(f"CivitAI page {page}: no items returned")
                     continue
 
                 for item in items:
@@ -844,7 +840,8 @@ def fetch_civitai(max_pages: int = 5):
                         continue
                     seen_ids.add(item_id)
                     all_items.append(item)
-                logger.info(f"CivitAI page {page}: got {len(items)} items (total: {len(all_items)})")
+
+                logger.info(f"CivitAI page {page}: got {len(items)} items (total now: {len(all_items)})")
 
                 metadata = data.get("metadata", {}) if isinstance(data, dict) else {}
                 next_page_url = metadata.get("nextPage")
@@ -856,22 +853,24 @@ def fetch_civitai(max_pages: int = 5):
                 continue
 
         if not all_items:
-            logger.info(f"No items for params {base_params}")
+            logger.info(f"No items returned for params: {base_params}")
             continue
 
-        items = all_items
-        period = base_params.get("period", "N/A")
+        # === Логирование без KeyError ===
+        sort_val = base_params.get("sort", "Unknown")
+        period_val = base_params.get("period", "N/A")
+        nsfw_val = base_params.get("nsfwLevel") or base_params.get("nsfw", "N/A")
+
         logger.info(
-            f"Got {len(items)} items total "
-            f"(browsingLevel={base_params['browsingLevel']}, sort={base_params['sort']}, period={period})"
+            f"Got {len(all_items)} items total "
+            f"(nsfwLevel/nsfw={nsfw_val}, sort={sort_val}, period={period_val})"
         )
-        precomputed_likes = [_extract_civitai_likes(i) for i in items]
+
+        # Дальше идёт твой существующий код обработки (оставил почти без изменений)
+        precomputed_likes = [_extract_civitai_likes(i) for i in all_items]
         likes_filter_enabled = any(v > 0 for v in precomputed_likes)
         if not likes_filter_enabled:
-            logger.warning(
-                "CivitAI reactions unavailable (all zero). "
-                "Likes filter will be disabled for this batch."
-            )
+            logger.warning("CivitAI reactions unavailable (all zero). Likes filter disabled for this batch.")
 
         erotic_items = []
         skipped_nsfw = 0
@@ -880,14 +879,14 @@ def fetch_civitai(max_pages: int = 5):
         accepted_mature = 0
         nsfw_distribution = {}
         likes_observed = []
-        
-        # Debug: sample first 5 items nsfwLevel
-        for debug_item in items[:5]:
+
+        # Debug первых 5 items
+        for debug_item in all_items[:5]:
             debug_nsfw = debug_item.get("nsfwLevel")
             debug_id = debug_item.get("id")
             logger.debug(f"Item {debug_id}: nsfwLevel={debug_nsfw} (type={type(debug_nsfw).__name__})")
-        
-        for item in items:
+
+        for item in all_items:
             try:
                 nsfw_level = item.get("nsfwLevel")
                 nsfw_key = str(nsfw_level).strip() if nsfw_level is not None else "None"
@@ -908,7 +907,6 @@ def fetch_civitai(max_pages: int = 5):
                     skipped_blacklist += 1
                     continue
 
-                stats_data = item.get("stats", {})
                 likes = _extract_civitai_likes(item)
                 likes_observed.append(likes)
 
@@ -933,26 +931,19 @@ def fetch_civitai(max_pages: int = 5):
                 continue
 
         if erotic_items:
-            logger.info(f"Found {len(erotic_items)} posts from CivitAI (mature_fallback_used={accepted_mature})")
+            logger.info(f"✅ Found {len(erotic_items)} suitable erotic posts from CivitAI "
+                        f"(mature_fallback_used={accepted_mature})")
             return erotic_items
 
+        # Если ничего не нашли — логируем и идём к следующей вариации
         logger.info(
-            f"No suitable posts: skipped_nsfw={skipped_nsfw}, "
-            f"skipped_blacklist={skipped_blacklist}, skipped_likes={skipped_likes}, "
-            f"civitai_min_likes={MIN_CIVITAI_LIKES}, "
-            f"allow_mature_fallback={ALLOW_MATURE_FALLBACK}, "
-            f"likes_filter_enabled={likes_filter_enabled}"
+            f"No suitable posts for this variation: skipped_nsfw={skipped_nsfw}, "
+            f"skipped_blacklist={skipped_blacklist}, skipped_likes={skipped_likes}"
         )
         logger.info(f"CivitAI nsfw distribution: {nsfw_distribution}")
-        if likes_observed:
-            likes_sorted = sorted(likes_observed)
-            median_like = likes_sorted[len(likes_sorted) // 2]
-            logger.info(
-                f"CivitAI likes diagnostics: min={likes_sorted[0]}, median={median_like}, max={likes_sorted[-1]}"
-            )
 
+    logger.warning("CivitAI returned no suitable posts after all variations. Falling back to Rule34.")
     return []
-
 VIDEO_EXTENSIONS = (".mp4", ".webm")
 GIF_EXTENSION = ".gif"
 
