@@ -53,7 +53,6 @@ AI_TAG_SETS = [
     
     # Анимированные AI (самое важное для видео)
     "ai_generated animated rating:explicit",
-    "stable_diffusion animated rating:explicit",
     "novelai animated rating:explicit",
     "ai_animation rating:explicit",
     "ai_generated 3d_(artwork) animated",
