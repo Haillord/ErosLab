@@ -55,7 +55,7 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
-ENABLE_AI_VISION = os.environ.get("ENABLE_AI_VISION", "false").lower() in ("1", "true", "yes", "on")
+ENABLE_AI_VISION = os.environ.get("ENABLE_AI_VISION", "true").lower() in ("1", "true", "yes", "on")
 ENABLE_STYLE_BLOCK = os.environ.get("ENABLE_STYLE_BLOCK", "true").lower() in ("1", "true", "yes", "on")
 STYLE_BLOCK_MAX_ITEMS = int(os.environ.get("STYLE_BLOCK_MAX_ITEMS", "3"))
 CAPTION_STYLE = os.environ.get("CAPTION_STYLE", "story").strip().lower()
@@ -77,12 +77,12 @@ FRAME_EMOJI_3D = ("🔥", "🎯", "🧨")
 
 # Список vision-моделей: фоллбек от лучшей к запасной
 VISION_MODELS = [
-    "qwen/qwen2.5-vl-72b-instruct:free",
-    "qwen/qwen2.5-vl-32b-instruct:free",
-    "qwen/qwen3.6-plus:free",
-    "mistralai/mistral-small-3.1-24b-instruct:free",
-    "google/gemma-3-27b-it:free",
-    "meta-llama/llama-3.2-11b-vision-instruct:free",
+    "google/gemma-4-31b-it:free",       # ✅ актуальная, апрель 2026
+    "google/gemma-4-26b-a4b-it:free",   # ✅ актуальная
+    "nvidia/nemotron-nano-2-vl:free",    # ✅ специализирована на vision
+    "mistralai/mistral-small-3.1-24b-instruct:free",  # ✅ ещё живая
+    "meta-llama/llama-3.2-11b-vision-instruct:free",  # ⚠️ слабее, но рабочая
+    "openrouter/free",                   # 🔁 fallback
 ]
 
 # ==================== WALLPAPER CAPTION ====================
