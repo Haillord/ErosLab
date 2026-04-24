@@ -82,7 +82,6 @@ VISION_MODELS = [
     "nvidia/nemotron-nano-2-vl:free",    # ✅ специализирована на vision
     "mistralai/mistral-small-3.1-24b-instruct:free",  # ✅ ещё живая
     "meta-llama/llama-3.2-11b-vision-instruct:free",  # ⚠️ слабее, но рабочая
-    "openrouter/free",                   # 🔁 fallback
 ]
 
 # ==================== WALLPAPER CAPTION ====================
