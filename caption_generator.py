@@ -718,6 +718,10 @@ def _generate_ai_body(
         secondary_image_url=secondary_image_url,
     )
 
+    if not visual_hint:
+        logger.info("AI body skipped: no visual hint available")
+        return None
+
     system_prompt = """
 Ты — 27-летний пацан, скидываешь другу в личку контент который сам нашёл и офигел.
 Пишешь как в реальном чате — коротко, грязно, без прелюдий.
