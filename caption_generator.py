@@ -79,9 +79,8 @@ FRAME_EMOJI_3D = ("🔥", "🎯", "🧨")
 VISION_MODELS = [
     "google/gemma-4-31b-it:free",       # ✅ актуальная, апрель 2026
     "google/gemma-4-26b-a4b-it:free",   # ✅ актуальная
-    "nvidia/nemotron-nano-2-vl:free",    # ✅ специализирована на vision
-    "mistralai/mistral-small-3.1-24b-instruct:free",  # ✅ ещё живая
-    "meta-llama/llama-3.2-11b-vision-instruct:free",  # ⚠️ слабее, но рабочая
+    "nvidia/nemotron-nano-2-vl-8b:free",  # правильный ID
+    "qwen/qwen2.5-vl-7b-instruct:free",   # добавь
 ]
 
 # ==================== WALLPAPER CAPTION ====================
