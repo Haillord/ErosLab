@@ -609,6 +609,9 @@ def _call_ai_vision(
 
                 resp = requests.post(url, headers=headers, json=payload, timeout=AI_TIMEOUT_SEC)
 
+                if resp.status_code != 200:
+                    logger.warning(f"Vision model {model_name} status={resp.status_code}: {resp.text[:200]}")
+
                 if resp.status_code == 404:
                     logger.debug(f"Vision model not found, skipping: {model_name}")
                     break
