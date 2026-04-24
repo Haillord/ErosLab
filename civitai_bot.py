@@ -340,8 +340,8 @@ def normalize_video_aspect_ratio(data: bytes) -> bytes:
         return data
     
     ratio = width / height
-    MIN_SAFE_RATIO = 1 / 1.3  # ~0.769 = 1:1.3
-    MAX_SAFE_RATIO = 1.3      # 1.3:1
+    MIN_SAFE_RATIO = 9 / 16  # ~0.769 = 1:1.3
+    MAX_SAFE_RATIO = 16 / 9      # 1.3:1
     
     if MIN_SAFE_RATIO <= ratio <= MAX_SAFE_RATIO:
         # Соотношение в безопасных пределах, ничего не делаем
