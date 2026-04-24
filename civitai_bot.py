@@ -125,6 +125,17 @@ HASHTAG_STOP_WORDS = {
     # Rule34 служебные теги
     "generated_by_ai", "animated", "rating_explicit", "rating_questionable",
     "rating_safe", "rating_suggestive", "tagme",
+    # Score теги CivitAI
+    "score_9", "score_8", "score_7", "score_6", "score_5",
+    "score_8_up", "score_7_up", "score_6_up", "score_5_up",
+    "score_8_expressiveh", "score_9_up", "score_4", "score_4_up",
+    # Rating теги
+    "rating_lewd", "rating_adult", "rating_mature",
+    # Технические промпт-теги
+    "break", "break_apart", "perfect_body", "perfect_face", "perfect_skin",
+    "hi_res", "highres", "absurdres", "extremely_detailed", "highly_detailed",
+    "best_quality", "high_quality", "ultra_detailed", "ultra_high_res",
+    "realistic", "photorealistic", "hyperrealistic",
 }
 
 logging.basicConfig(
