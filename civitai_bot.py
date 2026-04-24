@@ -328,76 +328,6 @@ def get_video_dimensions(data: bytes):
             os.unlink(tmp_path)
 
 
-def normalize_video_aspect_ratio(data: bytes) -> bytes:
-    """
-    Нормализует соотношение сторон видео для корректного отображения в Телеграм.
-    Добавляет минимальные чёрные паддинги только если видео выходит за безопасные границы 1:1.3 - 1.3:1
-    Оригинальное видео не масштабируется и не обрезается.
-    Возвращает оригинальные данные если исправление не требуется.
-    """
-    width, height = get_video_dimensions(data)
-    if not width or not height:
-        return data
-    
-    ratio = width / height
-    MIN_SAFE_RATIO = 9 / 16
-    MAX_SAFE_RATIO = 16 / 9
-    
-    if MIN_SAFE_RATIO <= ratio <= MAX_SAFE_RATIO:
-        # Соотношение в безопасных пределах, ничего не делаем
-        return data
-    
-    tmp_in = None
-    tmp_out = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp:
-            tmp.write(data)
-            tmp_in = tmp.name
-        
-        tmp_out = tmp_in + "_fixed.mp4"
-        
-        if ratio < MIN_SAFE_RATIO:
-            # Слишком вертикальное видео, добавляем паддинги по бокам
-            target_width = int(height * MIN_SAFE_RATIO)
-            pad = int((target_width - width) / 2)
-            vf_filter = f"pad=w={target_width}:h={height}:x={pad}:y=0:color=black"
-            logger.info(f"Video aspect ratio fix: vertical {width}x{height} ratio={ratio:.3f}, adding {pad}px side padding")
-        else:
-            # Слишком горизонтальное видео, добавляем паддинги сверху/снизу
-            target_height = int(width / MAX_SAFE_RATIO)
-            pad = int((target_height - height) / 2)
-            vf_filter = f"pad=w={width}:h={target_height}:x=0:y={pad}:color=black"
-            logger.info(f"Video aspect ratio fix: horizontal {width}x{height} ratio={ratio:.3f}, adding {pad}px top/bottom padding")
-        
-        # Используем быстрый пресет и увеличиваем таймаут для больших видео
-        cmd = [
-            'ffmpeg', '-y', '-i', tmp_in,
-            '-vf', vf_filter,
-            '-c:v', 'libx264', '-crf', '24', '-preset', 'fast',
-            '-c:a', 'copy',
-            tmp_out
-        ]
-        
-        result = subprocess.run(cmd, capture_output=True, timeout=120)
-        if result.returncode != 0:
-            logger.warning(f"Video aspect ratio fix failed, using original")
-            return data
-        
-        with open(tmp_out, 'rb') as f:
-            fixed_data = f.read()
-        
-        logger.info(f"Video aspect ratio fixed successfully, size: {len(data)} -> {len(fixed_data)} bytes")
-        return fixed_data
-        
-    except Exception as e:
-        logger.error(f"Error fixing video aspect ratio: {e}")
-        return data
-    finally:
-        if tmp_in and os.path.exists(tmp_in):
-            os.unlink(tmp_in)
-        if tmp_out and os.path.exists(tmp_out):
-            os.unlink(tmp_out)
-
 def get_min_bitrate_kbps_for_height(height):
     """Адаптивный порог минимального битрейта по высоте видео."""
     if height is None:
@@ -1567,8 +1497,6 @@ async def main():
                     save_all()
                     continue
             
-            # Сначала исправляем соотношение сторон, затем формат совместимости.
-            data = normalize_video_aspect_ratio(data)
 
             # ✅ Автоматическая проверка и исправление формата видео для мобильного Telegram
             data = normalize_video_format(data)
