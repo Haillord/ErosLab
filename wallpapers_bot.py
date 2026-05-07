@@ -577,6 +577,7 @@ async def publish_item_to_channel(bot: Bot, item: dict):
 
         posted_ids.add(item["id"])
         posted_hashes.add(img_hash)
+        save_all()
         return True
 
     except Exception as e:
