@@ -5,6 +5,10 @@ on:
     - cron: '30 */2 * * *'
   workflow_dispatch:
 
+concurrency:
+  group: wallpapers-bot
+  cancel-in-progress: false
+
 jobs:
   post_wallpapers:
     runs-on: ubuntu-latest
@@ -36,7 +40,6 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-
       - name: Run Wallpapers Bot
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -47,4 +50,3 @@ jobs:
           CIVITAI_API_KEY: ${{ secrets.CIVITAI_API_KEY }}
           STATS_TZ: "Europe/Moscow"
         run: python wallpapers_bot.py
-        
