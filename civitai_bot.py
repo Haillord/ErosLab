@@ -23,7 +23,6 @@ from caption_generator import generate_caption
 from rule34_api import fetch_rule34
 from danbooru_api import fetch_danbooru
 from gelbooru_api import fetch_gelbooru
-from e6ai_api    import fetch_e6ai
 from watermark import add_watermark, add_watermark_to_video, should_add_watermark
 from utils_state import (
     load_json as _shared_load_json,
@@ -896,7 +895,7 @@ def _load_source_weights() -> dict:
     """
     Читает веса источников из ENV SOURCE_WEIGHTS (JSON).
     Пример в GitHub Secrets:
-        SOURCE_WEIGHTS = {"civitai":35,"rule34":25,"danbooru":20,"gelbooru":15,"e6ai":5}
+        SOURCE_WEIGHTS = {"civitai":35,"rule34":25,"danbooru":20,"gelbooru":15}
     Если переменная не задана — дефолт ниже.
     """
     import json
@@ -905,7 +904,6 @@ def _load_source_weights() -> dict:
         "rule34":   25,
         "danbooru": 20,
         "gelbooru": 15,
-        "e6ai":     5,
     }
     raw = os.environ.get("SOURCE_WEIGHTS", "").strip()
     if not raw:
@@ -957,7 +955,6 @@ def fetch_candidates_once():
         "rule34":   _fetch_rule34,
         "danbooru": fetch_danbooru,
         "gelbooru": fetch_gelbooru,
-        "e6ai":     fetch_e6ai,
     }
 
     weights_cfg = _load_source_weights()
