@@ -21,12 +21,9 @@ BASE_URL = "https://danbooru.donmai.us"
 # Наборы тегов — чередуем случайным образом.
 # Authenticated аккаунт поддерживает до 6 тегов одновременно.
 TAG_SETS = [
-    # Чистый AI-explicit без мужских персонажей
-    "ai-generated rating:explicit -loli -shota -1boy -solo_male -yaoi -male_focus order:rank",
-    "ai-generated rating:explicit -loli -shota -1boy -solo_male -yaoi -male_focus order:score",
-    # Топ недели
-    "ai-generated rating:explicit -1boy -solo_male -yaoi date:>=2025-01-01 order:score",
-    # Аниме explicit общий (не только AI, но очень много AI-арта)
+    "ai-generated rating:explicit -loli -shota -1boy -solo_male -yaoi order:rank",
+    "ai-generated rating:explicit -loli -shota -1boy -solo_male -yaoi order:score",
+    "ai-generated rating:explicit -1boy -solo_male -yaoi age:<180d order:score",
     "rating:explicit -loli -shota -1boy -solo_male -yaoi order:rank",
 ]
 
