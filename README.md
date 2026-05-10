@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-<img src="https://readme-typing-svg.demolab.com?font=Share+Tech+Mono&size=22&pause=2000&color=FF2244&center=true&vCenter=true&width=700&height=45&duration=40&lines=ErosLab+Bot+Ecosystem+%F0%9F%94%9E;Serverless+24%2F7+on+GitHub+Actions;AI+via+Groq+%26+Llama+3;Smart+filtering+%26+no+duplicates;Free+hosting+%E2%80%A2+Full+autonomy">
+<img src="https://readme-typing-svg.demolab.com?font=Share+Tech+Mono&size=22&pause=2000&color=FF2244&center=true&vCenter=true&width=700&height=45&duration=40&lines=ErosLab+Bot+Ecosystem+%F0%9F%94%9E;Serverless+24%2F7+on+GitHub+Actions;4+sources+%E2%80%A2+smart+fallback;AI+captions+via+Groq+%26+Vision;Smart+filtering+%26+no+duplicates;Free+hosting+%E2%80%A2+Full+autonomy">
 </p>
 
 <p align="center">
@@ -18,8 +18,6 @@
 
 <div align="center">
 
-<div align="center">
-
 [![](https://img.shields.io/badge/🔞_Основной_канал-FF2244?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/eroslabai)
 [![](https://img.shields.io/badge/🤍_Обои-white?style=for-the-badge&logo=telegram&logoColor=black)](https://t.me/eroslabwallpaper)
 
@@ -29,9 +27,9 @@
 
 <div align="center" style="background: linear-gradient(135deg, rgba(255,34,68,0.08) 0%, rgba(26,26,26,0.95) 100%); border: 1px solid #333; border-radius: 14px; padding: 22px 28px; margin: 10px 0;">
 
-**ErosLab** - полностью автономная система постинга контента в Telegram.  
+**ErosLab** — полностью автономная система постинга контента в Telegram.
 
-Работает **24/7 бесплатно** на GitHub Actions. Никакого сервера. Никаких затрат.  
+Работает **24/7 бесплатно** на GitHub Actions. Никакого сервера. Никаких затрат.
 
 Контент отбирается, фильтруется, подписывается и публикуется **автоматически**.
 
@@ -39,25 +37,24 @@
 
 <br>
 
-
 <table>
 <tr>
 <td width="50%" valign="top">
 
 ### ⚙️ Инфраструктура
-- **Serverless** - GitHub Actions, 0 руб/месяц
-- **Gist как БД** - состояние без коммитов
-- **Dual-source** - CivitAI + Rule34 в ротации
-- **Fallback** - если один источник упал, берёт другой
+- **Serverless** — GitHub Actions, 0 руб/месяц
+- **Gist как БД** — состояние без коммитов в репо
+- **4 источника** — CivitAI, Rule34, Danbooru, Gelbooru
+- **Fallback-цепочка** — если источник упал, берёт следующий по весу
 
 </td>
 <td width="50%" valign="top">
 
 ### 🧠 Интеллект
-- **AI подписи** - Groq + OpenRouter + Vision
-- **Дедупликация** - SHA256 хеш каждого файла
-- **QoS фильтр** - минимальный битрейт для видео
-- **Блэклист** - автофильтрация нежелательных тегов
+- **AI подписи** — Groq + OpenRouter + Vision
+- **Дедупликация** — SHA256 хеш каждого файла
+- **QoS фильтр** — минимальный битрейт для 480p/720p/1080p
+- **Блэклист** — автофильтрация нежелательных тегов
 
 </td>
 </tr>
@@ -65,19 +62,19 @@
 <td width="50%" valign="top">
 
 ### 🎨 Медиа
-- **Ватермарки** - на фото и видео через PIL + FFmpeg
-- **Image Pack** - автосборка альбомов из 3 фото
-- **Видео нормализация** - yuv420p, h264, max 1080p
-- **Aspect ratio fix** - паддинги для Telegram
+- **Ватермарки** — на фото и видео через PIL + FFmpeg
+- **Image Pack** — автосборка альбомов из 3 фото
+- **Видео нормализация** — yuv420p, h264, max 1080p
+- **Aspect ratio fix** — скип экстремальных соотношений сторон
 
 </td>
 <td width="50%" valign="top">
 
 ### 🛡️ Безопасность
-- **Review Mode** - одобрение постов через бота
-- **История 5000** - защита от повторов
-- **Content filter** - NSFW только нужного типа
-- **Размерный фильтр** - мин. 720px по обеим сторонам
+- **Review Mode** — одобрение постов через бота
+- **История 5000** — защита от повторов
+- **Content filter** — NSFW только нужного типа
+- **Размерный фильтр** — мин. 720px по обеим сторонам
 
 </td>
 </tr>
@@ -86,15 +83,16 @@
 <br>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
   <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white"/>
   <img src="https://img.shields.io/badge/Gist_API-181717?style=for-the-badge&logo=github&logoColor=white"/>
   <br>
   <img src="https://img.shields.io/badge/CivitAI-FF2244?style=for-the-badge&logoColor=white"/>
   <img src="https://img.shields.io/badge/Rule34-FF6600?style=for-the-badge&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Groq-00A67E?style=for-the-badge&logoColor=white"/>
-  <img src="https://img.shields.io/badge/OpenRouter-FF6B35?style=for-the-badge&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Danbooru-0068BE?style=for-the-badge&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Gelbooru-FF6699?style=for-the-badge&logoColor=white"/>
   <br>
+  <img src="https://img.shields.io/badge/Groq-00A67E?style=for-the-badge&logoColor=white"/>
   <img src="https://img.shields.io/badge/FFmpeg-007808?style=for-the-badge&logo=ffmpeg&logoColor=white"/>
   <img src="https://img.shields.io/badge/Pillow-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
   <img src="https://img.shields.io/badge/python--telegram--bot-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white"/>
@@ -107,38 +105,81 @@
 <br>
 
 ```
-eroslab-bot/
+ErosLab/
 │
-├── 🔴  civitai_bot.py       - основной движок (nsfw)
-├── 🤍  wallpapers_bot.py    - бот с обоями (sfw)
+├── 🔴  civitai_bot.py          — основной движок (NSFW)
+├── 🤍  wallpapers_bot.py       — бот обоев (SFW, Wallhaven)
 │
-├── ⚙️  gist_storage.py      - БД через GitHub Gist
-├── 🧠  caption_generator.py - AI генератор подписей
-├── 🔎  rule34_api.py        - парсер Rule34
-└── 🖼️  watermark.py         - обработка фото и видео
+├── ⚙️  gist_storage.py         — хранилище состояния в Gist
+├── 🧠  caption_generator.py    — AI генератор подписей
+├── 🖼️  watermark.py            — водяные знаки (фото + видео)
+├── 🎬  make_slideshow.py       — сборка слайдшоу из обоев
+│
+├── 🔎  rule34_api.py           — парсер Rule34
+├── 🔎  danbooru_api.py         — парсер Danbooru
+├── 🔎  gelbooru_api.py         — парсер Gelbooru
+│
+├── 🛠️  utils_state.py          — статистика и состояние
+├── 🛠️  utils_tags.py           — обработка тегов
+└── 🛠️  utils_telegram_media.py — отправка медиа в Telegram
+```
+
+</details>
+
+<details>
+<summary><b>⚙️ Настройка — GitHub Secrets</b></summary>
+<br>
+
+`Settings` → `Secrets and variables` → `Actions`
+
+**NSFW-бот:**
+
+| Secret | Описание | |
+|--------|----------|-|
+| `TELEGRAM_BOT_TOKEN` | Токен основного бота | ✅ |
+| `TELEGRAM_CHANNEL_ID` | ID или @username NSFW-канала | ✅ |
+| `GH_TOKEN` | Classic Token с правами на Gist | ✅ |
+| `GIST_ID` | ID секретного Gist | ✅ |
+| `CIVITAI_API_KEY` | Доступ к API CivitAI | ✅ |
+| `R34_USER_ID` / `R34_API_KEY` | Авторизация Rule34 | ✅ |
+| `DANBOORU_LOGIN` / `DANBOORU_API_KEY` | Авторизация Danbooru | ✅ |
+| `GELBOORU_USER_ID` / `GELBOORU_API_KEY` | Авторизация Gelbooru | ⚡ опц. |
+| `ADMIN_USER_ID` | Telegram ID для Review Mode | ⚡ опц. |
+| `REVIEW_MODE` | `true` — включить ручную модерацию | ⚡ опц. |
+| `SOURCE_WEIGHTS` | JSON весов: `{"civitai":35,"rule34":25,"danbooru":20,"gelbooru":15}` | ⚡ опц. |
+| `GROQ_API_KEY` | AI генерация подписей | ⚡ опц. |
+| `OPENROUTER_API_KEY` | Vision модели для подписей | ⚡ опц. |
+
+**Wallpapers-бот:**
+
+| Secret | Описание | |
+|--------|----------|-|
+| `TELEGRAM_BOT_TOKEN_WALLPAPERS` | Токен wallpapers-бота | ✅ |
+| `TELEGRAM_CHANNEL_ID_WALLPAPERS` | ID или @username SFW-канала | ✅ |
+| `WALLHAVEN_API_KEY` | Доступ к NSFW-контенту на Wallhaven | ✅ |
+
+</details>
+
+<details>
+<summary><b>🛡️ Review Mode</b></summary>
+<br>
+
+Включается через `REVIEW_MODE=true` + `ADMIN_USER_ID`.
+
+Бот находит пост → отправляет черновик в личку → ждёт команду:
+
+```
+/approve DRAFT_ID              — опубликовать как есть
+/approve DRAFT_ID
+Свой текст подписи             — опубликовать со своим текстом
+/reject DRAFT_ID               — отклонить
 ```
 
 </details>
 
 <br>
 
-
- `Settings` → `Secrets and variables` → `Actions`
-
-| Secret | Описание | Обязательно |
-|--------|----------|-------------|
-| `TELEGRAM_BOT_TOKEN` | 🤖 Токен основного бота | ✅ |
-| `TELEGRAM_CHANNEL_ID` | 📢 ID или @username канала | ✅ |
-| `GH_TOKEN` | 🔐 Classic Token с правами на Gist | ✅ |
-| `GIST_ID` | 🗄️ ID секретного Gist | ✅ |
-| `CIVITAI_API_KEY` | 🎨 Доступ к API CivitAI | ✅ |
-| `GROQ_API_KEY` | 🧠 AI генерация подписей | ⚡ опц. |
-| `OPENROUTER_API_KEY` | 👁️ Vision модели | ⚡ опц. |
-| `ADMIN_USER_ID` | 🛡️ ID для Review Mode | ⚡ опц. |
-
-<br>
-
------------------------------------------------------------------------------------------------------------------------------------------------
+---
 
 <p align="center">
   <img src="https://img.shields.io/badge/Made%20with-Python-3776AB?style=for-the-badge&logo=python" alt="python">
