@@ -958,6 +958,7 @@ def fetch_candidates_once():
     }
 
     weights_cfg = _load_source_weights()
+    logger.info(f"Source weights: {weights_cfg}")
 
     # Только те источники, для которых есть вес
     names   = [n for n in available if n in weights_cfg]
