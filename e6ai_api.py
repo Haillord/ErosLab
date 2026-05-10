@@ -1,7 +1,6 @@
 """
 e6ai.net API parser for ErosLab Bot.
 e6ai — дочерний сайт e621, специализированный ТОЛЬКО на AI-арте.
-Использует тот же API формат что и e621.
 Регистрация: https://e6ai.net/users/new
 """
 
@@ -13,35 +12,35 @@ from typing import List, Dict, Any
 
 logger = logging.getLogger("ErosLab.E6ai")
 
-E6AI_LOGIN   = os.getenv("E6AI_LOGIN", "")
-E6AI_API_KEY = os.getenv("E6AI_API_KEY", "")
+E6AI_LOGIN     = os.getenv("E6AI_LOGIN", "")
+E6AI_API_KEY   = os.getenv("E6AI_API_KEY", "")
 E6AI_MIN_SCORE = int(os.getenv("E6AI_MIN_SCORE", "3"))
 
 BASE_URL = "https://e6ai.net"
 
-# На e6ai весь контент — AI-арт, поэтому теги проще
-# Блэклистим только нежелательный контент
-TAG_SETS = [
-    # Explicit без мужских и нежелательных тегов
-    "rating:explicit -male/male -yaoi -loli -shota -anthro order:score",
-    "rating:explicit -male/male -yaoi -loli -shota -anthro order:favcount",
-    # Топ недели (e6ai поддерживает date фильтры)
-    "rating:explicit -male/male -yaoi -loli -shota order:score date:>=2025-01-01",
-    # Animated explicit (много качественной анимации)
-    "rating:explicit animated -male/male -yaoi -loli -shota order:score",
-    "rating:explicit webm -male/male -yaoi -loli order:score",
+# ── Видео (animated / webm) ───────────────────────────────────────────────────
+VIDEO_TAG_SETS = [
+    "rating:explicit animated -male/male -yaoi -loli -shota -anthro order:score",
+    "rating:explicit webm -male/male -yaoi -loli -shota -anthro order:score",
+    "rating:explicit animated -male/male -yaoi -loli -shota order:favcount",
+    "rating:explicit webm -male/male -yaoi -loli -shota order:favcount",
+]
+
+# ── Фото ──────────────────────────────────────────────────────────────────────
+IMAGE_TAG_SETS = [
+    "rating:explicit -animated -male/male -yaoi -loli -shota -anthro order:score",
+    "rating:explicit -animated -male/male -yaoi -loli -shota -anthro order:favcount",
+    "rating:explicit -animated -male/male -yaoi -loli -shota order:score date:>=2025-01-01",
 ]
 
 E6AI_BLACKLIST = {
     "loli", "shota", "child", "minor", "cub",
     "gore", "scat", "vore", "snuff",
-    "male/male", "yaoi",
-    "anthro",  # антропоморфные (фурри)
+    "male/male", "yaoi", "anthro",
 }
 
 
 def _flatten_tags(tags_dict: dict) -> list:
-    """e621/e6ai возвращает теги по категориям — объединяем в плоский список."""
     flat = []
     for category_tags in tags_dict.values():
         if isinstance(category_tags, list):
@@ -50,20 +49,17 @@ def _flatten_tags(tags_dict: dict) -> list:
 
 
 def _build_item(post: dict) -> dict | None:
-    """Конвертирует пост e6ai в унифицированный формат ErosLab."""
     file_data = post.get("file", {})
     file_url  = file_data.get("url")
     if not file_url:
         return None
 
-    # e6ai: "e" = explicit, "q" = questionable, "s" = safe
     rating_raw = post.get("rating", "")
     if rating_raw not in ("e", "q"):
         return None
 
     tags_dict = post.get("tags", {})
     tags = _flatten_tags(tags_dict) if isinstance(tags_dict, dict) else []
-
     if set(tags) & E6AI_BLACKLIST:
         return None
 
@@ -72,26 +68,19 @@ def _build_item(post: dict) -> dict | None:
         mime = f"video/{ext}"
     elif ext == "gif":
         mime = "image/gif"
-    elif ext in ("png", "jpg", "jpeg", "webp"):
-        mime = f"image/{ext}"
     else:
-        mime = "image/jpeg"
+        mime = f"image/{ext}" if ext else "image/jpeg"
 
     score_data = post.get("score", {})
     score = int(score_data.get("total", 0)) if isinstance(score_data, dict) else int(score_data or 0)
-
     fav_count = int(post.get("fav_count", 0))
-    # Используем сумму score + favcount как аналог likes для весового выбора
-    likes = score + fav_count
-
-    rating_mapped = "XXX" if rating_raw == "e" else "X"
 
     return {
         "id":        f"e6ai_{post['id']}",
         "url":       file_url,
         "tags":      tags[:20],
-        "likes":     likes,
-        "rating":    rating_mapped,
+        "likes":     score + fav_count,
+        "rating":    "XXX" if rating_raw == "e" else "X",
         "post_id":   post.get("id"),
         "mime":      mime,
         "createdAt": post.get("created_at"),
@@ -100,22 +89,22 @@ def _build_item(post: dict) -> dict | None:
     }
 
 
-def fetch_e6ai(limit: int = 75, max_pages: int = 4) -> List[Dict[str, Any]]:
+def fetch_e6ai(
+    limit: int = 75,
+    max_pages: int = 4,
+    media_type: str = "video",
+) -> List[Dict[str, Any]]:
     """
-    Парсит e6ai.net через REST API (формат e621).
-
     Args:
-        limit:     постов на страницу (макс 320, рекомендуется 75)
-        max_pages: страниц для обхода
-    Returns:
-        Список унифицированных item-словарей
+        media_type: "video" → animated/webm теги, "image" → фото теги
     """
     if not E6AI_LOGIN or not E6AI_API_KEY:
-        logger.error("e6ai: E6AI_LOGIN и E6AI_API_KEY обязательны! Добавь в GitHub Secrets.")
+        logger.error("e6ai: нужны E6AI_LOGIN и E6AI_API_KEY в Secrets")
         return []
 
-    tag_set = random.choice(TAG_SETS)
-    logger.info(f"e6ai: tags = '{tag_set}'")
+    tag_pool = VIDEO_TAG_SETS if media_type == "video" else IMAGE_TAG_SETS
+    tag_set  = random.choice(tag_pool)
+    logger.info(f"e6ai: media_type={media_type}, tags='{tag_set}'")
 
     all_results: List[Dict[str, Any]] = []
     seen_ids: set = set()
@@ -123,12 +112,11 @@ def fetch_e6ai(limit: int = 75, max_pages: int = 4) -> List[Dict[str, Any]]:
 
     for page_offset in range(max_pages):
         page = start_page + page_offset
-
         params = {
-            "tags":  tag_set,
-            "limit": min(limit, 320),
-            "page":  page,
-            "login": E6AI_LOGIN,
+            "tags":    tag_set,
+            "limit":   min(limit, 320),
+            "page":    page,
+            "login":   E6AI_LOGIN,
             "api_key": E6AI_API_KEY,
         }
 
@@ -136,29 +124,23 @@ def fetch_e6ai(limit: int = 75, max_pages: int = 4) -> List[Dict[str, Any]]:
             r = requests.get(
                 f"{BASE_URL}/posts.json",
                 params=params,
-                headers={
-                    # e621 требует осмысленный User-Agent с контактом
-                    "User-Agent": "ErosLabBot/2.0 (by ErosLab on e6ai)",
-                },
+                headers={"User-Agent": "ErosLabBot/2.0 (by ErosLab on e6ai)"},
                 timeout=30,
             )
-
-            if r.status_code == 429:
-                logger.warning("e6ai: rate limited, stopping")
-                break
             if r.status_code == 403:
-                logger.error("e6ai: 403 Forbidden — проверь E6AI_LOGIN и E6AI_API_KEY")
+                logger.error("e6ai: 403 — проверь E6AI_LOGIN и E6AI_API_KEY")
+                break
+            if r.status_code == 429:
+                logger.warning("e6ai: rate limited")
                 break
             r.raise_for_status()
 
-            data = r.json()
-            posts = data.get("posts", [])
-
+            posts = r.json().get("posts", [])
             if not posts:
-                logger.info(f"e6ai page {page}: empty, stopping")
+                logger.info(f"e6ai page {page}: empty")
                 break
 
-            logger.info(f"e6ai page {page}: got {len(posts)} posts")
+            logger.info(f"e6ai page {page}: {len(posts)} posts")
 
             for post in posts:
                 post_id = post.get("id")
@@ -182,5 +164,5 @@ def fetch_e6ai(limit: int = 75, max_pages: int = 4) -> List[Dict[str, Any]]:
             logger.error(f"e6ai page {page} error: {e}")
             continue
 
-    logger.info(f"e6ai: fetched {len(all_results)} items total")
+    logger.info(f"e6ai: итого {len(all_results)} items (media_type={media_type})")
     return all_results

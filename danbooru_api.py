@@ -1,7 +1,6 @@
 """
-Danbooru API parser for ErosLab Bot.
-Fetches explicit AI-generated anime art via the public REST API.
-Requires a free Danbooru account for full access (2 tags unauthenticated, unlimited authenticated).
+Gelbooru API parser for ErosLab Bot.
+Требует регистрацию на gelbooru.com → Settings → API Access Credentials.
 """
 
 import os
@@ -10,147 +9,149 @@ import logging
 import requests
 from typing import List, Dict, Any
 
-logger = logging.getLogger("ErosLab.Danbooru")
+logger = logging.getLogger("ErosLab.Gelbooru")
 
-DANBOORU_LOGIN   = os.getenv("DANBOORU_LOGIN", "")
-DANBOORU_API_KEY = os.getenv("DANBOORU_API_KEY", "")
-DANBOORU_MIN_SCORE = int(os.getenv("DANBOORU_MIN_SCORE", "5"))
+GELBOORU_API_KEY   = os.getenv("GELBOORU_API_KEY", "")
+GELBOORU_USER_ID   = os.getenv("GELBOORU_USER_ID", "")
+GELBOORU_MIN_SCORE = int(os.getenv("GELBOORU_MIN_SCORE", "5"))
 
-BASE_URL = "https://danbooru.donmai.us"
+BASE_URL = "https://gelbooru.com/index.php"
 
-# Наборы тегов — чередуем случайным образом.
-# Authenticated аккаунт поддерживает до 6 тегов одновременно.
-TAG_SETS = [
-    # Чистый AI-explicit без мужских персонажей
-    "ai-generated rating:explicit -loli -shota -1boy -solo_male -yaoi -male_focus order:rank",
-    "ai-generated rating:explicit -loli -shota -1boy -solo_male -yaoi -male_focus order:score",
-    # Топ недели
-    "ai-generated rating:explicit -1boy -solo_male -yaoi date:>=2025-01-01 order:score",
-    # Аниме explicit общий (не только AI, но очень много AI-арта)
-    "rating:explicit -loli -shota -1boy -solo_male -yaoi order:rank",
+# ── Видео (animated / webm) ───────────────────────────────────────────────────
+VIDEO_TAG_SETS = [
+    "ai_generated animated rating:explicit -loli -shota -1boy -solo_male -yaoi sort:score:desc",
+    "ai_generated webm rating:explicit -loli -shota -1boy -solo_male -yaoi sort:score:desc",
+    "ai_generated animated rating:explicit -loli -shota -1boy -solo_male sort:updated:desc",
+    "3d_(artwork) animated rating:explicit -loli -shota -1boy -solo_male -yaoi sort:score:desc",
+    "3d_(artwork) webm rating:explicit -loli -shota -1boy -solo_male sort:score:desc",
+    "animated rating:explicit -loli -shota -1boy -solo_male -yaoi sort:score:desc",
 ]
 
-DANBOORU_BLACKLIST = {
+# ── Фото (без animated) ───────────────────────────────────────────────────────
+IMAGE_TAG_SETS = [
+    "ai_generated rating:explicit -animated -loli -shota -1boy -solo_male -yaoi sort:score:desc",
+    "ai_generated rating:explicit -animated -loli -shota -1boy -solo_male sort:updated:desc",
+    "3d_(artwork) rating:explicit -animated -loli -shota -1boy -solo_male -yaoi sort:score:desc",
+    "rating:explicit -animated -loli -shota -1boy -solo_male -yaoi -gore sort:score:desc",
+]
+
+GELBOORU_BLACKLIST = {
     "loli", "shota", "child", "minor", "underage",
     "gore", "guro", "scat", "vore", "snuff", "necrophilia",
     "1boy", "solo_male", "male_focus", "male_pov",
     "yaoi", "bara", "2boys", "3boys", "multiple_boys",
-    "bestiality", "zoo",
-    "furry_male", "anthro",
+    "bestiality", "zoo", "furry_male", "anthro",
 }
 
 
 def _build_item(post: dict) -> dict | None:
-    """Конвертирует пост Danbooru в унифицированный формат ErosLab."""
-    file_url = post.get("file_url") or post.get("large_file_url")
+    file_url = post.get("file_url")
     if not file_url:
         return None
 
-    # Danbooru отдаёт "e" (explicit), "q" (questionable), "s" (safe)
     rating_raw = post.get("rating", "")
-    if rating_raw not in ("e", "q"):
+    if rating_raw not in ("explicit", "questionable"):
         return None
 
-    tag_string = post.get("tag_string_general", "") or post.get("tag_string", "")
-    tags = [t.lower() for t in tag_string.split() if t]
-
-    # Дополнительная фильтрация по блэклисту
-    if set(tags) & DANBOORU_BLACKLIST:
+    tags = [t.lower() for t in post.get("tags", "").split() if t]
+    if set(tags) & GELBOORU_BLACKLIST:
         return None
 
-    # Определяем mime-тип по расширению
-    ext = post.get("file_ext", "").lower()
-    if ext in ("mp4", "webm"):
-        mime = f"video/{ext}"
-    elif ext in ("gif",):
+    url_lower = file_url.lower()
+    if url_lower.endswith(".mp4"):
+        mime = "video/mp4"
+    elif url_lower.endswith(".webm"):
+        mime = "video/webm"
+    elif url_lower.endswith(".gif"):
         mime = "image/gif"
-    elif ext in ("png", "jpg", "jpeg", "webp"):
-        mime = f"image/{ext}"
+    elif url_lower.endswith(".png"):
+        mime = "image/png"
+    elif url_lower.endswith(".webp"):
+        mime = "image/webp"
     else:
         mime = "image/jpeg"
 
-    score = int(post.get("score", 0))
-    rating_mapped = "XXX" if rating_raw == "e" else "X"
-
     return {
-        "id":        f"danbooru_{post['id']}",
+        "id":        f"gelbooru_{post['id']}",
         "url":       file_url,
         "tags":      tags[:20],
-        "likes":     score,
-        "rating":    rating_mapped,
+        "likes":     int(post.get("score", 0)),
+        "rating":    "XXX" if rating_raw == "explicit" else "X",
         "post_id":   post.get("id"),
         "mime":      mime,
         "createdAt": post.get("created_at"),
-        "source":    "danbooru",
+        "source":    "gelbooru",
         "prompt":    None,
     }
 
 
-def fetch_danbooru(limit: int = 100, max_pages: int = 5) -> List[Dict[str, Any]]:
+def fetch_gelbooru(
+    limit: int = 100,
+    max_pages: int = 5,
+    media_type: str = "video",
+) -> List[Dict[str, Any]]:
     """
-    Парсит Danbooru через REST API.
-
     Args:
-        limit:     постов на страницу (макс 200)
-        max_pages: страниц для обхода
-    Returns:
-        Список унифицированных item-словарей
+        media_type: "video" → animated/webm теги, "image" → фото теги
     """
-    if not DANBOORU_LOGIN or not DANBOORU_API_KEY:
-        logger.warning("Danbooru: no credentials, using anonymous mode (limited to 2 tags)")
+    if not GELBOORU_API_KEY or not GELBOORU_USER_ID:
+        logger.error("Gelbooru: нужны GELBOORU_API_KEY и GELBOORU_USER_ID в Secrets")
+        return []
 
-    tag_set = random.choice(TAG_SETS)
-    logger.info(f"Danbooru: tags = '{tag_set}'")
+    tag_pool = VIDEO_TAG_SETS if media_type == "video" else IMAGE_TAG_SETS
+    tag_set  = random.choice(tag_pool)
+    logger.info(f"Gelbooru: media_type={media_type}, tags='{tag_set}'")
 
     all_results: List[Dict[str, Any]] = []
     seen_ids: set = set()
-    start_page = random.randint(1, 10)
-
-    auth = (DANBOORU_LOGIN, DANBOORU_API_KEY) if DANBOORU_LOGIN and DANBOORU_API_KEY else None
+    start_pid = random.randint(0, 5)   # не уходим глубоко — там 401
 
     for page_offset in range(max_pages):
-        page = start_page + page_offset
-
+        pid = start_pid + page_offset
         params = {
-            "tags":  tag_set,
-            "limit": min(limit, 200),
-            "page":  page,
+            "page":    "dapi",
+            "s":       "post",
+            "q":       "index",
+            "json":    1,
+            "tags":    tag_set,
+            "limit":   min(limit, 100),
+            "pid":     pid,
+            "api_key": GELBOORU_API_KEY,
+            "user_id": GELBOORU_USER_ID,
         }
 
         try:
             r = requests.get(
-                f"{BASE_URL}/posts.json",
-                params=params,
-                auth=auth,
+                BASE_URL, params=params,
                 headers={"User-Agent": "ErosLabBot/2.0"},
                 timeout=30,
             )
-
-            if r.status_code == 429:
-                logger.warning("Danbooru: rate limited, stopping")
+            if r.status_code == 401:
+                logger.error("Gelbooru 401 — проверь ключи в Secrets")
                 break
-            if r.status_code == 422:
-                logger.warning(f"Danbooru: invalid tags '{tag_set}', skip")
+            if r.status_code == 429:
+                logger.warning("Gelbooru rate limited")
                 break
             r.raise_for_status()
 
-            posts = r.json()
-            if not isinstance(posts, list) or not posts:
-                logger.info(f"Danbooru page {page}: empty, stopping")
+            data  = r.json()
+            posts = data.get("post", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+
+            if not posts:
+                logger.info(f"Gelbooru page {pid}: empty")
                 break
 
-            logger.info(f"Danbooru page {page}: got {len(posts)} posts")
+            logger.info(f"Gelbooru page {pid}: {len(posts)} posts")
 
             for post in posts:
-                post_id = post.get("id")
-                if post_id in seen_ids:
+                if not isinstance(post, dict):
                     continue
-                seen_ids.add(post_id)
-
-                score = int(post.get("score", 0))
-                if score < DANBOORU_MIN_SCORE:
+                pid_ = post.get("id")
+                if pid_ in seen_ids:
                     continue
-
+                seen_ids.add(pid_)
+                if int(post.get("score", 0)) < GELBOORU_MIN_SCORE:
+                    continue
                 item = _build_item(post)
                 if item:
                     all_results.append(item)
@@ -159,8 +160,8 @@ def fetch_danbooru(limit: int = 100, max_pages: int = 5) -> List[Dict[str, Any]]
                 break
 
         except Exception as e:
-            logger.error(f"Danbooru page {page} error: {e}")
+            logger.error(f"Gelbooru page {pid} error: {e}")
             continue
 
-    logger.info(f"Danbooru: fetched {len(all_results)} items total")
+    logger.info(f"Gelbooru: итого {len(all_results)} items (media_type={media_type})")
     return all_results
