@@ -16,8 +16,7 @@ import requests
 from io import BytesIO
 from gist_storage import load_all_state, save_all_state
 from urllib.parse import urlparse
-from datetime import datetime
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 import telegram
 from telegram import Bot
 from caption_generator import generate_caption
@@ -50,8 +49,6 @@ from utils_tags import (
 BOT_MODE = os.environ.get("BOT_MODE", "nsfw").lower()  # nsfw / wallpapers
 TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "@eroslabai")
-ADMIN_USER_ID = str(os.environ.get("ADMIN_USER_ID", "")).strip()
-REVIEW_MODE = os.environ.get("REVIEW_MODE", "false").lower() in ("1", "true", "yes", "on")
 CIVITAI_API_KEY     = os.environ.get("CIVITAI_API_KEY", "")
 
 WATERMARK_TEXT   = "📣 @eroslabai"
@@ -78,8 +75,6 @@ TEST_CIVITAI_ONLY = False
 HISTORY_FILE = "posted_ids.json"
 HASHES_FILE  = "posted_hashes.json"
 CONTENT_STATE_FILE = "content_state.json"
-PENDING_DRAFT_FILE = "pending_draft.json"
-REVIEW_STATE_FILE = "review_state.json"
 STATS_FILE = "stats.json"
 MAX_HISTORY_SIZE = 5000
 STATS_TZ = os.environ.get("STATS_TZ", "Europe/Moscow")
@@ -160,8 +155,6 @@ _state = load_all_state()
 posted_ids    = set(_state.get("posted_ids.json", []))
 posted_hashes = set(_state.get("posted_hashes.json", []))
 content_state = _state.get("content_state.json", {"last_type": "3d", "last_media": "video"})
-pending_draft = _state.get("pending_draft.json", {})
-review_state  = _state.get("review_state.json", {"last_update_id": 0})
 
 def _get_stats_day_key():
     return _shared_get_stats_day_key(STATS_TZ)
@@ -205,18 +198,8 @@ def save_all():
         "posted_ids.json":    trimmed_ids,
         "posted_hashes.json": trimmed_hashes,
         "content_state.json": content_state,
-        "pending_draft.json": pending_draft,
-        "review_state.json":  review_state,
         "stats.json":         _load_stats(),
     })
-
-
-def save_review_state():
-    save_all()
-
-
-def save_pending_draft():
-    save_all()
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 def clean_tags(tags):
@@ -1161,191 +1144,12 @@ def _apply_watermark_for_image_bytes(image_data: bytes, url: str) -> bytes:
         return image_data
 
 
-def _parse_admin_command(text: str):
-    raw = (text or "").strip()
-    if not raw.startswith("/"):
-        return None, None, None
-
-    lines = raw.splitlines()
-    head = lines[0].strip()
-    parts = head.split(maxsplit=2)
-    cmd = parts[0].lower()
-    draft_id = parts[1].strip() if len(parts) >= 2 else ""
-    inline_caption = parts[2].strip() if len(parts) >= 3 else ""
-    extra_caption = "\n".join(lines[1:]).strip() if len(lines) > 1 else ""
-    custom_caption = extra_caption or inline_caption or ""
-    return cmd, draft_id, custom_caption
-
-
-async def send_review_instructions(bot: Bot, chat_id: str, draft_id: str):
-    text = (
-        f"🧪 Черновик готов: <code>{draft_id}</code>\n"
-        "Команды:\n"
-        "<code>/approve DRAFT_ID</code> — опубликовать как есть\n"
-        "<code>/approve DRAFT_ID\\nТВОЙ_ТЕКСТ</code> — опубликовать с твоим текстом\n"
-        "<code>/reject DRAFT_ID</code> — отклонить"
-    )
-    await send_with_retry(bot.send_message, chat_id=chat_id, text=text, parse_mode="HTML")
-
-
-async def send_draft_to_admin(bot: Bot, item: dict, caption: str):
-    chat_id = ADMIN_USER_ID
-    if not chat_id:
-        logger.error("REVIEW_MODE requires ADMIN_USER_ID")
-        return
-
-    is_gif = _is_gif(item.get("url", "")) or (item.get("mime") or "").lower() == "image/gif"
-    is_video = _is_video_item(item) and not is_gif
-
-    draft_caption = f"[DRAFT]\n{caption}"
-    if len(draft_caption) > 1024:
-        draft_caption = draft_caption[:1021] + "..."
-
-    if is_video:
-        await send_with_retry(
-            bot.send_video,
-            chat_id=chat_id,
-            video=item.get("url"),
-            caption=draft_caption,
-            parse_mode="HTML",
-            supports_streaming=True,
-            write_timeout=60,
-            read_timeout=60,
-        )
-    elif is_gif:
-        await send_with_retry(
-            bot.send_animation,
-            chat_id=chat_id,
-            animation=item.get("url"),
-            caption=draft_caption,
-            parse_mode="HTML",
-            write_timeout=60,
-            read_timeout=60,
-        )
-    else:
-        try:
-            r = requests.get(item.get("url"), timeout=60)
-            r.raise_for_status()
-            image_data = _apply_watermark_for_image_bytes(r.content, item.get("url", ""))
-            image_data = _fit_photo_size_for_telegram(image_data)
-            photo_io = BytesIO(image_data)
-            photo_io.name = "draft_image.jpg"
-            await send_with_retry(
-                bot.send_photo,
-                chat_id=chat_id,
-                photo=photo_io,
-                caption=draft_caption,
-                parse_mode="HTML",
-                write_timeout=60,
-                read_timeout=60,
-            )
-        except Exception as e:
-            logger.warning(f"Draft watermark flow failed, fallback to URL send: {e}")
-            await send_with_retry(
-                bot.send_photo,
-                chat_id=chat_id,
-                photo=item.get("url"),
-                caption=draft_caption,
-                parse_mode="HTML",
-                write_timeout=60,
-                read_timeout=60,
-            )
-
-    await send_review_instructions(bot, chat_id, item["id"])
-
-
-async def publish_item_to_channel(bot: Bot, item: dict, caption: str):
-    is_gif = _is_gif(item.get("url", "")) or (item.get("mime") or "").lower() == "image/gif"
-    is_video = _is_video_item(item) and not is_gif
-
-    if is_video:
-        await send_with_retry(
-            bot.send_video,
-            chat_id=TELEGRAM_CHANNEL_ID,
-            video=item.get("url"),
-            caption=caption,
-            parse_mode="HTML",
-            supports_streaming=True,
-            write_timeout=60,
-            read_timeout=60,
-        )
-    elif is_gif:
-        await send_with_retry(
-            bot.send_animation,
-            chat_id=TELEGRAM_CHANNEL_ID,
-            animation=item.get("url"),
-            caption=caption,
-            parse_mode="HTML",
-            write_timeout=60,
-            read_timeout=60,
-        )
-    else:
-        try:
-            r = requests.get(item.get("url"), timeout=60)
-            r.raise_for_status()
-            image_data = _apply_watermark_for_image_bytes(r.content, item.get("url", ""))
-            image_data = _fit_photo_size_for_telegram(image_data)
-            photo_io = BytesIO(image_data)
-            photo_io.name = "image.jpg"
-            await send_with_retry(
-                bot.send_photo,
-                chat_id=TELEGRAM_CHANNEL_ID,
-                photo=photo_io,
-                caption=caption,
-                parse_mode="HTML",
-                write_timeout=60,
-                read_timeout=60,
-            )
-        except Exception as e:
-            logger.warning(f"Publish watermark flow failed, fallback to URL send: {e}")
-            await send_with_retry(
-                bot.send_photo,
-                chat_id=TELEGRAM_CHANNEL_ID,
-                photo=item.get("url"),
-                caption=caption,
-                parse_mode="HTML",
-                write_timeout=60,
-                read_timeout=60,
-            )
-
-
-async def process_admin_updates(bot: Bot):
-    if not ADMIN_USER_ID:
-        return None
-
-    last_update_id = int(review_state.get("last_update_id", 0))
-    try:
-        updates = await bot.get_updates(offset=last_update_id + 1, limit=50, timeout=0)
-    except Exception as e:
-        logger.warning(f"Could not fetch admin updates: {e}")
-        return None
-
-    action = None
-    for upd in updates:
-        review_state["last_update_id"] = max(int(review_state.get("last_update_id", 0)), int(upd.update_id))
-        msg = getattr(upd, "message", None)
-        if not msg or not msg.text:
-            continue
-        from_user = getattr(msg, "from_user", None)
-        if not from_user or str(from_user.id) != ADMIN_USER_ID:
-            continue
-
-        cmd, draft_id, custom_caption = _parse_admin_command(msg.text)
-        if cmd not in ("/approve", "/reject"):
-            continue
-        action = {"cmd": cmd, "draft_id": draft_id, "caption": custom_caption}
-
-    save_review_state()
-    return action
-
 # ==================== MAIN ====================
 async def main():
-    global posted_ids, posted_hashes, content_state, pending_draft, review_state
+    global posted_ids, posted_hashes, content_state
     posted_ids    = set(_state.get("posted_ids.json", []))
     posted_hashes = set(_state.get("posted_hashes.json", []))
     content_state = _state.get("content_state.json", {"last_type": "3d", "last_media": "video"})
-    pending_draft = _state.get("pending_draft.json", {})
-    review_state  = _state.get("review_state.json", {"last_update_id": 0})
 
     run_started = time.time()
     run_metrics = {
@@ -1397,95 +1201,6 @@ async def main():
     logger.info("=" * 50)
 
     target_chat_id = TELEGRAM_CHANNEL_ID
-
-    if REVIEW_MODE:
-        if not ADMIN_USER_ID:
-            logger.error("REVIEW_MODE enabled but ADMIN_USER_ID is empty")
-            flush_stats_once()
-            return
-
-        bot = Bot(token=TELEGRAM_BOT_TOKEN)
-        action = await process_admin_updates(bot)
-
-        if pending_draft and action:
-            pd = pending_draft
-            pd_id = str(pd.get("id", ""))
-            if action.get("draft_id") and action["draft_id"] != pd_id:
-                await send_with_retry(
-                    bot.send_message,
-                    chat_id=ADMIN_USER_ID,
-                    text=f"Черновик <code>{action['draft_id']}</code> не найден. Текущий: <code>{pd_id}</code>",
-                    parse_mode="HTML",
-                )
-            elif action["cmd"] == "/reject":
-                posted_ids.add(pd_id)
-                pending_draft.clear()
-                save_pending_draft()
-                save_all()
-                await send_with_retry(
-                    bot.send_message,
-                    chat_id=ADMIN_USER_ID,
-                    text=f"Отклонено: <code>{pd_id}</code>",
-                    parse_mode="HTML",
-                )
-                flush_stats_once()
-                return
-            elif action["cmd"] == "/approve":
-                final_caption = action.get("caption") or pd.get("caption", "")
-                try:
-                    await publish_item_to_channel(bot, pd["item"], final_caption)
-                    posted_ids.add(pd_id)
-                    save_all()
-                    run_metrics["posted"] += 1
-                    await send_with_retry(
-                        bot.send_message,
-                        chat_id=ADMIN_USER_ID,
-                        text=f"Опубликовано: <code>{pd_id}</code>",
-                        parse_mode="HTML",
-                    )
-                    logger.info(f"Successfully posted from review: {pd_id}")
-                except Exception as e:
-                    run_metrics["send_errors"] += 1
-                    logger.error(f"Review publish failed: {e}")
-                finally:
-                    pending_draft.clear()
-                    save_pending_draft()
-                    flush_stats_once()
-                return
-
-        if pending_draft:
-            await send_with_retry(
-                bot.send_message,
-                chat_id=ADMIN_USER_ID,
-                text=(
-                    f"Есть ожидающий черновик: <code>{pending_draft.get('id')}</code>\n"
-                    "Отправь /approve ID или /reject ID"
-                ),
-                parse_mode="HTML",
-            )
-            flush_stats_once()
-            return
-
-        item = fetch_and_pick()
-        if not item:
-            logger.info("No item for review draft")
-            run_metrics["skip_no_item"] += 1
-            flush_stats_once()
-            return
-
-        draft_caption = build_caption_from_item(item)
-        pending_draft.clear()
-        pending_draft.update({
-            "id": item["id"],
-            "item": item,
-            "caption": draft_caption,
-            "created_at": datetime.utcnow().isoformat() + "Z",
-        })
-        save_pending_draft()
-        await send_draft_to_admin(bot, item, draft_caption)
-        logger.info(f"Draft sent to admin: {item['id']}")
-        flush_stats_once()
-        return
 
     MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
     MAX_ATTEMPTS  = 10

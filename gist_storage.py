@@ -20,8 +20,6 @@ LOCAL_STATE_FILES = {
     "posted_ids.json",
     "posted_hashes.json",
     "content_state.json",
-    "pending_draft.json",
-    "review_state.json",
     "stats.json",
     "posted_ids_wallpapers.json",
     "posted_hashes_wallpapers.json",
