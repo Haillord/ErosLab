@@ -71,7 +71,6 @@
 <td width="50%" valign="top">
 
 ### 🛡️ Безопасность
-- **Review Mode** — одобрение постов через бота
 - **История 5000** — защита от повторов
 - **Content filter** — NSFW только нужного типа
 - **Размерный фильтр** — мин. 720px по обеим сторонам
@@ -144,8 +143,6 @@ ErosLab/
 | `R34_USER_ID` / `R34_API_KEY` | Авторизация Rule34 | ✅ |
 | `DANBOORU_LOGIN` / `DANBOORU_API_KEY` | Авторизация Danbooru | ✅ |
 | `GELBOORU_USER_ID` / `GELBOORU_API_KEY` | Авторизация Gelbooru | ⚡ опц. |
-| `ADMIN_USER_ID` | Telegram ID для Review Mode | ⚡ опц. |
-| `REVIEW_MODE` | `true` — включить ручную модерацию | ⚡ опц. |
 | `SOURCE_WEIGHTS` | JSON весов: `{"civitai":35,"rule34":25,"danbooru":20,"gelbooru":15}` | ⚡ опц. |
 | `GROQ_API_KEY` | AI генерация подписей | ⚡ опц. |
 | `OPENROUTER_API_KEY` | Vision модели для подписей | ⚡ опц. |
@@ -160,22 +157,6 @@ ErosLab/
 
 </details>
 
-<details>
-<summary><b>🛡️ Review Mode</b></summary>
-<br>
-
-Включается через `REVIEW_MODE=true` + `ADMIN_USER_ID`.
-
-Бот находит пост → отправляет черновик в личку → ждёт команду:
-
-```
-/approve DRAFT_ID              — опубликовать как есть
-/approve DRAFT_ID
-Свой текст подписи             — опубликовать со своим текстом
-/reject DRAFT_ID               — отклонить
-```
-
-</details>
 
 <br>
 
