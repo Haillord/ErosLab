@@ -913,15 +913,16 @@ def _load_source_weights() -> dict:
     """
     Читает веса источников из ENV SOURCE_WEIGHTS (JSON).
     Пример в GitHub Secrets:
-        SOURCE_WEIGHTS = {"civitai":30,"rule34":25,"danbooru":15,"gelbooru":20,"e6ai":10}
+        SOURCE_WEIGHTS = {"civitai":35,"rule34":25,"danbooru":20,"gelbooru":15,"e6ai":5}
+    Если переменная не задана — дефолт ниже.
     """
     import json
     default = {
-        "civitai":  30,
+        "civitai":  35,
         "rule34":   25,
-        "danbooru": 15,
-        "gelbooru": 20,
-        "e6ai":     10,
+        "danbooru": 20,
+        "gelbooru": 15,
+        "e6ai":     5,
     }
     raw = os.environ.get("SOURCE_WEIGHTS", "").strip()
     if not raw:
@@ -939,11 +940,12 @@ def fetch_candidates_once():
     """
     Выбирает источник по взвешенной случайности и возвращает (source, fresh_items).
 
-    Распределение медиа: 50% видео / 50% фото — единый бросок монеты
-    для всех источников, чтобы не перекашивало баланс.
-
-    Фоллбек: если выбранный источник пустой — перебираем остальные
-    по убыванию веса пока не найдём свежий контент.
+    Логика:
+    - TEST_CIVITAI_ONLY=True → только CivitAI, без вариантов.
+    - Иначе: взвешенный выбор из доступных источников.
+    - Если выбранный источник вернул 0 результатов → автофоллбек по убыванию веса.
+    - Блэклист применяется здесь для всех источников кроме CivitAI
+      (у него фильтрация встроена внутри fetch_civitai()).
     """
 
     # ── Режим отладки: только CivitAI ─────────────────────────────────────
@@ -957,38 +959,27 @@ def fetch_candidates_once():
         logger.info(f"CivitAI fresh: {len(fresh)} / {len(items)}")
         return "civitai", fresh
 
-    # ── 50/50 видео или фото — единый бросок для всего запуска ───────────
-    media_type = "video" if random.random() < 0.5 else "image"
-    logger.info(f"Media type for this run: {media_type}")
-
-    # Сохраняем в content_state чтобы не сдвигать счётчик при фоллбеке
-    content_state["last_media"] = media_type
-    save_json(CONTENT_STATE_FILE, content_state)
-
-    # Rule34 дополнительно нужен content_type (3d/ai)
+    # ── Собираем доступные источники ──────────────────────────────────────
+    # Rule34 нужны content_type и media_type — вычислим заранее один раз,
+    # чтобы не сдвигать счётчик при фоллбеке.
     _r34_content_type = get_next_content_type()
+    _r34_media_type   = get_next_media_type()
 
     def _fetch_rule34():
-        logger.info(f"Rule34 content_type={_r34_content_type}, media_type={media_type}")
-        return fetch_rule34(
-            limit=100,
-            content_type=_r34_content_type,
-            media_type=media_type,
-        )
-
-    def _fetch_civitai():
-        # CivitAI сам выдаёт микс, но если нужно видео — добавляем mediaType
-        return fetch_civitai()
+        logger.info(f"Rule34 content_type={_r34_content_type}, media_type={_r34_media_type}")
+        return fetch_rule34(limit=100, content_type=_r34_content_type, media_type=_r34_media_type)
 
     available = {
-        "civitai":  _fetch_civitai,
+        "civitai":  fetch_civitai,
         "rule34":   _fetch_rule34,
-        "danbooru": fetch_danbooru,                                        # danbooru в основном фото
-        "gelbooru": lambda: fetch_gelbooru(media_type=media_type),
-        "e6ai":     lambda: fetch_e6ai(media_type=media_type),
+        "danbooru": fetch_danbooru,
+        "gelbooru": fetch_gelbooru,
+        "e6ai":     fetch_e6ai,
     }
 
     weights_cfg = _load_source_weights()
+
+    # Только те источники, для которых есть вес
     names   = [n for n in available if n in weights_cfg]
     weights = [weights_cfg[n] for n in names]
 
@@ -996,8 +987,9 @@ def fetch_candidates_once():
         logger.error("Нет доступных источников!")
         return "none", []
 
-    # ── Взвешенный выбор + фоллбек по убыванию веса ──────────────────────
+    # ── Взвешенный выбор + фоллбек-цепочка ───────────────────────────────
     primary = random.choices(names, weights=weights, k=1)[0]
+    # Цепочка: сначала выбранный, затем остальные по убыванию веса
     fallback_order = sorted(
         [n for n in names if n != primary],
         key=lambda n: weights_cfg.get(n, 0),
@@ -1022,24 +1014,16 @@ def fetch_candidates_once():
         # Фильтр уже виденного
         fresh = [i for i in items if i["id"] not in posted_ids]
 
-        # Блэклист (CivitAI фильтрует сам внутри fetch_civitai)
+        # Блэклист (CivitAI фильтрует сам внутри)
         if source != "civitai":
             fresh = [i for i in fresh if not has_blacklisted(i.get("tags", []))]
 
-        # Для видео-запуска фильтруем фото и наоборот
-        # (Danbooru не поддерживает media_type — принимаем что придёт)
-        if source not in ("danbooru", "civitai"):
-            if media_type == "video":
-                fresh = [i for i in fresh if _is_video_item(i) or _is_gif(i.get("url", ""))]
-            else:
-                fresh = [i for i in fresh if _is_photo_item(i)]
-
-        logger.info(f"{source}: fresh={len(fresh)} / total={len(items)} (media_type={media_type})")
+        logger.info(f"{source}: fresh={len(fresh)} / total={len(items)}")
 
         if fresh:
             return source, fresh
 
-        logger.info(f"{source}: нет подходящих постов, пробуем следующий")
+        logger.info(f"{source}: нет свежих постов, пробуем следующий")
 
     logger.warning("Все источники исчерпаны")
     return "none", []
