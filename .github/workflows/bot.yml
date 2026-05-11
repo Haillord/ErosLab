@@ -66,16 +66,6 @@ jobs:
           R34_USER_ID: ${{ secrets.R34_USER_ID }}
           RULE34_MIN_SCORE: "10"
 
-          # ── Gelbooru (ключи опциональны, работает и без них) ───────────
-          GELBOORU_API_KEY: ${{ secrets.GELBOORU_API_KEY }}
-          GELBOORU_USER_ID: ${{ secrets.GELBOORU_USER_ID }}
-          GELBOORU_MIN_SCORE: "5"
-
-          # ── e6ai ───────────────────────────────────────────────────────
-          E6AI_LOGIN: ${{ secrets.E6AI_LOGIN }}
-          E6AI_API_KEY: ${{ secrets.E6AI_API_KEY }}
-          E6AI_MIN_SCORE: "3"
-
           # ── Настройки бота ─────────────────────────────────────────────
           REVIEW_MODE: "false"
           ALLOW_MATURE_FALLBACK: "false"

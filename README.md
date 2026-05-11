@@ -44,7 +44,7 @@
 ### ⚙️ Инфраструктура
 - **Serverless** — GitHub Actions, 0 руб/месяц
 - **Gist как БД** — состояние без коммитов в репо
-- **4 источника** — CivitAI, Rule34, Danbooru, Gelbooru
+- **2 источника** — CivitAI, Rule34
 - **Fallback-цепочка** — если источник упал, берёт следующий по весу
 
 </td>
@@ -88,8 +88,6 @@
   <br>
   <img src="https://img.shields.io/badge/CivitAI-FF2244?style=for-the-badge&logoColor=white"/>
   <img src="https://img.shields.io/badge/Rule34-FF6600?style=for-the-badge&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Danbooru-0068BE?style=for-the-badge&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Gelbooru-FF6699?style=for-the-badge&logoColor=white"/>
   <br>
   <img src="https://img.shields.io/badge/Groq-00A67E?style=for-the-badge&logoColor=white"/>
   <img src="https://img.shields.io/badge/FFmpeg-007808?style=for-the-badge&logo=ffmpeg&logoColor=white"/>
@@ -115,8 +113,6 @@ ErosLab/
 ├── 🎬  make_slideshow.py       — сборка слайдшоу из обоев
 │
 ├── 🔎  rule34_api.py           — парсер Rule34
-├── 🔎  danbooru_api.py         — парсер Danbooru
-├── 🔎  gelbooru_api.py         — парсер Gelbooru
 │
 ├── 🛠️  utils_state.py          — статистика и состояние
 ├── 🛠️  utils_tags.py           — обработка тегов
@@ -141,9 +137,7 @@ ErosLab/
 | `GIST_ID` | ID секретного Gist | ✅ |
 | `CIVITAI_API_KEY` | Доступ к API CivitAI | ✅ |
 | `R34_USER_ID` / `R34_API_KEY` | Авторизация Rule34 | ✅ |
-| `DANBOORU_LOGIN` / `DANBOORU_API_KEY` | Авторизация Danbooru | ✅ |
-| `GELBOORU_USER_ID` / `GELBOORU_API_KEY` | Авторизация Gelbooru | ⚡ опц. |
-| `SOURCE_WEIGHTS` | JSON весов: `{"civitai":35,"rule34":25,"danbooru":20,"gelbooru":15}` | ⚡ опц. |
+| `SOURCE_WEIGHTS` | JSON весов: `{"civitai":35,"rule34":25}` | ⚡ опц. |
 | `GROQ_API_KEY` | AI генерация подписей | ⚡ опц. |
 | `OPENROUTER_API_KEY` | Vision модели для подписей | ⚡ опц. |
 

@@ -21,7 +21,6 @@ import telegram
 from telegram import Bot
 from caption_generator import generate_caption
 from rule34_api import fetch_rule34
-from gelbooru_api import fetch_gelbooru
 from watermark import add_watermark, add_watermark_to_video, should_add_watermark
 from utils_state import (
     load_json as _shared_load_json,
@@ -894,14 +893,13 @@ def _load_source_weights() -> dict:
     """
     Читает веса источников из ENV SOURCE_WEIGHTS (JSON).
     Пример в GitHub Secrets:
-        SOURCE_WEIGHTS = {"civitai":35,"rule34":25,"danbooru":20,"gelbooru":15}
+        SOURCE_WEIGHTS = {"civitai":35,"rule34":25}
     Если переменная не задана — дефолт ниже.
     """
     import json
     default = {
         "civitai":  35,
         "rule34":   25,
-        "gelbooru": 15,
     }
     raw = os.environ.get("SOURCE_WEIGHTS", "").strip()
     if not raw:
@@ -951,7 +949,6 @@ def fetch_candidates_once():
     available = {
         "civitai":  fetch_civitai,
         "rule34":   _fetch_rule34,
-        "gelbooru": fetch_gelbooru,
     }
 
     weights_cfg = _load_source_weights()
