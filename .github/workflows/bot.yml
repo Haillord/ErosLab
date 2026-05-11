@@ -66,11 +66,6 @@ jobs:
           R34_USER_ID: ${{ secrets.R34_USER_ID }}
           RULE34_MIN_SCORE: "10"
 
-          # ── Danbooru ───────────────────────────────────────────────────
-          DANBOORU_LOGIN: ${{ secrets.DANBOORU_LOGIN }}
-          DANBOORU_API_KEY: ${{ secrets.DANBOORU_API_KEY }}
-          DANBOORU_MIN_SCORE: "5"
-
           # ── Gelbooru (ключи опциональны, работает и без них) ───────────
           GELBOORU_API_KEY: ${{ secrets.GELBOORU_API_KEY }}
           GELBOORU_USER_ID: ${{ secrets.GELBOORU_USER_ID }}
@@ -80,9 +75,6 @@ jobs:
           E6AI_LOGIN: ${{ secrets.E6AI_LOGIN }}
           E6AI_API_KEY: ${{ secrets.E6AI_API_KEY }}
           E6AI_MIN_SCORE: "3"
-
-          # ── Веса источников (можно менять без пересборки) ──────────────
-          # SOURCE_WEIGHTS: '{"civitai":35,"rule34":25,"danbooru":20,"gelbooru":15,"e6ai":5}'
 
           # ── Настройки бота ─────────────────────────────────────────────
           REVIEW_MODE: "false"
