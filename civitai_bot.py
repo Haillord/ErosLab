@@ -21,7 +21,6 @@ import telegram
 from telegram import Bot
 from caption_generator import generate_caption
 from rule34_api import fetch_rule34
-from danbooru_api import fetch_danbooru
 from gelbooru_api import fetch_gelbooru
 from watermark import add_watermark, add_watermark_to_video, should_add_watermark
 from utils_state import (
@@ -902,7 +901,6 @@ def _load_source_weights() -> dict:
     default = {
         "civitai":  35,
         "rule34":   25,
-        "danbooru": 20,
         "gelbooru": 15,
     }
     raw = os.environ.get("SOURCE_WEIGHTS", "").strip()
@@ -953,7 +951,6 @@ def fetch_candidates_once():
     available = {
         "civitai":  fetch_civitai,
         "rule34":   _fetch_rule34,
-        "danbooru": fetch_danbooru,
         "gelbooru": fetch_gelbooru,
     }
 
