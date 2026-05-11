@@ -12,9 +12,10 @@ from typing import List, Dict, Any
 
 logger = logging.getLogger("ErosLab.Danbooru")
 
-DANBOORU_LOGIN   = os.getenv("DANBOORU_LOGIN", "")
-DANBOORU_API_KEY = os.getenv("DANBOORU_API_KEY", "")
+DANBOORU_LOGIN     = os.getenv("DANBOORU_LOGIN", "")
+DANBOORU_API_KEY   = os.getenv("DANBOORU_API_KEY", "")
 DANBOORU_MIN_SCORE = int(os.getenv("DANBOORU_MIN_SCORE", "5"))
+DANBOORU_MIN_SIZE  = int(os.getenv("DANBOORU_MIN_SIZE", "720"))
 
 BASE_URL = "https://danbooru.donmai.us"
 
@@ -35,36 +36,63 @@ DANBOORU_BLACKLIST = {
 }
 
 
-def _build_item(post: dict) -> dict | None:
+def _build_item(post: dict, min_size: int = 720) -> dict | None:
     """Конвертирует пост Danbooru в унифицированный формат ErosLab."""
-    file_url = post.get("file_url") or post.get("large_file_url")
-    if not file_url:
-        return None
 
-    # Danbooru отдаёт "e" (explicit), "q" (questionable), "s" (safe)
-    rating_raw = post.get("rating", "")
-    if rating_raw not in ("e", "q"):
-        return None
-
-    tag_string = post.get("tag_string_general", "") or post.get("tag_string", "")
-    tags = [t.lower() for t in tag_string.split() if t]
-
-    # Дополнительная фильтрация по блэклисту
-    if set(tags) & DANBOORU_BLACKLIST:
-        return None
-
-    # Определяем mime-тип по расширению
+    # ── Фильтр по расширению ──────────────────────────────────────────────────
     ext = post.get("file_ext", "").lower()
+
+    # zip = ugoira-анимации, бот не умеет их отправлять
+    if ext == "zip":
+        return None
+
     if ext in ("mp4", "webm"):
         mime = f"video/{ext}"
-    elif ext in ("gif",):
+    elif ext == "gif":
         mime = "image/gif"
     elif ext in ("png", "jpg", "jpeg", "webp"):
         mime = f"image/{ext}"
     else:
         mime = "image/jpeg"
 
-    score = int(post.get("score", 0))
+    # ── Фильтр по размеру ─────────────────────────────────────────────────────
+    width  = int(post.get("image_width",  0))
+    height = int(post.get("image_height", 0))
+    if width < min_size or height < min_size:
+        return None
+
+    # ── Выбор URL ─────────────────────────────────────────────────────────────
+    # large_file_url (~1000px) — доступен без gold даже для explicit
+    # file_url (оригинал)      — требует gold для explicit-постов → 403
+    # sample_url               — маленький превью, крайний случай
+    if post.get("large_file_url"):
+        file_url = post["large_file_url"]
+        url_type = "large"
+    elif post.get("file_url"):
+        file_url = post["file_url"]
+        url_type = "original"
+    elif post.get("sample_url"):
+        file_url = post["sample_url"]
+        url_type = "sample"
+    else:
+        return None
+
+    logger.debug(f"Danbooru #{post.get('id')}: using {url_type} url")
+
+    # ── Рейтинг ───────────────────────────────────────────────────────────────
+    # Danbooru: "e" = explicit, "q" = questionable, "s" = safe
+    rating_raw = post.get("rating", "")
+    if rating_raw not in ("e", "q"):
+        return None
+
+    # ── Теги и блэклист ───────────────────────────────────────────────────────
+    tag_string = post.get("tag_string_general", "") or post.get("tag_string", "")
+    tags = [t.lower() for t in tag_string.split() if t]
+
+    if set(tags) & DANBOORU_BLACKLIST:
+        return None
+
+    score        = int(post.get("score", 0))
     rating_mapped = "XXX" if rating_raw == "e" else "X"
 
     return {
@@ -75,6 +103,8 @@ def _build_item(post: dict) -> dict | None:
         "rating":    rating_mapped,
         "post_id":   post.get("id"),
         "mime":      mime,
+        "width":     width,
+        "height":    height,
         "createdAt": post.get("created_at"),
         "source":    "danbooru",
         "prompt":    None,
@@ -142,11 +172,10 @@ def fetch_danbooru(limit: int = 100, max_pages: int = 5) -> List[Dict[str, Any]]
                     continue
                 seen_ids.add(post_id)
 
-                score = int(post.get("score", 0))
-                if score < DANBOORU_MIN_SCORE:
+                if int(post.get("score", 0)) < DANBOORU_MIN_SCORE:
                     continue
 
-                item = _build_item(post)
+                item = _build_item(post, min_size=DANBOORU_MIN_SIZE)
                 if item:
                     all_results.append(item)
 
