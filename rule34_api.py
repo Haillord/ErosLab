@@ -2,12 +2,13 @@ import os
 import random
 import requests
 import logging
+import time
 from typing import List, Dict, Any
 
 # Получаем данные из секретов GitHub (или ENV сервера)
 R34_USER_ID = os.getenv("R34_USER_ID") or os.getenv("RULE34_USER_ID")
 R34_API_KEY = os.getenv("R34_API_KEY") or os.getenv("RULE34_API_KEY")
-RULE34_MIN_SCORE = int(os.getenv("RULE34_MIN_SCORE", "25"))
+RULE34_MIN_SCORE = int(os.getenv("RULE34_MIN_SCORE", "50"))
 RULE34_REQUIRE_COMMENTS = os.getenv("RULE34_REQUIRE_COMMENTS", "false").lower() in ("1", "true", "yes", "on")
 
 logger = logging.getLogger("ErosLab.Rule34")
@@ -77,6 +78,41 @@ def _detect_mime_from_url(file_url: str) -> str:
         return "image/jpeg"
 
 
+def _request_with_backoff(url, params, headers, max_retries=3):
+    """Request с retry при 429 и 500, как в CivitAI."""
+    for attempt in range(max_retries):
+        try:
+            r = requests.get(url, params=params, headers=headers, timeout=30)
+            if r.status_code == 429:
+                wait = 2 ** attempt * 5
+                logger.warning(f"Rule34 rate limited (429), waiting {wait}s before retry {attempt + 1}/{max_retries}")
+                time.sleep(wait)
+                continue
+            if r.status_code >= 500:
+                wait = 2 + attempt * 2
+                logger.warning(f"Rule34 server error {r.status_code}, retry {attempt + 1}/{max_retries}")
+                if attempt >= max_retries - 1:
+                    return None
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+            return r
+        except requests.exceptions.Timeout:
+            logger.warning(f"Rule34 timeout on attempt {attempt + 1}/{max_retries}")
+            if attempt < max_retries - 1:
+                time.sleep(3)
+        except requests.exceptions.HTTPError as e:
+            if r.status_code >= 500:
+                logger.warning(f"Rule34 server error {r.status_code}, retry {attempt + 1}/{max_retries}")
+                time.sleep(2 ** attempt * 2)
+            else:
+                raise
+        except Exception as e:
+            logger.error(f"Rule34 request error: {e}")
+            raise
+    return None
+
+
 def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed", media_type: str = "mixed") -> List[Dict[str, Any]]:
     """
     Парсинг Rule34 через API с авторизацией и пагинацией
@@ -118,16 +154,15 @@ def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed"
     headers = {"User-Agent": "ErosLabBot/1.0 (Windows NT 10.0; Win64; x64)"}
     
     all_results = []
-    max_pages = 10  # Ищем по 10 страницам
+    # Начинаем с первой страницы, собираем топ
+    max_pages = 5  # Собираем 5 страниц с самых свежих
     min_posts = 50  # Минимум постов для выбора
-    start_page = random.randint(0, 5)  # ✅ Случайная стартовая страница от 0 до 5
     
-    logger.info(f"Rule34: starting from random page {start_page}, scanning next {max_pages} pages")
+    logger.info(f"Rule34: scanning first {max_pages} pages (start_page=0)")
     
     # Rule34 API: pid=0 — первая страница, pid=1 — вторая, и т.д.
     pages_scanned = 0
-    for page_offset in range(0, max_pages):
-        page = start_page + page_offset
+    for page in range(0, max_pages):
         pages_scanned += 1
         params = {
             "page": "dapi",
@@ -142,18 +177,20 @@ def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed"
         }
 
         try:
-            r = requests.get(url, params=params, headers=headers, timeout=30)
-            r.raise_for_status()
+            r = _request_with_backoff(url, params=params, headers=headers)
+            if r is None:
+                logger.warning(f"Rule34 page {page}: no response after retries")
+                continue
 
             if not r.text.strip():
-                logger.warning(f"Rule34 page {page}: empty response")
-                continue
+                logger.warning(f"Rule34 page {page}: empty response, stopping")
+                break  # Early break — если страница пуста, дальше тоже пусто
 
             posts = r.json()
 
             if not isinstance(posts, list):
-                logger.warning(f"Rule34 page {page}: unexpected response format")
-                continue
+                logger.warning(f"Rule34 page {page}: unexpected response format, stopping")
+                break  # Early break
 
             logger.info(f"Rule34 page {page}: got {len(posts)} posts")
 
@@ -168,7 +205,7 @@ def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed"
                 if not file_url:
                     continue
 
-                # Фильтруем по минимальному score (Rule34 score ниже чем CivitAI likes)
+                # Фильтруем по минимальному score
                 try:
                     score = int(post.get("score", 0))
                 except (TypeError, ValueError):
@@ -176,14 +213,14 @@ def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed"
                 if score < RULE34_MIN_SCORE:
                     continue
 
-                # Опционально: пропускаем посты без комментариев (признак активности)
+                # Опционально: пропускаем посты без комментариев
                 if RULE34_REQUIRE_COMMENTS:
                     if post.get("has_comments") != "true":
                         continue
 
                 post_tags = post.get("tags", "").split()
 
-                # Определяем MIME по расширению URL (поле file_type отсутствует в API)
+                # Определяем MIME по расширению URL
                 mime = _detect_mime_from_url(file_url)
 
                 all_results.append({
@@ -208,5 +245,7 @@ def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed"
             logger.error(f"Rule34 page {page} error: {e}")
             continue
 
-    logger.info(f"Rule34: Found {len(all_results)} total posts")
+    # Сортируем по score (лучшие — первые) и возвращаем
+    all_results.sort(key=lambda x: x["likes"], reverse=True)
+    logger.info(f"Rule34: Found {len(all_results)} total posts, top score: {all_results[0]['likes'] if all_results else 0}")
     return all_results
