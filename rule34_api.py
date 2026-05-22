@@ -40,6 +40,42 @@ THREE_D_TAG_SETS = [
     "3d_(artwork) video rating:explicit"
 ]
 
+
+def _filter_tags_by_media_type(tag_sets: list[str], media_type: str) -> list[str]:
+    """
+    Фильтрует наборы тегов по типу медиа.
+    - media_type="video" → только теги с animated/gif/webm/video
+    - media_type="image" → только теги БЕЗ animated/gif/webm/video
+    - media_type="mixed" → все теги как есть
+    """
+    if media_type == "mixed":
+        return tag_sets
+
+    video_keywords = {"animated", "gif", "webm", "video"}
+    result = []
+    for tags_str in tag_sets:
+        words = set(tags_str.lower().split())
+        is_video_tags = bool(words & video_keywords)
+        if media_type == "video" and is_video_tags:
+            result.append(tags_str)
+        elif media_type == "image" and not is_video_tags:
+            result.append(tags_str)
+    return result or tag_sets  # fallback на все если после фильтрации пусто
+
+
+def _detect_mime_from_url(file_url: str) -> str:
+    """Определяет MIME-тип по расширению URL."""
+    url_lower = file_url.lower().split('?')[0]
+    if url_lower.endswith(('.mp4', '.webm')):
+        return "video/mp4"
+    elif url_lower.endswith('.gif'):
+        return "image/gif"
+    elif url_lower.endswith('.png'):
+        return "image/png"
+    else:
+        return "image/jpeg"
+
+
 def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed", media_type: str = "mixed") -> List[Dict[str, Any]]:
     """
     Парсинг Rule34 через API с авторизацией и пагинацией
@@ -48,22 +84,23 @@ def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed"
         tags: конкретные теги (если None, выбираются случайно)
         limit: количество постов
         content_type: "mixed", "3d", "ai" — тип контента
-        media_type: "mixed", "video", "image" — тип медиа (70% video, 30% image)
+        media_type: "mixed", "video", "image" — тип медиа
     """
     
     # Выбор тегов на основе типа контента
     if tags is None:
         if content_type == "ai":
-            # Для видео выбираем только теги с "animated", для изображений - без
             if media_type == "video":
                 animated_tags = [t for t in AI_TAG_SETS if "animated" in t.lower()]
                 tags = random.choice(animated_tags) if animated_tags else random.choice(AI_TAG_SETS)
             else:
                 tags = random.choice(AI_TAG_SETS)
         elif content_type == "3d":
-            tags = random.choice(THREE_D_TAG_SETS)
+            filtered = _filter_tags_by_media_type(THREE_D_TAG_SETS, media_type)
+            tags = random.choice(filtered)
         else:
-            tags = random.choice(TAG_SETS)
+            filtered = _filter_tags_by_media_type(TAG_SETS, media_type)
+            tags = random.choice(filtered)
     
     # Добавляем rating:explicit если нет
     if "rating:explicit" not in tags:
@@ -82,7 +119,7 @@ def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed"
     all_results = []
     max_pages = 10  # Ищем по 10 страницам
     min_posts = 50  # Минимум постов для выбора
-    start_page = random.randint(0, 15)  # ✅ Случайная стартовая страница от 0 до 15
+    start_page = random.randint(0, 5)  # ✅ Случайная стартовая страница от 0 до 5
     
     logger.info(f"Rule34: starting from random page {start_page}, scanning next {max_pages} pages")
     
@@ -140,13 +177,8 @@ def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed"
 
                 post_tags = post.get("tags", "").split()
 
-                file_type = post.get("file_type", "")
-                mime_map = {
-                    "video": "video/mp4",
-                    "gif":   "image/gif",
-                    "image": "image/jpeg",
-                }
-                mime = mime_map.get(file_type, "")
+                # Определяем MIME по расширению URL (поле file_type отсутствует в API)
+                mime = _detect_mime_from_url(file_url)
 
                 all_results.append({
                     "id":        f"r34_{post['id']}",
@@ -157,7 +189,8 @@ def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed"
                     "post_id":   post.get("id"),
                     "source":    "rule34",
                     "mime":      mime,
-                    "file_type": file_type,
+                    "createdAt": post.get("change"),
+                    "prompt":    None,
                 })
 
             # Если набрали достаточно постов — останавливаемся
