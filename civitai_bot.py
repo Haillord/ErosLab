@@ -616,16 +616,16 @@ def fetch_civitai(max_pages: int = 5):
     # Используем browsingLevel=31 для максимального охвата + nsfw=X для explicit.
     # Newest проверяем первым для более быстрого нахождения свежего контента.
     variations = [
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Day", "mediaType": "video"},
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Week", "mediaType": "video"},
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Month", "mediaType": "video"},
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Day"},
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Week"},
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Month"},
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Newest", "mediaType": "video"},
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Newest"},
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Newest", "period": "Week"},
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Newest", "period": "Month"},
+        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Day", "mediaType": "video"},
+        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Week", "mediaType": "video"},
+        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Month", "mediaType": "video"},
+        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Day"},
+        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Week"},
+        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Month"},
+        {"browsingLevel": 28, "nsfw": "X", "sort": "Newest", "mediaType": "video"},
+        {"browsingLevel": 28, "nsfw": "X", "sort": "Newest"},
+        {"browsingLevel": 28, "nsfw": "X", "sort": "Newest", "period": "Week"},
+        {"browsingLevel": 28, "nsfw": "X", "sort": "Newest", "period": "Month"},
     ]
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
