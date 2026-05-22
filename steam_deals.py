@@ -37,20 +37,29 @@ MAX_DEAL_PRICE_USD = float(os.environ.get("MAX_DEAL_PRICE_USD", "15"))
 MIN_DISCOUNT_PCT = int(os.environ.get("MIN_DISCOUNT_PCT", "40"))
 DEALS_HISTORY_FILE = "steam_deals_history.json"
 
-# NSFW-теги для фильтрации
-NSFW_TAGS = {
-    "nudity", "sexual content", "mature", "nsfw", "adult",
-    "erotic", "sex", "nudity (suggestive)", "sexual violence",
-    "nudity (sexual)", "adult content", "18+", "mature content",
-    "sexual themes", "explicit", "hentai", "pornographic",
-    "lewd", "suggestive", "uncensored", "18+ only",
-}
+    # NSFW-теги для фильтрации
+    NSFW_TAGS = {
+        "nudity", "sexual content", "mature", "nsfw", "adult",
+        "erotic", "sex", "nudity (suggestive)", "sexual violence",
+        "nudity (sexual)", "adult content", "18+", "mature content",
+        "sexual themes", "explicit", "hentai", "pornographic",
+        "lewd", "suggestive", "uncensored", "18+ only",
+    }
 
-# Теги, которые гарантированно НЕ NSFW (исключаем)
-SAFE_TAGS = {
-    "family friendly", "kids", "children", "cartoon",
-    "comedy", "fantasy", "violence", "gore",
-}
+    # NSFW-слова для проверки названия и описания (когда теги пустые)
+    NSFW_TITLE_KEYWORDS = {
+        "boob", "hentai", "eroge", "adult", "sex", "nude", "naked",
+        "nsfw", "sexy", "seduce", "lewd", "succubus", "waifu",
+        "love hotel", "strip", "stripper", "bikini", "lingerie",
+        "bondage", "bdsm", "fetish", "mature", "erotic",
+        "gal game", "dating sim", "sexual", "panty", "panties",
+    }
+
+    # Теги, которые гарантированно НЕ NSFW (исключаем)
+    SAFE_TAGS = {
+        "family friendly", "kids", "children", "cartoon",
+        "comedy", "fantasy", "violence", "gore",
+    }
 
 # Технические мета-теги Steam (не влияют на NSFW-фильтрацию)
 META_TAGS = {
@@ -157,20 +166,38 @@ def _extract_steam_tags(app_data: dict) -> list[str]:
     return list(tags)
 
 
-def _is_nsfw_game(app_data: dict) -> bool:
-    """Проверяет, является ли игра NSFW по тегам."""
+def _is_nsfw_game(title: str, app_data: dict) -> bool:
+    """
+    Проверяет, является ли игра NSFW.
+    Сначала по тегам Steam API, затем по названию и описанию.
+    """
     tags = _extract_steam_tags(app_data)
 
     # Сначала проверяем явные safe-теги (если есть — пропускаем)
     safe_matches = set(t.lower() for t in tags) & SAFE_TAGS
     if safe_matches:
+        logger.debug(f"  Safe tags: {safe_matches}")
         return False
 
-    # Проверяем NSFW-теги
+    # Проверяем NSFW-теги из Steam API
     nsfw_matches = set(t.lower() for t in tags) & NSFW_TAGS
     if nsfw_matches:
         logger.info(f"  NSFW tags found: {nsfw_matches}")
         return True
+
+    # Fallback: проверяем название игры на NSFW-слова
+    title_lower = title.lower()
+    for kw in NSFW_TITLE_KEYWORDS:
+        if kw in title_lower:
+            logger.info(f"  NSFW keyword in title: '{kw}'")
+            return True
+
+    # Проверяем описание игры на NSFW
+    desc = _get_steam_description(app_data).lower()
+    for kw in NSFW_TITLE_KEYWORDS:
+        if kw in desc:
+            logger.info(f"  NSFW keyword in description: '{kw}'")
+            return True
 
     return False
 
@@ -432,7 +459,7 @@ def process_deals() -> dict | None:
             continue
 
         # Шаг 3: Проверяем NSFW
-        if not _is_nsfw_game(app_data):
+        if not _is_nsfw_game(title, app_data):
             logger.debug(f"  Not NSFW: {title}")
             continue
 
