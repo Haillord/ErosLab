@@ -181,7 +181,7 @@ def get_next_content_type():
     return next_type
 
 def get_next_media_type():
-    """Строгое распределение: 70% video, 30% image."""
+    """Строгое распределение: 85% video, 15% image."""
     global content_state
     media_type = "video" if random.random() < 0.85 else "image"
     content_state["last_media"] = media_type
@@ -242,46 +242,21 @@ def check_media_size(data, url):
         logger.error(f"Error checking media size: {e}")
         return False
 
-def get_video_duration(data: bytes) -> float:
-    """Возвращает длительность или 0.0 если видео битое"""
+def get_video_metadata(data: bytes) -> dict:
+    """
+    Один ffprobe-вызов для всех метаданных видео.
+    Возвращает: {duration, width, height, codec, pix_fmt, is_valid, issues}
+    """
     tmp_path = None
-    duration_str = "N/A"
-    try:
-        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp:
-            tmp.write(data)
-            tmp_path = tmp.name
-
-        cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
-               '-of', 'default=noprint_wrappers=1:nokey=1', tmp_path]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-
-        if result.returncode != 0:
-            logger.warning("ffprobe failed to read video")
-            return 0.0
-
-        duration_str = result.stdout.strip()
-        
-        # 🔥 ФИКС: проверяем, что вернулось не 'N/A'
-        if not duration_str or duration_str == 'N/A':
-            logger.warning(f"ffprobe returned: '{duration_str}'")
-            return 0.0
-        
-        duration = float(duration_str)
-        return duration
-
-    except ValueError as e:
-        logger.error(f"Error converting duration '{duration_str}' to float: {e}")
-        return 0.0
-    except Exception as e:
-        logger.error(f"Error: {e}")
-        return 0.0
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-
-def get_video_dimensions(data: bytes):
-    """Возвращает (width, height) видео или (None, None) при ошибке."""
-    tmp_path = None
+    default_result = {
+        "duration": 0.0,
+        "width": None,
+        "height": None,
+        "codec": "",
+        "pix_fmt": "",
+        "is_valid": False,
+        "issues": ["ffprobe not executed"],
+    }
     try:
         with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp:
             tmp.write(data)
@@ -289,24 +264,69 @@ def get_video_dimensions(data: bytes):
 
         cmd = [
             'ffprobe', '-v', 'error',
+            '-show_entries', 'format=duration:stream=codec_name,pix_fmt,width,height',
+            '-of', 'default=noprint_wrappers=1:nokey=0',
             '-select_streams', 'v:0',
-            '-show_entries', 'stream=width,height',
-            '-of', 'csv=s=x:p=0',
             tmp_path
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         if result.returncode != 0:
-            return None, None
+            return {**default_result, "issues": ["ffprobe failed"]}
 
-        raw = result.stdout.strip()
-        if not raw or "x" not in raw:
-            return None, None
+        duration = 0.0
+        width = None
+        height = None
+        codec = ""
+        pix_fmt = ""
+        issues = []
 
-        width_str, height_str = raw.split("x", 1)
-        return int(width_str), int(height_str)
+        for line in result.stdout.strip().splitlines():
+            if '=' not in line:
+                continue
+            key, value = line.split('=', 1)
+            value = value.strip()
+
+            if key == 'duration':
+                try:
+                    duration = float(value) if value and value != 'N/A' else 0.0
+                except ValueError:
+                    pass
+            elif key == 'codec_name':
+                codec = value
+                if codec not in ('h264', 'hevc', 'h265') or codec == 'wrapped_avframe':
+                    issues.append(f"Неподдерживаемый кодек: {codec}")
+            elif key == 'pix_fmt':
+                pix_fmt = value
+                if pix_fmt not in ('yuv420p', 'yuvj420p') or '10le' in pix_fmt or '12le' in pix_fmt or '444p' in pix_fmt:
+                    issues.append(f"Несовместимый формат пикселей: {pix_fmt}")
+            elif key == 'width':
+                try:
+                    width = int(value)
+                except (TypeError, ValueError):
+                    pass
+            elif key == 'height':
+                try:
+                    height = int(value)
+                except (TypeError, ValueError):
+                    pass
+
+        if width is not None and height is not None:
+            if width > 1080 or height > 1080:
+                issues.append(f"Размер больше лимита: {width}x{height}")
+
+        return {
+            "duration": duration,
+            "width": width,
+            "height": height,
+            "codec": codec,
+            "pix_fmt": pix_fmt,
+            "is_valid": len(issues) == 0 and duration > 0,
+            "issues": issues,
+        }
+
     except Exception as e:
-        logger.warning(f"Could not read video dimensions: {e}")
-        return None, None
+        logger.error(f"Video metadata error: {e}")
+        return {**default_result, "issues": [f"Metadata error: {str(e)}"]}
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
@@ -723,8 +743,8 @@ def fetch_civitai(max_pages: int = 5):
                 nsfw_distribution[nsfw_key] = nsfw_distribution.get(nsfw_key, 0) + 1
 
                 is_allowed_nsfw = _is_x_or_xxx(nsfw_level)
-                if not is_allowed_nsfw and _is_mature_or_higher(nsfw_level):
-                  if random.random() < 0.5:  # 50% шанс принять Mature
+                if not is_allowed_nsfw and ALLOW_MATURE_FALLBACK and _is_mature_or_higher(nsfw_level):
+                  if random.random() < NSFW_RATIO:  # NSFW_RATIO — доля Mature-контента
                     is_allowed_nsfw = True
                     accepted_mature += 1
 
@@ -814,34 +834,6 @@ def _is_photo_item(item: dict) -> bool:
         return False
     return not _is_video_item(item)
 
-
-def _collect_pack_candidates(seed_item: dict, limit: int) -> list[dict]:
-    source = str(seed_item.get("source") or "").strip().lower()
-    if source not in ("civitai", "rule34") or limit <= 0:
-        return []
-
-    try:
-        if source == "civitai":
-            items = fetch_civitai(max_pages=2)
-        else:
-            items = fetch_rule34(limit=100, content_type="mixed", media_type="image")
-    except Exception as e:
-        logger.warning(f"Could not fetch candidates for image pack: {e}")
-        return []
-
-    excluded_ids = set(posted_ids)
-    excluded_ids.add(seed_item.get("id"))
-
-    fresh = [
-        i for i in items
-        if i.get("id") not in excluded_ids
-        and _is_photo_item(i)
-        and not has_blacklisted(i.get("tags", []))
-    ]
-
-    # Берем более популярные элементы, чтобы пак был релевантнее.
-    fresh.sort(key=lambda x: max(0, int(x.get("likes", 0))), reverse=True)
-    return fresh[:limit]
 
 def _pick_by_content_type(fresh):
     """70/30 видео или фото. Если нужного типа нет — берём что есть."""
@@ -957,14 +949,12 @@ def fetch_candidates_once():
         return "civitai", fresh
 
     # ── Собираем доступные источники ──────────────────────────────────────
-    # Rule34 нужны content_type и media_type — вычислим заранее один раз,
-    # чтобы не сдвигать счётчик при фоллбеке.
-    _r34_content_type = get_next_content_type()
-    _r34_media_type   = get_next_media_type()
-
     def _fetch_rule34():
-        logger.info(f"Rule34 content_type={_r34_content_type}, media_type={_r34_media_type}")
-        return fetch_rule34(limit=100, content_type=_r34_content_type, media_type=_r34_media_type)
+        # Счётчики вызываем только при реальном использовании Rule34
+        content_type = get_next_content_type()
+        media_type = get_next_media_type()
+        logger.info(f"Rule34 content_type={content_type}, media_type={media_type}")
+        return fetch_rule34(limit=100, content_type=content_type, media_type=media_type)
 
     available = {
         "civitai":  fetch_civitai,
@@ -1249,9 +1239,6 @@ async def main():
     for attempt, item in enumerate(attempts_pool, start=1):
         logger.info(f"Attempt {attempt}/{len(attempts_pool)} with item {item.get('id')}")
 
-        source_key = f"source_{item.get('source', 'unknown')}_selected"
-        run_metrics[source_key] = run_metrics.get(source_key, 0) + 1
-
         try:
             logger.info(f"Downloading: {item['url']}")
             r = requests.get(item["url"], timeout=60)
@@ -1304,22 +1291,24 @@ async def main():
             except Exception as e:
                 logger.warning(f"Could not get image dimensions: {e}")
         else:
-            duration = get_video_duration(data)
-            if duration < 0.5 or duration > 60:
-                logger.warning(f"Video too short ({duration:.2f}s) or too long, skipping")
+            # Один ffprobe-вызов для всех метаданных видео
+            meta = get_video_metadata(data)
+            if meta["duration"] < 0.5 or meta["duration"] > 60:
+                logger.warning(f"Video too short ({meta['duration']:.2f}s) or too long, skipping")
                 run_metrics["skip_bad_video_duration"] += 1
                 posted_ids.add(item["id"])
                 save_all()
                 continue
-            logger.info(f"Video duration: {duration:.2f}s")
+            logger.info(f"Video duration: {meta['duration']:.2f}s, "
+                        f"resolution: {meta['width']}x{meta['height']}, "
+                        f"codec: {meta['codec']}")
 
-            # Получаем размер кадра для caption и QoS-фильтра
-            img_width, img_height = get_video_dimensions(data)
+            img_width, img_height = meta["width"], meta["height"]
 
-            avg_bitrate_kbps = (len(data) * 8) / duration / 1000 if duration > 0 else 0
+            avg_bitrate_kbps = (len(data) * 8) / meta["duration"] / 1000 if meta["duration"] > 0 else 0
             min_bitrate_kbps = get_min_bitrate_kbps_for_height(img_height)
             logger.info(
-                "Video QoS stats: "
+                f"Video QoS stats: "
                 f"resolution={img_width}x{img_height}, "
                 f"avg_bitrate={avg_bitrate_kbps:.0f} kbps, "
                 f"required_min={min_bitrate_kbps} kbps"
@@ -1386,14 +1375,28 @@ async def main():
         flush_stats_once()
         return
 
+    # Считаем источник только один раз — по выбранному item
+    source_key = f"source_{item.get('source', 'unknown')}_selected"
+    run_metrics[source_key] = run_metrics.get(source_key, 0) + 1
+
     # ========== СБОРКА ПАКА ФОТО (только CivitAI/Rule34) ==========
     image_pack = [{"item": item, "data": data, "hash": img_hash}]
     use_image_pack = False
 
     if IMAGE_PACK_ENABLED and _is_photo_item(item) and item.get("source") in ("civitai", "rule34") and IMAGE_PACK_SIZE > 1:
         pack_hashes = {img_hash}
-        candidates = _collect_pack_candidates(item, IMAGE_PACK_CANDIDATE_POOL)
-        logger.info(f"Image pack candidates collected: {len(candidates)}")
+
+        # Используем attempts_pool вместо повторного API-запроса
+        pack_candidates = [
+            i for i in attempts_pool
+            if i.get("id") != item.get("id")
+            and _is_photo_item(i)
+            and not has_blacklisted(i.get("tags", []))
+        ]
+        # Сортируем по популярности
+        pack_candidates.sort(key=lambda x: max(0, int(x.get("likes", 0))), reverse=True)
+        candidates = pack_candidates[:IMAGE_PACK_CANDIDATE_POOL]
+        logger.info(f"Image pack candidates from pool: {len(candidates)} (pool has {len(attempts_pool)} items)")
 
         for candidate in candidates:
             if len(image_pack) >= IMAGE_PACK_SIZE:
@@ -1442,7 +1445,6 @@ async def main():
         )
 
     caption_image_data = None
-    caption_secondary_image_data = None
 
     if is_video and data:
         thumb = get_video_thumbnail(data, seek_sec=2.0)
@@ -1484,7 +1486,7 @@ async def main():
         likes=caption_likes,
         image_data=caption_image_data,
         image_url=item["url"] if not is_video else None,
-        secondary_image_data=caption_secondary_image_data,
+        secondary_image_data=None,
         watermark=WATERMARK_TEXT,
         suggestion="💬 Предложка: @Haillord",
         content_type=content_type,
@@ -1603,6 +1605,8 @@ async def main():
 
     except Exception as e:
         logger.error(f"Telegram Send Error: {e}")
+        posted_ids.add(item["id"])
+        save_all()
         run_metrics["send_errors"] += 1
         flush_stats_once()
 
