@@ -75,7 +75,6 @@ jobs:
           MIN_BITRATE_1080P: "2200"
 
           # ── AI Caption ─────────────────────────────────────────────────
-          POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           ENABLE_AI_CAPTION: "true"

@@ -1014,13 +1014,6 @@ def fetch_candidates_once():
     return "none", []
 
 
-def fetch_and_pick():
-    source, fresh = fetch_candidates_once()
-    if not fresh:
-        return None
-    return _select_item_from_fresh(source, fresh)
-
-
 def weighted_choice(items):
     if not items:
         return None
@@ -1059,23 +1052,6 @@ def detect_content_type_by_tags(item):
     if has_ai and has_3d:
         return "ai"
     return "ai" if item.get("source") == "civitai" else "3d"
-
-
-def build_caption_from_item(item, width=None, height=None, file_size=None):
-    return generate_caption(
-        tags=item.get("tags", []),
-        rating=item.get("rating"),
-        likes=item.get("likes", 0),
-        image_data=None,
-        image_url=item.get("url"),
-        watermark=WATERMARK_TEXT,
-        suggestion="💬 Предложка: @Haillord",
-        content_type=detect_content_type_by_tags(item),
-        width=width,
-        height=height,
-        file_size=file_size,
-        date=item.get("createdAt"),
-    )
 
 
 def _build_pack_caption_meta(image_pack: list[dict]) -> dict:
