@@ -108,7 +108,6 @@ def fetch_cheapshark_deals(limit: int = 30) -> list[dict]:
         deals = r.json()
         logger.info(f"CheapShark: got {len(deals)} deals")
         if deals and isinstance(deals, list) and len(deals) > 0:
-            # Debug: показываем первую сделку
             first = deals[0]
             logger.info(
                 f"CheapShark sample: '{first.get('title')}', "
@@ -144,19 +143,16 @@ def _extract_steam_tags(app_data: dict) -> list[str]:
     """Извлекает теги/жанры из данных Steam API."""
     tags = set()
 
-    # Жанры
     for genre in app_data.get("genres", []):
         desc = genre.get("description", "").lower()
         if desc:
             tags.add(desc)
 
-    # Категории
     for cat in app_data.get("categories", []):
         desc = cat.get("description", "").lower()
         if desc:
             tags.add(desc)
 
-    # Теги из описания (если есть)
     for tag_data in app_data.get("tags", {}).values():
         if isinstance(tag_data, dict):
             name = tag_data.get("name", "").lower()
@@ -169,30 +165,49 @@ def _extract_steam_tags(app_data: dict) -> list[str]:
 def _is_nsfw_game(title: str, app_data: dict) -> bool:
     """
     Проверяет, является ли игра NSFW.
-    Сначала по тегам Steam API, затем по названию и описанию.
+    Приоритет: content_descriptors > required_age > теги > название > описание.
+    Steam /api/appdetails НЕ возвращает пользовательские теги (Nudity и т.д.),
+    поэтому используем официальные поля Steam API.
     """
     tags = _extract_steam_tags(app_data)
 
-    # Сначала проверяем явные safe-теги (если есть — пропускаем)
+    # Проверка safe-тегов (если есть — не NSFW)
     safe_matches = set(t.lower() for t in tags) & SAFE_TAGS
     if safe_matches:
         logger.debug(f"  Safe tags: {safe_matches}")
         return False
 
-    # Проверяем NSFW-теги из Steam API
+    # Проверка 1: content_descriptors (официальные NSFW-дескрипторы Steam)
+    descriptors = app_data.get("content_descriptors", {})
+    descriptor_ids = descriptors.get("ids", [])
+    descriptor_notes = str(descriptors.get("notes", "")).lower()
+    if descriptor_ids:
+        logger.info(f"  NSFW: content_descriptor ids={descriptor_ids}")
+        return True
+    if any(kw in descriptor_notes for kw in ["sexual", "nudity", "mature", "adult"]):
+        logger.info("  NSFW: content_descriptor notes contain keywords")
+        return True
+
+    # Проверка 2: возрастное ограничение 18+
+    required_age = int(app_data.get("required_age", 0) or 0)
+    if required_age >= 18:
+        logger.info(f"  NSFW: required_age={required_age}")
+        return True
+
+    # Проверка 3: NSFW-теги из Steam API (обычно пусто, но на всякий случай)
     nsfw_matches = set(t.lower() for t in tags) & NSFW_TAGS
     if nsfw_matches:
         logger.info(f"  NSFW tags found: {nsfw_matches}")
         return True
 
-    # Fallback: проверяем название игры на NSFW-слова
+    # Проверка 4: название игры на NSFW-слова
     title_lower = title.lower()
     for kw in NSFW_TITLE_KEYWORDS:
         if kw in title_lower:
             logger.info(f"  NSFW keyword in title: '{kw}'")
             return True
 
-    # Проверяем описание игры на NSFW
+    # Проверка 5: описание игры на NSFW
     desc = _get_steam_description(app_data).lower()
     for kw in NSFW_TITLE_KEYWORDS:
         if kw in desc:
@@ -205,7 +220,6 @@ def _is_nsfw_game(title: str, app_data: dict) -> bool:
 def _get_steam_screenshots(app_data: dict, max_count: int = 4) -> list[str]:
     """Возвращает URL скриншотов игры."""
     screenshots = app_data.get("screenshots", [])
-    # Берём первые max_count скриншотов
     urls = [s.get("path_full", "") for s in screenshots[:max_count] if s.get("path_full")]
     return urls
 
@@ -213,10 +227,9 @@ def _get_steam_screenshots(app_data: dict, max_count: int = 4) -> list[str]:
 def _get_steam_description(app_data: dict) -> str:
     """Извлекает короткое описание игры."""
     desc = app_data.get("short_description", "") or ""
-    # Очищаем от HTML
     desc = re.sub(r'<[^>]+>', '', desc)
     desc = re.sub(r'\s+', ' ', desc).strip()
-    return desc[:500]  # Не больше 500 символов
+    return desc[:500]
 
 
 # ==================== AI ====================
@@ -232,7 +245,6 @@ def _generate_ai_post(game_info: dict) -> str | None:
     description = game_info["description"]
     tags = ", ".join(game_info["tags"][:8])
 
-    # Определяем, какой API использовать
     if "openrouter" in AI_PROVIDER or AI_PROVIDER == "auto":
         api_key = OPENROUTER_API_KEY or GROQ_API_KEY
         base_url = "https://openrouter.ai/api/v1/chat/completions" if OPENROUTER_API_KEY else "https://api.groq.com/openai/v1/chat/completions"
@@ -243,7 +255,6 @@ def _generate_ai_post(game_info: dict) -> str | None:
         model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 
     if not api_key:
-        # Fallback: шаблонный текст без AI
         return _generate_fallback_text(game_info)
 
     system_prompt = (
@@ -327,7 +338,6 @@ async def send_deal_post(bot: Bot, game_info: dict) -> bool:
     screenshots = game_info["screenshots"]
     caption = game_info["caption"]
 
-    # Если есть скриншоты — шлём медиа-группу
     if screenshots:
         media = []
         for i, url in enumerate(screenshots[:4]):
@@ -347,7 +357,6 @@ async def send_deal_post(bot: Bot, game_info: dict) -> bool:
             return True
         except Exception as e:
             logger.error(f"Media group error: {e}")
-            # Fallback: отправляем только текст
             try:
                 await bot.send_message(
                     chat_id=TELEGRAM_CHANNEL_ID,
@@ -361,7 +370,6 @@ async def send_deal_post(bot: Bot, game_info: dict) -> bool:
                 logger.error(f"Text fallback error: {e2}")
                 return False
     else:
-        # Нет скриншотов — только текст
         try:
             await bot.send_message(
                 chat_id=TELEGRAM_CHANNEL_ID,
@@ -387,7 +395,7 @@ def load_deals_history() -> set:
 def save_deals_history(history: set):
     """Сохраняет историю опубликованных игр."""
     state = load_all_state()
-    state[DEALS_HISTORY_FILE] = list(history)[-500:]  # Храним последние 500
+    state[DEALS_HISTORY_FILE] = list(history)[-500:]
     save_all_state(state)
 
 
@@ -395,12 +403,10 @@ def save_deals_history(history: set):
 def process_deals() -> dict | None:
     """
     Основная логика: найти NSFW-скидку, подготовить пост.
-    Возвращает game_info или None.
     """
     posted_ids = load_deals_history()
     logger.info(f"Loaded {len(posted_ids)} posted deals from history")
 
-    # Шаг 1: Получаем скидки
     deals = fetch_cheapshark_deals(limit=30)
     if not deals:
         logger.warning("No deals from CheapShark")
@@ -408,31 +414,21 @@ def process_deals() -> dict | None:
 
     logger.info(f"CheapShark returned {len(deals)} deals total")
 
-    # Фильтруем по минимальной скидке.
-    # CheapShark возвращает savings как абсолютную сумму (в долларах), не процент.
-    # Вычисляем процент: savings / normalPrice * 100.
-    deals_with_pct = []
+    # CheapShark возвращает savings как уже готовый процент скидки (float-строка).
+    # Например savings=72.5 означает 72.5% скидки.
     for d in deals:
         try:
-            savings_dollars = float(d.get("savings", 0))
-            normal_price = float(d.get("normalPrice", 1))
-            if normal_price > 0:
-                savings_pct = round((savings_dollars / normal_price) * 100)
-            else:
-                savings_pct = 0
+            d["_savings_pct"] = round(float(d.get("savings", 0) or 0))
         except (TypeError, ValueError):
-            savings_pct = 0
-        d["_savings_pct"] = savings_pct
-        deals_with_pct.append(d)
+            d["_savings_pct"] = 0
 
-    deals = [d for d in deals_with_pct if d["_savings_pct"] >= MIN_DISCOUNT_PCT]
+    deals = [d for d in deals if d["_savings_pct"] >= MIN_DISCOUNT_PCT]
     logger.info(
         f"After discount filter ({MIN_DISCOUNT_PCT}%): {len(deals)} deals "
-        f"(out of {len(deals_with_pct)} total)"
+        f"(out of original batch)"
     )
 
-    # Сортируем по скидке (лучшие первые)
-    deals.sort(key=lambda d: float(d.get("savings", 0)), reverse=True)
+    deals.sort(key=lambda d: d["_savings_pct"], reverse=True)
 
     for deal in deals:
         steam_app_id = deal.get("steamAppID")
@@ -445,27 +441,24 @@ def process_deals() -> dict | None:
             continue
 
         title = deal.get("title", "Unknown")
-        discount = deal.get("_savings_pct", 0)
+        discount = deal["_savings_pct"]
         sale_price = float(deal.get("salePrice", 0))
         normal_price = float(deal.get("normalPrice", 0))
         store_link = f"https://store.steampowered.com/app/{steam_app_id}"
 
         logger.info(f"Checking: {title} (-{discount}%, ${sale_price})")
 
-        # Шаг 2: Получаем детали из Steam API
         app_data = _get_steam_app_details(int(steam_app_id))
         if not app_data:
             logger.debug(f"  No Steam data for {title}")
             continue
 
-        # Шаг 3: Проверяем NSFW
         if not _is_nsfw_game(title, app_data):
             logger.debug(f"  Not NSFW: {title}")
             continue
 
         logger.info(f"  ✅ NSFW game found: {title}")
 
-        # Шаг 4: Собираем данные
         screenshots = _get_steam_screenshots(app_data)
         description = _get_steam_description(app_data)
         tags = _extract_steam_tags(app_data)
@@ -483,11 +476,9 @@ def process_deals() -> dict | None:
             "store_url": store_link,
         }
 
-        # Шаг 5: Генерируем текст
         caption = _generate_ai_post(game_info)
         game_info["caption"] = caption
 
-        # Шаг 6: Проверяем хэш (защита от дубликатов)
         content_hash = hashlib.sha256(
             f"{title}_{discount}_{sale_price}".encode()
         ).hexdigest()
@@ -515,18 +506,15 @@ async def main():
     logger.info(f"Max price: ${MAX_DEAL_PRICE_USD}, Min discount: {MIN_DISCOUNT_PCT}%")
     logger.info("=" * 50)
 
-    # Находим NSFW-скидку
     game_info = process_deals()
     if not game_info:
         logger.info("No NSFW deals found this run")
         return
 
-    # Публикуем
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     success = await send_deal_post(bot, game_info)
 
     if success:
-        # Сохраняем в историю
         history = load_deals_history()
         history.add(game_info["id"])
         save_deals_history(history)
