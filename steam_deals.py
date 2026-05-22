@@ -98,6 +98,15 @@ def fetch_cheapshark_deals(limit: int = 30) -> list[dict]:
         r.raise_for_status()
         deals = r.json()
         logger.info(f"CheapShark: got {len(deals)} deals")
+        if deals and isinstance(deals, list) and len(deals) > 0:
+            # Debug: показываем первую сделку
+            first = deals[0]
+            logger.info(
+                f"CheapShark sample: '{first.get('title')}', "
+                f"savings={first.get('savings')} ({type(first.get('savings')).__name__}), "
+                f"salePrice={first.get('salePrice')}, "
+                f"normalPrice={first.get('normalPrice')}"
+            )
         return deals if isinstance(deals, list) else []
     except Exception as e:
         logger.error(f"CheapShark error: {e}")
@@ -372,9 +381,28 @@ def process_deals() -> dict | None:
 
     logger.info(f"CheapShark returned {len(deals)} deals total")
 
-    # Фильтруем по минимальной скидке
-    deals = [d for d in deals if float(d.get("savings", 0)) >= MIN_DISCOUNT_PCT]
-    logger.info(f"After discount filter ({MIN_DISCOUNT_PCT}%): {len(deals)} deals")
+    # Фильтруем по минимальной скидке.
+    # CheapShark возвращает savings как абсолютную сумму (в долларах), не процент.
+    # Вычисляем процент: savings / normalPrice * 100.
+    deals_with_pct = []
+    for d in deals:
+        try:
+            savings_dollars = float(d.get("savings", 0))
+            normal_price = float(d.get("normalPrice", 1))
+            if normal_price > 0:
+                savings_pct = round((savings_dollars / normal_price) * 100)
+            else:
+                savings_pct = 0
+        except (TypeError, ValueError):
+            savings_pct = 0
+        d["_savings_pct"] = savings_pct
+        deals_with_pct.append(d)
+
+    deals = [d for d in deals_with_pct if d["_savings_pct"] >= MIN_DISCOUNT_PCT]
+    logger.info(
+        f"After discount filter ({MIN_DISCOUNT_PCT}%): {len(deals)} deals "
+        f"(out of {len(deals_with_pct)} total)"
+    )
 
     # Сортируем по скидке (лучшие первые)
     deals.sort(key=lambda d: float(d.get("savings", 0)), reverse=True)
@@ -390,7 +418,7 @@ def process_deals() -> dict | None:
             continue
 
         title = deal.get("title", "Unknown")
-        discount = round(float(deal.get("savings", 0)))
+        discount = deal.get("_savings_pct", 0)
         sale_price = float(deal.get("salePrice", 0))
         normal_price = float(deal.get("normalPrice", 0))
         store_link = f"https://store.steampowered.com/app/{steam_app_id}"
