@@ -910,8 +910,8 @@ def _load_source_weights() -> dict:
     """
     import json
     default = {
-        "civitai":  35,
-        "rule34":   25,
+        "civitai":  1,
+        "rule34":   1,
     }
     raw = os.environ.get("SOURCE_WEIGHTS", "").strip()
     if not raw:
