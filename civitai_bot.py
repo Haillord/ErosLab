@@ -52,7 +52,7 @@ WATERMARK_TEXT   = "📣 @eroslabai"
 WATERMARK_IMAGE_TEXT = os.environ.get("WATERMARK_IMAGE_TEXT", "@eroslabai")
 WATERMARK_IMAGE_OPACITY = float(os.environ.get("WATERMARK_IMAGE_OPACITY", "0.3"))
 MIN_LIKES        = 10
-MIN_CIVITAI_LIKES = int(os.environ.get("MIN_CIVITAI_LIKES", "10"))
+MIN_CIVITAI_LIKES = int(os.environ.get("MIN_CIVITAI_LIKES", "50"))
 ALLOW_MATURE_FALLBACK = os.environ.get("ALLOW_MATURE_FALLBACK", "true").lower() in ("1", "true", "yes", "on")
 MIN_IMAGE_SIZE   = 720
 ENABLE_VIDEO_QOS = os.environ.get("ENABLE_VIDEO_QOS", "true").lower() in ("1", "true", "yes", "on")
@@ -612,194 +612,207 @@ def _extract_civitai_prompt(item: dict) -> str | None:
 
     return prompt or None
 
+def _get_adaptive_max_pages(period: str | None) -> int:
+    """
+    Адаптивное количество страниц в зависимости от периода.
+    Day — свежий топ, хватает 5 страниц.
+    Week/Month/AllTime — больше контента, глубже копаем.
+    """
+    if period == "Day":
+        return 5
+    elif period in ("Week",):
+        return 10
+    else:  # Month, None (All Time) или неизвестный
+        return 15
+
+
+def _fetch_civitai_variation(base_params: dict, headers: dict, seen_ids: set) -> list[dict]:
+    """
+    Собирает items по одной вариации (одному запросу к API).
+    Возвращает список сырых item-ов.
+    """
+    all_items = []
+    next_page_url = None
+    max_pages = _get_adaptive_max_pages(base_params.get("period"))
+    
+    for page in range(1, max_pages + 1):
+        request_url = next_page_url or "https://civitai.com/api/v1/images"
+        params = None if next_page_url else {**base_params, "limit": 100}
+        
+        try:
+            r = _request_with_backoff(request_url, params=params, headers=headers)
+            if r is None:
+                logger.warning(f"CivitAI page {page}: no response for {base_params}")
+                if page == 1:
+                    return []
+                break
+
+            if r.status_code == 400:
+                logger.debug(f"CivitAI page {page}: 400 for {params}")
+                continue
+
+            data = r.json()
+            items = data.get("items", [])
+            if not items:
+                logger.debug(f"CivitAI page {page}: no items")
+                continue
+
+            for item in items:
+                item_id = item.get("id")
+                if item_id in seen_ids:
+                    continue
+                seen_ids.add(item_id)
+                all_items.append(item)
+
+            logger.info(f"CivitAI page {page}: got {len(items)} items (total: {len(all_items)})")
+
+            metadata = data.get("metadata", {}) if isinstance(data, dict) else {}
+            next_page_url = metadata.get("nextPage")
+            if not next_page_url:
+                break
+
+        except Exception as e:
+            logger.error(f"CivitAI page {page} error: {e}")
+            continue
+    
+    return all_items
+
+
+def _process_civitai_items(items: list[dict]) -> list[dict]:
+    """
+    Фильтрует сырые items: NSFW-проверка, блэклист, лайки.
+    Возвращает готовые erotic_items.
+    """
+    if not items:
+        return []
+
+    # Проверка доступности лайков
+    items_with_positive_reactions = 0
+    total_checked = 0
+    for item in items:
+        stats = item.get("stats")
+        if isinstance(stats, dict):
+            total_checked += 1
+            if any(stats.get(k, 0) for k in ("likeCount", "heartCount", "laughCount")):
+                items_with_positive_reactions += 1
+
+    likes_filter_enabled = (
+        total_checked > 0
+        and items_with_positive_reactions > total_checked * 0.1
+    )
+    logger.info(
+        f"Likes filter status: {'enabled' if likes_filter_enabled else 'disabled'} "
+        f"(items_with_reactions={items_with_positive_reactions}/{total_checked})"
+    )
+
+    erotic_items = []
+    for item in items:
+        try:
+            nsfw_level = item.get("nsfwLevel")
+            is_allowed_nsfw = _is_x_or_xxx(nsfw_level)
+            if not is_allowed_nsfw and ALLOW_MATURE_FALLBACK and _is_mature_or_higher(nsfw_level):
+                if random.random() < NSFW_RATIO:
+                    is_allowed_nsfw = True
+
+            if not is_allowed_nsfw:
+                continue
+
+            tags = extract_tags(item)
+            if has_blacklisted(tags):
+                continue
+
+            likes = _extract_civitai_likes(item)
+            if likes_filter_enabled and likes < MIN_CIVITAI_LIKES:
+                continue
+
+            erotic_items.append({
+                "id":        f"civitai_{item['id']}",
+                "url":       item.get("url", ""),
+                "tags":      tags[:15],
+                "likes":     likes,
+                "rating":    nsfw_level,
+                "post_id":   item.get("postId"),
+                "mime":      (item.get("mimeType") or "").lower(),
+                "createdAt": item.get("createdAt"),
+                "source":    "civitai",
+                "prompt":    _extract_civitai_prompt(item),
+            })
+        except Exception as e:
+            logger.error(f"Error processing item {item.get('id')}: {e}")
+            continue
+
+    return erotic_items
+
+
 def fetch_civitai(max_pages: int = 5):
-    # Используем browsingLevel=31 для максимального охвата + nsfw=X для explicit.
-    # Newest проверяем первым для более быстрого нахождения свежего контента.
+    """
+    Собирает топ-контент с CivitAI.
+
+    Стратегия:
+    1. Сначала собираем Most Reactions за все периоды (Day, Week, Month, All Time)
+       в общий пул, сортируем по лайкам, возвращаем топ.
+    2. Если ничего не нашли — fallback на Newest.
+    """
     variations = [
+        # Most Reactions — главный источник, собираем со всех периодов
         {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Day", "mediaType": "video"},
         {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Week", "mediaType": "video"},
         {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Month", "mediaType": "video"},
         {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Day"},
         {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Week"},
         {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Month"},
+        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions"},  # All Time
+    ]
+
+    headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
+    seen_ids = set()
+
+    # ── Шаг 1: Most Reactions — собираем со всех периодов ────────────────
+    all_collected = []
+    for base_params in variations:
+        items = _fetch_civitai_variation(base_params, headers, seen_ids)
+        if items:
+            period = base_params.get("period", "All Time")
+            logger.info(
+                f"CivitAI {base_params['sort']} ({period}): "
+                f"collected {len(items)} raw items"
+            )
+            erotic = _process_civitai_items(items)
+            if erotic:
+                logger.info(
+                    f"CivitAI {base_params['sort']} ({period}): "
+                    f"{len(erotic)} suitable items"
+                )
+                all_collected.extend(erotic)
+
+    # Если нашли что-то — сортируем по лайкам и возвращаем топ
+    if all_collected:
+        all_collected.sort(key=lambda x: x["likes"], reverse=True)
+        logger.info(
+            f"CivitAI Most Reactions total: {len(all_collected)} items, "
+            f"top likes: {all_collected[0]['likes']}, "
+            f"median: {all_collected[len(all_collected)//2]['likes']}"
+        )
+        return all_collected
+
+    # ── Шаг 2: Fallback на Newest ────────────────────────────────────────
+    logger.info("CivitAI Most Reactions: no suitable items, falling back to Newest")
+    newest_variations = [
         {"browsingLevel": 28, "nsfw": "X", "sort": "Newest", "mediaType": "video"},
         {"browsingLevel": 28, "nsfw": "X", "sort": "Newest"},
         {"browsingLevel": 28, "nsfw": "X", "sort": "Newest", "period": "Week"},
         {"browsingLevel": 28, "nsfw": "X", "sort": "Newest", "period": "Month"},
     ]
 
-    headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
-    max_pages = max(1, int(max_pages))
-
-    for base_params in variations:
-        all_items = []
-        seen_ids = set()
-        next_page_url = None
-        
-        # CivitAI paginates через metadata.nextPage (cursor-based).
-        for page in range(1, max_pages + 1):
-            request_url = next_page_url or "https://civitai.com/api/v1/images"
-            params = None if next_page_url else {**base_params, "limit": 100}
-            
-            try:
-                r = _request_with_backoff(
-                    request_url,
-                    params=params,
-                    headers=headers
-                )
-                if r is None:
-                    logger.warning(f"CivitAI page {page}: no response")
-                    # Быстрый фоллбек: если даже первую страницу не удалось получить,
-                    # считаем источник временно недоступным и выходим сразу.
-                    if page == 1:
-                        logger.warning("CivitAI unavailable on first page, skipping source for this run")
-                        return []
-                    break
-
-                # Handle 400 Bad Request
-                if r.status_code == 400:
-                    logger.debug(f"CivitAI page {page}: skipping invalid params {params}")
-                    continue
-
-                data = r.json()
-                items = data.get("items", [])
-                
-                if not items:
-                    logger.debug(f"CivitAI page {page}: no items")
-                    continue
-
-                for item in items:
-                    item_id = item.get("id")
-                    if item_id in seen_ids:
-                        continue
-                    seen_ids.add(item_id)
-                    all_items.append(item)
-                logger.info(f"CivitAI page {page}: got {len(items)} items (total: {len(all_items)})")
-
-                metadata = data.get("metadata", {}) if isinstance(data, dict) else {}
-                next_page_url = metadata.get("nextPage")
-                if not next_page_url:
-                    break
-
-            except Exception as e:
-                logger.error(f"CivitAI page {page} error: {e}")
-                continue
-
-        if not all_items:
-            logger.info(f"No items for params {base_params}")
-            continue
-
-        items = all_items
-        period = base_params.get("period", "N/A")
-        logger.info(
-            f"Got {len(items)} items total "
-            f"(browsingLevel={base_params['browsingLevel']}, sort={base_params['sort']}, period={period})"
-        )
-        # Проверяем, что API вернуло валидные stats с полями реакций.
-        # Если у большинства элементов (>10%) есть ненулевые реакции — фильтр включён.
-        items_with_positive_reactions = 0
-        total_checked = 0
-        for item in items:
-            stats = item.get("stats")
-            if isinstance(stats, dict):
-                total_checked += 1
-                if any(stats.get(k, 0) for k in ("likeCount", "heartCount", "laughCount")):
-                    items_with_positive_reactions += 1
-
-        likes_filter_enabled = (
-            total_checked > 0
-            and items_with_positive_reactions > total_checked * 0.1
-        )
-        if not likes_filter_enabled:
-            logger.info(
-                f"Likes filter status: disabled "
-                f"(items_with_reactions={items_with_positive_reactions}/{total_checked}, "
-                f"threshold=10%)"
-            )
-        else:
-            logger.info(
-                f"Likes filter status: enabled "
-                f"(items_with_reactions={items_with_positive_reactions}/{total_checked})"
-            )
-
-        erotic_items = []
-        skipped_nsfw = 0
-        skipped_blacklist = 0
-        skipped_likes = 0
-        accepted_mature = 0
-        nsfw_distribution = {}
-        likes_observed = []
-        
-        # Debug: sample first 5 items nsfwLevel
-        for debug_item in items[:5]:
-            debug_nsfw = debug_item.get("nsfwLevel")
-            debug_id = debug_item.get("id")
-            logger.debug(f"Item {debug_id}: nsfwLevel={debug_nsfw} (type={type(debug_nsfw).__name__})")
-        
-        for item in items:
-            try:
-                nsfw_level = item.get("nsfwLevel")
-                nsfw_key = str(nsfw_level).strip() if nsfw_level is not None else "None"
-                nsfw_distribution[nsfw_key] = nsfw_distribution.get(nsfw_key, 0) + 1
-
-                is_allowed_nsfw = _is_x_or_xxx(nsfw_level)
-                if not is_allowed_nsfw and ALLOW_MATURE_FALLBACK and _is_mature_or_higher(nsfw_level):
-                  if random.random() < NSFW_RATIO:  # NSFW_RATIO — доля Mature-контента
-                    is_allowed_nsfw = True
-                    accepted_mature += 1
-
-                if not is_allowed_nsfw:
-                    skipped_nsfw += 1
-                    continue
-
-                tags = extract_tags(item)
-
-                if has_blacklisted(tags):
-                    skipped_blacklist += 1
-                    continue
-
-                likes = _extract_civitai_likes(item)
-                likes_observed.append(likes)
-
-                if likes_filter_enabled and likes < MIN_CIVITAI_LIKES:
-                    skipped_likes += 1
-                    continue
-
-                erotic_items.append({
-                    "id":      f"civitai_{item['id']}",
-                    "url":     item.get("url", ""),
-                    "tags":    tags[:15],
-                    "likes":   likes,
-                    "rating":  nsfw_level,
-                    "post_id": item.get("postId"),
-                    "mime":    (item.get("mimeType") or "").lower(),
-                    "createdAt": item.get("createdAt"),
-                    "source":  "civitai",
-                    "prompt":  _extract_civitai_prompt(item),
-                })
-
-            except Exception as e:
-                logger.error(f"Error processing item {item.get('id')}: {e}")
-                continue
-
-        if erotic_items:
-            logger.info(f"Found {len(erotic_items)} posts from CivitAI (mature_fallback_used={accepted_mature})")
-            return erotic_items
-
-        logger.info(
-            f"No suitable posts: skipped_nsfw={skipped_nsfw}, "
-            f"skipped_blacklist={skipped_blacklist}, skipped_likes={skipped_likes}, "
-            f"civitai_min_likes={MIN_CIVITAI_LIKES}, "
-            f"allow_mature_fallback={ALLOW_MATURE_FALLBACK}, "
-            f"likes_filter_enabled={likes_filter_enabled}"
-        )
-        logger.info(f"CivitAI nsfw distribution: {nsfw_distribution}")
-        if likes_observed:
-            likes_sorted = sorted(likes_observed)
-            median_like = likes_sorted[len(likes_sorted) // 2]
-            logger.info(
-                f"CivitAI likes diagnostics: min={likes_sorted[0]}, median={median_like}, max={likes_sorted[-1]}"
-            )
+    for base_params in newest_variations:
+        items = _fetch_civitai_variation(base_params, headers, seen_ids)
+        if items:
+            period = base_params.get("period", "N/A")
+            logger.info(f"CivitAI Newest ({period}): {len(items)} raw items")
+            erotic = _process_civitai_items(items)
+            if erotic:
+                logger.info(f"CivitAI Newest ({period}): {len(erotic)} suitable items")
+                return erotic
 
     return []
 
