@@ -1224,13 +1224,27 @@ async def main():
         flush_stats_once()
         return
 
-    attempts_pool = list(fresh_items)
-    random.shuffle(attempts_pool)
-    attempts_pool = attempts_pool[:MAX_ATTEMPTS]
-    logger.info(
-        f"Prepared attempts pool from {source}: "
-        f"{len(attempts_pool)} items (fresh total={len(fresh_items)})"
-    )
+    # Приоритет видео: с 85% вероятностью ставим видео первыми в attempts pool
+    video_items = [i for i in fresh_items if _is_video_item(i)]
+    photo_items = [i for i in fresh_items if not _is_video_item(i)]
+
+    random.shuffle(video_items)
+    random.shuffle(photo_items)
+
+    if video_items and random.random() < 0.85:
+        attempts_pool = (video_items + photo_items)[:MAX_ATTEMPTS]
+        logger.info(
+            f"Attempts pool: video-first "
+            f"({len(video_items)} videos, {len(photo_items)} photos, "
+            f"pool_size={len(attempts_pool)}, total_fresh={len(fresh_items)})"
+        )
+    else:
+        attempts_pool = (photo_items + video_items)[:MAX_ATTEMPTS]
+        logger.info(
+            f"Attempts pool: photo-first "
+            f"({len(photo_items)} photos, {len(video_items)} videos, "
+            f"pool_size={len(attempts_pool)}, total_fresh={len(fresh_items)})"
+        )
 
     for attempt, item in enumerate(attempts_pool, start=1):
         logger.info(f"Attempt {attempt}/{len(attempts_pool)} with item {item.get('id')}")

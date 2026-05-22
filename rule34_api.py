@@ -18,8 +18,8 @@ TAG_SETS = [
     "3d_(artwork) video rating:explicit",
 
     # Для чистой анимации (не обязательно 3D)
-    "animated rating:explicit -static_image",
-    "gif rating:explicit -static_image",
+    "animated rating:explicit",
+    "gif rating:explicit",
     "webm rating:explicit"
 ]
 
@@ -140,14 +140,24 @@ def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed"
 
                 post_tags = post.get("tags", "").split()
 
+                file_type = post.get("file_type", "")
+                mime_map = {
+                    "video": "video/mp4",
+                    "gif":   "image/gif",
+                    "image": "image/jpeg",
+                }
+                mime = mime_map.get(file_type, "")
+
                 all_results.append({
-                    "id":      f"r34_{post['id']}",
-                    "url":     file_url,
-                    "tags":    post_tags[:15],
-                    "likes":   score,
-                    "rating":  mapped_rating,
-                    "post_id": post.get("id"),
-                    "source":  "rule34"
+                    "id":        f"r34_{post['id']}",
+                    "url":       file_url,
+                    "tags":      post_tags[:15],
+                    "likes":     score,
+                    "rating":    mapped_rating,
+                    "post_id":   post.get("id"),
+                    "source":    "rule34",
+                    "mime":      mime,
+                    "file_type": file_type,
                 })
 
             # Если набрали достаточно постов — останавливаемся
