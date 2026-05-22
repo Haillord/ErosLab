@@ -86,20 +86,21 @@ logger = logging.getLogger("ErosLab.SteamDeals")
 
 
 # ==================== CHEAPSHARK API ====================
-def fetch_cheapshark_deals(limit: int = 30) -> list[dict]:
+def fetch_cheapshark_deals(limit: int = 60) -> list[dict]:
     """
     Получает топ скидок из CheapShark.
-    Сортируем по скидке (best), фильтруем по цене.
+    Берём 60 лучших сделок по абсолютной экономии без ограничения по цене —
+    фильтрацию по цене и проценту делаем сами в process_deals().
+    Это нужно потому что upperPrice отрезает дорогие игры с большой % скидкой,
+    оставляя только дешёвые игры с маленькой реальной скидкой.
     """
     url = "https://www.cheapshark.com/api/1.0/deals"
     params = {
-        "storeID": "1",          # Только Steam
-        "upperPrice": str(MAX_DEAL_PRICE_USD),
-        "pageSize": str(limit),
-        "sortBy": "Savings",
+        "storeID": "1",       # Только Steam
+        "pageSize": "60",     # Максимум
+        "sortBy": "Savings",  # Сортировка по экономии в долларах
         "desc": "1",
         "onSale": "1",
-        "metacriticScore": "0",  # Любой metacritic
     }
 
     try:
@@ -143,16 +144,20 @@ def _extract_steam_tags(app_data: dict) -> list[str]:
     """Извлекает теги/жанры из данных Steam API."""
     tags = set()
 
+    # Жанры
     for genre in app_data.get("genres", []):
         desc = genre.get("description", "").lower()
         if desc:
             tags.add(desc)
 
+    # Категории
     for cat in app_data.get("categories", []):
         desc = cat.get("description", "").lower()
         if desc:
             tags.add(desc)
 
+    # Теги (Steam /api/appdetails обычно не возвращает user-теги,
+    # но оставляем на случай если они появятся)
     for tag_data in app_data.get("tags", {}).values():
         if isinstance(tag_data, dict):
             name = tag_data.get("name", "").lower()
@@ -165,19 +170,22 @@ def _extract_steam_tags(app_data: dict) -> list[str]:
 def _is_nsfw_game(title: str, app_data: dict) -> bool:
     """
     Проверяет, является ли игра NSFW.
-    Приоритет: content_descriptors > required_age > теги > название > описание.
-    Steam /api/appdetails НЕ возвращает пользовательские теги (Nudity и т.д.),
-    поэтому используем официальные поля Steam API.
+    Порядок проверок: content_descriptors > required_age > теги > название > описание.
+
+    Важно: Steam /api/appdetails НЕ возвращает пользовательские теги (Nudity, Sexual Content
+    и т.д.) — они есть только на странице магазина. Поэтому главные сигналы — это
+    официальные поля content_descriptors и required_age.
     """
     tags = _extract_steam_tags(app_data)
 
-    # Проверка safe-тегов (если есть — не NSFW)
+    # Проверка safe-тегов — если есть явно безопасный тег, пропускаем
     safe_matches = set(t.lower() for t in tags) & SAFE_TAGS
     if safe_matches:
         logger.debug(f"  Safe tags: {safe_matches}")
         return False
 
     # Проверка 1: content_descriptors (официальные NSFW-дескрипторы Steam)
+    # ids: 1=Some Nudity or Sexual Content, 5=General Mature Content и т.д.
     descriptors = app_data.get("content_descriptors", {})
     descriptor_ids = descriptors.get("ids", [])
     descriptor_notes = str(descriptors.get("notes", "")).lower()
@@ -200,14 +208,14 @@ def _is_nsfw_game(title: str, app_data: dict) -> bool:
         logger.info(f"  NSFW tags found: {nsfw_matches}")
         return True
 
-    # Проверка 4: название игры на NSFW-слова
+    # Проверка 4: NSFW-слова в названии игры
     title_lower = title.lower()
     for kw in NSFW_TITLE_KEYWORDS:
         if kw in title_lower:
             logger.info(f"  NSFW keyword in title: '{kw}'")
             return True
 
-    # Проверка 5: описание игры на NSFW
+    # Проверка 5: NSFW-слова в описании игры
     desc = _get_steam_description(app_data).lower()
     for kw in NSFW_TITLE_KEYWORDS:
         if kw in desc:
@@ -236,7 +244,7 @@ def _get_steam_description(app_data: dict) -> str:
 def _generate_ai_post(game_info: dict) -> str | None:
     """
     Генерирует хайповый текст поста через AI.
-    Использует ту же логику, что и caption_generator (Groq/OpenRouter).
+    Использует Groq или OpenRouter в зависимости от настроек.
     """
     title = game_info["title"]
     discount = game_info["discount"]
@@ -326,7 +334,7 @@ def _generate_fallback_text(game_info: dict) -> str:
     text = (
         f"{random.choice(openings)}\n\n"
         f"<b>{title}</b>\n"
-        f"💰 <b>-{discount}%</b> — {new_price}₽ (было {old_price}₽)\n\n"
+        f"💰 <b>-{discount}%</b> — {new_price} (было {old_price})\n\n"
         f"{random.choice(closings)}"
     )
     return text
@@ -357,6 +365,7 @@ async def send_deal_post(bot: Bot, game_info: dict) -> bool:
             return True
         except Exception as e:
             logger.error(f"Media group error: {e}")
+            # Fallback: отправляем только текст
             try:
                 await bot.send_message(
                     chat_id=TELEGRAM_CHANNEL_ID,
@@ -395,7 +404,7 @@ def load_deals_history() -> set:
 def save_deals_history(history: set):
     """Сохраняет историю опубликованных игр."""
     state = load_all_state()
-    state[DEALS_HISTORY_FILE] = list(history)[-500:]
+    state[DEALS_HISTORY_FILE] = list(history)[-500:]  # Храним последние 500
     save_all_state(state)
 
 
@@ -403,39 +412,62 @@ def save_deals_history(history: set):
 def process_deals() -> dict | None:
     """
     Основная логика: найти NSFW-скидку, подготовить пост.
+    Возвращает game_info или None.
     """
     posted_ids = load_deals_history()
     logger.info(f"Loaded {len(posted_ids)} posted deals from history")
 
-    deals = fetch_cheapshark_deals(limit=30)
+    # Шаг 1: Получаем 60 лучших сделок без фильтра по цене.
+    # upperPrice убран намеренно: он отрезал дорогие игры с большой % скидкой,
+    # оставляя только дешёвые игры с крошечной реальной скидкой (~1%).
+    deals = fetch_cheapshark_deals(limit=60)
     if not deals:
         logger.warning("No deals from CheapShark")
         return None
 
     logger.info(f"CheapShark returned {len(deals)} deals total")
 
-    # CheapShark savings — это экономия в долларах, и она не всегда точна.
-    # Считаем процент скидки напрямую из salePrice и normalPrice.
+    # Шаг 2: Фильтруем по цене и проценту скидки.
+    # Процент считаем сами из salePrice/normalPrice — поле savings ненадёжно
+    # (это экономия в долларах, а не процент).
+    filtered = []
     for d in deals:
         try:
             sale_p = float(d.get("salePrice", 0) or 0)
             norm_p = float(d.get("normalPrice", 0) or 0)
-            if norm_p > 0 and sale_p < norm_p:
-                d["_savings_pct"] = round((norm_p - sale_p) / norm_p * 100)
-            else:
-                d["_savings_pct"] = 0
-        except (TypeError, ValueError):
-            d["_savings_pct"] = 0
 
-    deals = [d for d in deals if d["_savings_pct"] >= MIN_DISCOUNT_PCT]
+            # Ценовой фильтр — берём только игры до MAX_DEAL_PRICE_USD
+            if sale_p > MAX_DEAL_PRICE_USD:
+                continue
+
+            # Считаем процент скидки из реальных цен
+            if norm_p > 0 and sale_p < norm_p:
+                pct = round((norm_p - sale_p) / norm_p * 100)
+            else:
+                pct = 0
+
+            d["_savings_pct"] = pct
+
+            if pct >= MIN_DISCOUNT_PCT:
+                filtered.append(d)
+
+        except (TypeError, ValueError):
+            continue
+
     logger.info(
-        f"After discount filter ({MIN_DISCOUNT_PCT}%): {len(deals)} deals "
-        f"(out of original batch)"
+        f"After price+discount filter (<=${MAX_DEAL_PRICE_USD}, >={MIN_DISCOUNT_PCT}%): "
+        f"{len(filtered)} deals"
     )
 
-    deals.sort(key=lambda d: d["_savings_pct"], reverse=True)
+    if not filtered:
+        logger.warning("No suitable deals after filtering")
+        return None
 
-    for deal in deals:
+    # Сортируем по проценту скидки (лучшие первые)
+    filtered.sort(key=lambda d: d["_savings_pct"], reverse=True)
+
+    # Шаг 3: Проверяем каждую игру на NSFW через Steam API
+    for deal in filtered:
         steam_app_id = deal.get("steamAppID")
         if not steam_app_id:
             continue
@@ -453,17 +485,20 @@ def process_deals() -> dict | None:
 
         logger.info(f"Checking: {title} (-{discount}%, ${sale_price})")
 
+        # Шаг 4: Получаем детали из Steam API
         app_data = _get_steam_app_details(int(steam_app_id))
         if not app_data:
             logger.debug(f"  No Steam data for {title}")
             continue
 
+        # Шаг 5: Проверяем NSFW
         if not _is_nsfw_game(title, app_data):
             logger.debug(f"  Not NSFW: {title}")
             continue
 
         logger.info(f"  ✅ NSFW game found: {title}")
 
+        # Шаг 6: Собираем данные для поста
         screenshots = _get_steam_screenshots(app_data)
         description = _get_steam_description(app_data)
         tags = _extract_steam_tags(app_data)
@@ -481,9 +516,11 @@ def process_deals() -> dict | None:
             "store_url": store_link,
         }
 
+        # Шаг 7: Генерируем текст через AI
         caption = _generate_ai_post(game_info)
         game_info["caption"] = caption
 
+        # Хэш для защиты от дубликатов
         content_hash = hashlib.sha256(
             f"{title}_{discount}_{sale_price}".encode()
         ).hexdigest()
