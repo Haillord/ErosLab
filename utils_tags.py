@@ -62,24 +62,31 @@ def to_int(value, default=0):
         return default
 
 
-def extract_civitai_likes(item: dict[str, Any]):
-    stats = item.get("stats") or {}
-    stats_total = 0
-    if isinstance(stats, dict):
-        for key, value in stats.items():
-            key_lower = str(key).lower()
-            if "count" in key_lower:
-                stats_total += to_int(value, 0)
+def extract_civitai_likes(item: dict[str, Any]) -> int:
+    """
+    Извлекает количество реакций (лайков) из элемента CivitAI API.
+    
+    Приоритет 1: stats от API — likeCount + heartCount + laughCount.
+    Приоритет 2: fallback на верхний уровень (старый формат API).
+    
+    Возвращает 0 если данные недоступны.
+    """
+    if not isinstance(item, dict):
+        return 0
 
-    candidates = [
-        stats.get("likeCount"),
-        stats.get("heartCount"),
-        stats.get("reactionCount"),
-        stats.get("favoriteCount"),
-        stats_total,
-        item.get("likeCount"),
-        item.get("heartCount"),
-        item.get("reactionCount"),
-    ]
-    numeric = [to_int(v, 0) for v in candidates]
-    return max(numeric) if numeric else 0
+    # Приоритет 1: stats от API
+    stats = item.get("stats")
+    if isinstance(stats, dict):
+        total = (
+            to_int(stats.get("likeCount"), 0) +
+            to_int(stats.get("heartCount"), 0) +
+            to_int(stats.get("laughCount"), 0)
+        )
+        if total > 0:
+            return total
+
+    # Приоритет 2: fallback на верхний уровень (старый формат)
+    return (
+        to_int(item.get("likeCount"), 0) or
+        to_int(item.get("heartCount"), 0)
+    )

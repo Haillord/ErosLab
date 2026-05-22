@@ -52,7 +52,7 @@ WATERMARK_TEXT   = "📣 @eroslabai"
 WATERMARK_IMAGE_TEXT = os.environ.get("WATERMARK_IMAGE_TEXT", "@eroslabai")
 WATERMARK_IMAGE_OPACITY = float(os.environ.get("WATERMARK_IMAGE_OPACITY", "0.3"))
 MIN_LIKES        = 10
-MIN_CIVITAI_LIKES = int(os.environ.get("MIN_CIVITAI_LIKES", "1"))
+MIN_CIVITAI_LIKES = int(os.environ.get("MIN_CIVITAI_LIKES", "10"))
 ALLOW_MATURE_FALLBACK = os.environ.get("ALLOW_MATURE_FALLBACK", "true").lower() in ("1", "true", "yes", "on")
 MIN_IMAGE_SIZE   = 720
 ENABLE_VIDEO_QOS = os.environ.get("ENABLE_VIDEO_QOS", "true").lower() in ("1", "true", "yes", "on")
@@ -596,15 +596,16 @@ def fetch_civitai(max_pages: int = 5):
     # Используем browsingLevel=31 для максимального охвата + nsfw=X для explicit.
     # Newest проверяем первым для более быстрого нахождения свежего контента.
     variations = [
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Newest", "mediaType": "video"},
+        {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Day", "mediaType": "video"},
         {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Week", "mediaType": "video"},
         {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Month", "mediaType": "video"},
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Newest"},
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Newest", "period": "Week"},
-        {"browsingLevel": 31, "nsfw": "X", "sort": "Newest", "period": "Month"},
         {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Day"},
         {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Week"},
         {"browsingLevel": 31, "nsfw": "X", "sort": "Most Reactions", "period": "Month"},
+        {"browsingLevel": 31, "nsfw": "X", "sort": "Newest", "mediaType": "video"},
+        {"browsingLevel": 31, "nsfw": "X", "sort": "Newest"},
+        {"browsingLevel": 31, "nsfw": "X", "sort": "Newest", "period": "Week"},
+        {"browsingLevel": 31, "nsfw": "X", "sort": "Newest", "period": "Month"},
     ]
 
     headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
@@ -674,12 +675,31 @@ def fetch_civitai(max_pages: int = 5):
             f"Got {len(items)} items total "
             f"(browsingLevel={base_params['browsingLevel']}, sort={base_params['sort']}, period={period})"
         )
-        precomputed_likes = [_extract_civitai_likes(i) for i in items]
-        likes_filter_enabled = any(v > 0 for v in precomputed_likes)
+        # Проверяем, что API вернуло валидные stats с полями реакций.
+        # Если у большинства элементов (>10%) есть ненулевые реакции — фильтр включён.
+        items_with_positive_reactions = 0
+        total_checked = 0
+        for item in items:
+            stats = item.get("stats")
+            if isinstance(stats, dict):
+                total_checked += 1
+                if any(stats.get(k, 0) for k in ("likeCount", "heartCount", "laughCount")):
+                    items_with_positive_reactions += 1
+
+        likes_filter_enabled = (
+            total_checked > 0
+            and items_with_positive_reactions > total_checked * 0.1
+        )
         if not likes_filter_enabled:
-            logger.warning(
-                "CivitAI reactions unavailable (all zero). "
-                "Likes filter will be disabled for this batch."
+            logger.info(
+                f"Likes filter status: disabled "
+                f"(items_with_reactions={items_with_positive_reactions}/{total_checked}, "
+                f"threshold=10%)"
+            )
+        else:
+            logger.info(
+                f"Likes filter status: enabled "
+                f"(items_with_reactions={items_with_positive_reactions}/{total_checked})"
             )
 
         erotic_items = []
