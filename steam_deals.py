@@ -414,11 +414,16 @@ def process_deals() -> dict | None:
 
     logger.info(f"CheapShark returned {len(deals)} deals total")
 
-    # CheapShark возвращает savings как уже готовый процент скидки (float-строка).
-    # Например savings=72.5 означает 72.5% скидки.
+    # CheapShark savings — это экономия в долларах, и она не всегда точна.
+    # Считаем процент скидки напрямую из salePrice и normalPrice.
     for d in deals:
         try:
-            d["_savings_pct"] = round(float(d.get("savings", 0) or 0))
+            sale_p = float(d.get("salePrice", 0) or 0)
+            norm_p = float(d.get("normalPrice", 0) or 0)
+            if norm_p > 0 and sale_p < norm_p:
+                d["_savings_pct"] = round((norm_p - sale_p) / norm_p * 100)
+            else:
+                d["_savings_pct"] = 0
         except (TypeError, ValueError):
             d["_savings_pct"] = 0
 
