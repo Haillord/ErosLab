@@ -37,29 +37,29 @@ MAX_DEAL_PRICE_USD = float(os.environ.get("MAX_DEAL_PRICE_USD", "15"))
 MIN_DISCOUNT_PCT = int(os.environ.get("MIN_DISCOUNT_PCT", "40"))
 DEALS_HISTORY_FILE = "steam_deals_history.json"
 
-    # NSFW-теги для фильтрации
-    NSFW_TAGS = {
-        "nudity", "sexual content", "mature", "nsfw", "adult",
-        "erotic", "sex", "nudity (suggestive)", "sexual violence",
-        "nudity (sexual)", "adult content", "18+", "mature content",
-        "sexual themes", "explicit", "hentai", "pornographic",
-        "lewd", "suggestive", "uncensored", "18+ only",
-    }
+# NSFW-теги для фильтрации
+NSFW_TAGS = {
+    "nudity", "sexual content", "mature", "nsfw", "adult",
+    "erotic", "sex", "nudity (suggestive)", "sexual violence",
+    "nudity (sexual)", "adult content", "18+", "mature content",
+    "sexual themes", "explicit", "hentai", "pornographic",
+    "lewd", "suggestive", "uncensored", "18+ only",
+}
 
-    # NSFW-слова для проверки названия и описания (когда теги пустые)
-    NSFW_TITLE_KEYWORDS = {
-        "boob", "hentai", "eroge", "adult", "sex", "nude", "naked",
-        "nsfw", "sexy", "seduce", "lewd", "succubus", "waifu",
-        "love hotel", "strip", "stripper", "bikini", "lingerie",
-        "bondage", "bdsm", "fetish", "mature", "erotic",
-        "gal game", "dating sim", "sexual", "panty", "panties",
-    }
+# NSFW-слова для проверки названия и описания (когда теги пустые)
+NSFW_TITLE_KEYWORDS = {
+    "boob", "hentai", "eroge", "adult", "sex", "nude", "naked",
+    "nsfw", "sexy", "seduce", "lewd", "succubus", "waifu",
+    "love hotel", "strip", "stripper", "bikini", "lingerie",
+    "bondage", "bdsm", "fetish", "mature", "erotic",
+    "gal game", "dating sim", "sexual", "panty", "panties",
+}
 
-    # Теги, которые гарантированно НЕ NSFW (исключаем)
-    SAFE_TAGS = {
-        "family friendly", "kids", "children", "cartoon",
-        "comedy", "fantasy", "violence", "gore",
-    }
+# Теги, которые гарантированно НЕ NSFW (исключаем)
+SAFE_TAGS = {
+    "family friendly", "kids", "children", "cartoon",
+    "comedy", "fantasy", "violence", "gore",
+}
 
 # Технические мета-теги Steam (не влияют на NSFW-фильтрацию)
 META_TAGS = {
@@ -489,7 +489,7 @@ def process_deals() -> dict | None:
 
         # Шаг 6: Проверяем хэш (защита от дубликатов)
         content_hash = hashlib.sha256(
-        f"{title}_{discount}_{sale_price}".encode()
+            f"{title}_{discount}_{sale_price}".encode()
         ).hexdigest()
         game_info["hash"] = content_hash
 
