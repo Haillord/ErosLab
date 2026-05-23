@@ -724,7 +724,7 @@ def _load_source_weights() -> dict:
     default = {
         "civitai":  1,
         "rule34":   1,
-        "rule34video": 1,
+        "rule34video": 0.15,
     }
     raw = os.environ.get("SOURCE_WEIGHTS", "").strip()
     if not raw:

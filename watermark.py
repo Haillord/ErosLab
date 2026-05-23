@@ -140,7 +140,16 @@ def add_watermark_to_video(video_data: bytes, text: str = "@eroslabai",
             logger.warning("Could not read video dimensions for watermark")
             return video_data
 
-        raw = result.stdout.strip()
+        lines = result.stdout.strip().splitlines()
+        # Берём последнюю строку, содержащую "x" (некоторые ffprobe выводят несколько строк)
+        raw = ""
+        for line in reversed(lines):
+            if "x" in line:
+                raw = line.strip()
+                break
+        if not raw:
+            logger.warning("Could not parse video dimensions from ffprobe output")
+            return video_data
         width, height = map(int, raw.split("x", 1))
 
         font_size = max(20, int(height * font_size_ratio))
