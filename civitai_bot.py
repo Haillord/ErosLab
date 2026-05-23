@@ -70,6 +70,9 @@ NSFW_RATIO = float(os.environ.get("NSFW_RATIO", "0.6"))  # 60% XXX, 40% Mature
 # Временно отключить Rule34 (True = только CivitAI для тестов)
 TEST_CIVITAI_ONLY = False
 
+# Режим отладки: только rule34video (True = только Rule34Video для тестов)
+TEST_RULE34VIDEO_ONLY = True
+
 HISTORY_FILE = "posted_ids.json"
 HASHES_FILE  = "posted_hashes.json"
 CONTENT_STATE_FILE = "content_state.json"
@@ -1035,6 +1038,18 @@ def fetch_candidates_once():
       (у него фильтрация встроена внутри fetch_civitai()).
     """
 
+    # ── Режим отладки: только Rule34Video ─────────────────────────────────
+    if TEST_RULE34VIDEO_ONLY:
+        logger.info("Source: Rule34Video only (TEST_RULE34VIDEO_ONLY=True)")
+        items = fetch_rule34video()
+        if not items:
+            logger.warning("TEST_RULE34VIDEO_ONLY=True и Rule34Video ничего не вернул")
+            return "rule34video", []
+        fresh = [i for i in items if i["id"] not in posted_ids]
+        fresh = [i for i in fresh if not has_blacklisted(i.get("tags", []))]
+        logger.info(f"Rule34Video fresh: {len(fresh)} / {len(items)}")
+        return "rule34video", fresh
+
     # ── Режим отладки: только CivitAI ─────────────────────────────────────
     if TEST_CIVITAI_ONLY:
         logger.info("Source: CivitAI only (TEST_CIVITAI_ONLY=True)")
@@ -1258,7 +1273,7 @@ async def main():
         flush_stats_once()
         return
 
-    if not CIVITAI_API_KEY:
+    if not CIVITAI_API_KEY and not TEST_RULE34VIDEO_ONLY:
         logger.error("No CIVITAI_API_KEY found!")
         flush_stats_once()
         return
