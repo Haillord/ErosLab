@@ -96,6 +96,8 @@ BLACKLIST_TAGS = {
     "old_man", "young_man", "dilf", "twink", "femboy",
     # Other
     "furry_male", "anthro",
+    # Fart content
+    "fart", "farting", "fart_fetish", "fart_edit",
 }
 
 # Паттерны только для явного male-only фокуса (без среза mixed male+female сцен).
