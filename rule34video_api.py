@@ -2,9 +2,6 @@
 rule34video.com scraper
 Парсит видео с rule34video.com, возвращает список items
 в формате совместимом с civitai_bot.py.
-
-Установка зависимостей:
-    pip install requests beautifulsoup4 lxml
 """
 
 import logging
@@ -16,8 +13,6 @@ import requests
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger("ErosLab.Rule34Video")
-
-# ── Константы ──────────────────────────────────────────────────────────────────
 
 BASE_URL = "https://rule34video.com"
 
@@ -31,36 +26,27 @@ HEADERS = {
     "Referer": BASE_URL,
 }
 
-# Теги для поиска — несколько вариантов, выбираем случайный для разнообразия
-SEARCH_TAG_SETS = [
-    "3d animated",
-    "sfm animated",
-    "blender animated",
-    "3d hentai",
-    "animated sfm",
+# Страницы тегов — прямые URL, работают без авторизации
+# offset кратен 20 (по 20 видео на страницу)
+TAG_URLS = [
+    "https://rule34video.com/tags/source-filmmaker/?sort_by=rating&from_videos={offset}",
+    "https://rule34video.com/tags/3d/?sort_by=rating&from_videos={offset}",
+    "https://rule34video.com/tags/blender-sfm/?sort_by=rating&from_videos={offset}",
+    "https://rule34video.com/tags/animated/?sort_by=rating&from_videos={offset}",
+    "https://rule34video.com/tags/sfm/?sort_by=rating&from_videos={offset}",
 ]
 
-# Теги-стоп-слова специфичные для rule34video
 R34V_STOP_WORDS = {
     "3d", "animated", "sfm", "blender", "hentai", "video",
-    "rule34", "rule34video", "r34", "xxx", "porn", "hd",
-    "source_filmmaker", "koikatsu", "honey_select",
+    "rule34", "r34", "xxx", "porn", "hd", "source_filmmaker",
+    "koikatsu", "honey_select", "animation",
 }
 
 
-# ── Вспомогательные функции ───────────────────────────────────────────────────
-
-def _get(url: str, params: dict = None, retries: int = 3) -> requests.Response | None:
-    """GET-запрос с ретраями и задержкой."""
+def _get(url: str, retries: int = 3) -> requests.Response | None:
     for attempt in range(retries):
         try:
-            r = requests.get(
-                url,
-                params=params,
-                headers=HEADERS,
-                timeout=20,
-                allow_redirects=True,
-            )
+            r = requests.get(url, headers=HEADERS, timeout=20)
             if r.status_code == 200:
                 return r
             if r.status_code == 429:
@@ -81,108 +67,120 @@ def _get(url: str, params: dict = None, retries: int = 3) -> requests.Response |
 
 def _parse_video_list(html: str) -> list[dict]:
     """
-    Парсит страницу поиска/категории и возвращает список:
-    [{"id": "r34v_12345", "page_url": "...", "title": "...", "thumb": "..."}]
+    Парсит страницу с видео.
+    Реальная структура (из браузера):
+      div.item.thumb > a.th.js-open-popup[href=/video/ID/title/]
+        div.thumb_title  → название
+        div.rating       → "83% (6)"
+        div.views        → "774"
+        div.time         → "0:10"
     """
     soup = BeautifulSoup(html, "lxml")
     items = []
 
-    # rule34video использует div.item для каждого видео в списке
-    for block in soup.select("div.item"):
-        link_tag = block.select_one("a.th")
-        if not link_tag:
-            # Попробуем альтернативный селектор
-            link_tag = block.select_one("a[href*='/videos/']")
-        if not link_tag:
+    for block in soup.select("div.item.thumb"):
+        link = block.select_one("a.th")
+        if not link:
             continue
 
-        href = link_tag.get("href", "")
-        if "/videos/" not in href:
-            continue
-
-        # Вытащим ID из URL вида /videos/123456/title/
-        match = re.search(r"/videos/(\d+)/", href)
+        href = link.get("href", "")
+        match = re.search(r"/video/(\d+)/", href)
         if not match:
             continue
         video_id = match.group(1)
 
+        # Название
         title = ""
-        title_tag = block.select_one(".thumb_title") or block.select_one("span.title")
+        title_tag = block.select_one("div.thumb_title")
         if title_tag:
             title = title_tag.get_text(strip=True)
+        if not title:
+            title = link.get("title", "")
 
-        thumb = ""
-        img_tag = block.select_one("img")
-        if img_tag:
-            thumb = img_tag.get("data-src") or img_tag.get("src") or ""
-
-        # Рейтинг/лайки если есть
+        # Рейтинг — "83% (6)" → берём число голосов как likes
         likes = 0
-        rating_tag = block.select_one(".rate-box .score") or block.select_one(".rating")
+        rating_pct = 0
+        rating_tag = block.select_one("div.rating")
         if rating_tag:
+            text = rating_tag.get_text(strip=True)
+            # Процент
+            m = re.search(r"(\d+)%", text)
+            if m:
+                rating_pct = int(m.group(1))
+            # Количество голосов
+            m = re.search(r"\((\d+)\)", text)
+            if m:
+                likes = int(m.group(1))
+
+        # Просмотры
+        views = 0
+        views_tag = block.select_one("div.views")
+        if views_tag:
+            views_text = re.sub(r"[^\d]", "", views_tag.get_text())
             try:
-                likes = int(re.sub(r"[^\d]", "", rating_tag.get_text()))
-            except (ValueError, TypeError):
+                views = int(views_text)
+            except ValueError:
                 pass
 
-        # Продолжительность
-        duration = ""
-        dur_tag = block.select_one(".duration") or block.select_one("span.dur")
-        if dur_tag:
-            duration = dur_tag.get_text(strip=True)
+        # Превью-видео URL (data-preview на div.img.wrap_image)
+        preview = ""
+        img_wrap = block.select_one("div.img.wrap_image")
+        if img_wrap:
+            preview = img_wrap.get("data-preview", "")
+
+        # Превью-картинка
+        thumb = ""
+        img_tag = block.select_one("img.thumb")
+        if img_tag:
+            thumb = img_tag.get("src") or img_tag.get("data-original") or ""
 
         items.append({
-            "id": f"r34v_{video_id}",
-            "page_url": href if href.startswith("http") else BASE_URL + href,
-            "title": title,
-            "thumb": thumb,
-            "likes": likes,
-            "duration": duration,
+            "id":         f"r34v_{video_id}",
+            "page_url":   href if href.startswith("http") else BASE_URL + href,
+            "title":      title,
+            "thumb":      thumb,
+            "preview":    preview,
+            "likes":      likes,
+            "rating_pct": rating_pct,
+            "views":      views,
         })
 
     return items
 
 
 def _extract_direct_url(page_html: str) -> str | None:
-    """
-    Извлекает прямую ссылку на mp4 со страницы видео.
-    rule34video хранит URL в <source> или в JS-переменной.
-    """
+    """Извлекает прямую ссылку на mp4 со страницы видео."""
     soup = BeautifulSoup(page_html, "lxml")
 
     # Метод 1: <source src="...mp4">
-    for source in soup.select("source[type='video/mp4'], source[src*='.mp4']"):
+    for source in soup.select("source"):
         src = source.get("src", "")
         if src and ".mp4" in src:
             return src
 
     # Метод 2: <video src="...">
-    video_tag = soup.select_one("video[src*='.mp4']")
+    video_tag = soup.select_one("video[src]")
     if video_tag:
-        return video_tag.get("src")
+        src = video_tag.get("src", "")
+        if ".mp4" in src:
+            return src
 
-    # Метод 3: JS переменная — ищем в script-тегах
+    # Метод 3: JS-переменные в script-тегах
     for script in soup.find_all("script"):
         text = script.string or ""
 
-        # Паттерн: video_url = "https://...mp4"
-        m = re.search(r'["\']?video_url["\']?\s*[=:]\s*["\']([^"\']+\.mp4[^"\']*)["\']', text)
-        if m:
-            return m.group(1)
-
-        # Паттерн: "file":"https://...mp4"
+        # "file":"https://...mp4"
         m = re.search(r'"file"\s*:\s*"([^"]+\.mp4[^"]*)"', text)
         if m:
-            url = m.group(1).replace("\\", "")
-            return url
+            return m.group(1).replace("\\/", "/")
 
-        # Паттерн: sources:[{file:"..."}]
-        m = re.search(r'sources\s*:\s*\[\s*\{[^}]*file\s*:\s*["\']([^"\']+\.mp4[^"\']*)["\']', text)
+        # video_url = "..."
+        m = re.search(r'video_url\s*[=:]\s*["\']([^"\']+\.mp4[^"\']*)["\']', text)
         if m:
             return m.group(1)
 
-        # Паттерн: jwplayer setup с file
-        m = re.search(r'jwplayer\([^)]+\)\.setup\([^)]*file["\s]*:["\s]*["\']([^"\']+\.mp4[^"\']*)["\']', text, re.DOTALL)
+        # sources:[{file:"..."}]
+        m = re.search(r'sources\s*:\s*\[.*?file\s*:\s*["\']([^"\']+\.mp4[^"\']*)["\']', text, re.DOTALL)
         if m:
             return m.group(1)
 
@@ -194,14 +192,13 @@ def _extract_tags_from_page(page_html: str, title: str = "") -> list[str]:
     soup = BeautifulSoup(page_html, "lxml")
     tags = []
 
-    # Теги в блоке .tags или ul.tags li a
-    for tag_link in soup.select(".tag a, .tags a, ul.tags li a, .video-tags a"):
+    for tag_link in soup.select(".tag a, .tags a, .video-tags a, ul.tags li a"):
         tag_text = tag_link.get_text(strip=True).lower()
-        tag_text = re.sub(r"\s+", "_", tag_text)  # пробелы → подчёркивание
+        tag_text = re.sub(r"\s+", "_", tag_text)
         if tag_text and tag_text not in R34V_STOP_WORDS and len(tag_text) <= 40:
             tags.append(tag_text)
 
-    # Если тегов нет — вытащим из заголовка
+    # Fallback — из заголовка
     if not tags and title:
         words = re.findall(r"[a-zA-Z]{3,}", title.lower())
         tags = [w for w in words if w not in R34V_STOP_WORDS][:10]
@@ -210,102 +207,76 @@ def _extract_tags_from_page(page_html: str, title: str = "") -> list[str]:
 
 
 def _fetch_video_details(entry: dict) -> dict | None:
-    """
-    Загружает страницу видео и извлекает прямой URL и теги.
-    Возвращает обогащённый entry или None при ошибке.
-    """
+    """Загружает страницу видео, возвращает обогащённый entry или None."""
     r = _get(entry["page_url"])
     if not r:
         return None
 
     direct_url = _extract_direct_url(r.text)
     if not direct_url:
-        logger.debug(f"r34video: не удалось извлечь URL для {entry['page_url']}")
-        return None
+        # Иногда прямой URL есть в data-preview превью-блока
+        if entry.get("preview") and ".mp4" in entry["preview"]:
+            direct_url = entry["preview"]
+        else:
+            logger.debug(f"r34video: нет прямого URL для {entry['page_url']}")
+            return None
 
     tags = _extract_tags_from_page(r.text, entry.get("title", ""))
 
-    return {
-        **entry,
-        "url": direct_url,
-        "tags": tags,
-    }
+    return {**entry, "url": direct_url, "tags": tags}
 
 
-# ── Основная функция ──────────────────────────────────────────────────────────
-
-def fetch_rule34video(
-    limit: int = 20,
-    max_pages: int = 3,
-    search_tags: str | None = None,
-) -> list[dict]:
+def fetch_rule34video(limit: int = 20, max_pages: int = 3) -> list[dict]:
     """
-    Парсит rule34video.com и возвращает список items в формате civitai_bot.py:
-
-    {
-        "id": "r34v_12345",
-        "url": "https://...mp4",
-        "tags": ["tag1", "tag2"],
-        "likes": 0,
-        "rating": "xxx",
-        "mime": "video/mp4",
-        "createdAt": None,
-        "source": "rule34video",
-        "prompt": None,
-    }
+    Парсит rule34video.com и возвращает items в формате civitai_bot.py.
     """
-    if search_tags is None:
-        search_tags = random.choice(SEARCH_TAG_SETS)
+    tag_url_template = random.choice(TAG_URLS)
+    logger.info(f"r34video: шаблон URL: {tag_url_template.split('?')[0]}")
 
-    logger.info(f"r34video: поиск по '{search_tags}', max_pages={max_pages}")
-
-    # ── Шаг 1: Собираем список видео ──────────────────────────────────────
+    # ── Шаг 1: собираем список видео ──────────────────────────────────────
     raw_entries = []
-    seen_ids = set()
+    seen_ids: set[str] = set()
 
-    for page in range(1, max_pages + 1):
-        params = {
-            "s": "search",
-            "q": search_tags,
-            "sort_by": "rating",   # rating | post_date | most_viewed
-            "from_videos": (page - 1) * 20,
-        }
-        r = _get(BASE_URL, params=params)
+    for page in range(max_pages):
+        offset = page * 20
+        url = tag_url_template.format(offset=offset)
+        r = _get(url)
         if not r:
-            logger.warning(f"r34video: нет ответа на странице {page}")
+            logger.warning(f"r34video: нет ответа, страница {page + 1}")
             break
 
         entries = _parse_video_list(r.text)
         if not entries:
-            logger.info(f"r34video: страница {page} пустая, стоп")
+            logger.info(f"r34video: страница {page + 1} пустая, стоп")
             break
 
         new = 0
-        for entry in entries:
-            if entry["id"] not in seen_ids:
-                seen_ids.add(entry["id"])
-                raw_entries.append(entry)
+        for e in entries:
+            if e["id"] not in seen_ids:
+                seen_ids.add(e["id"])
+                raw_entries.append(e)
                 new += 1
 
-        logger.info(f"r34video: страница {page}: {new} новых, итого {len(raw_entries)}")
+        logger.info(f"r34video: страница {page + 1}: {new} новых, итого {len(raw_entries)}")
 
         if len(raw_entries) >= limit * 3:
             break
 
-        # Вежливая пауза между страницами
-        time.sleep(random.uniform(0.5, 1.2))
+        time.sleep(random.uniform(0.5, 1.0))
 
     if not raw_entries:
         logger.warning("r34video: список видео пуст")
         return []
 
-    # ── Шаг 2: Сортируем по лайкам, берём топ ─────────────────────────────
-    raw_entries.sort(key=lambda x: x.get("likes", 0), reverse=True)
-    candidates = raw_entries[:limit * 2]  # берём с запасом — часть отвалится
-
+    # ── Шаг 2: сортируем по рейтингу × голоса ─────────────────────────────
+    raw_entries.sort(
+        key=lambda x: x.get("rating_pct", 0) * max(x.get("likes", 0), 1),
+        reverse=True,
+    )
+    candidates = raw_entries[:limit * 2]
     logger.info(f"r34video: кандидатов для парсинга деталей: {len(candidates)}")
 
-    # ── Шаг 3: Получаем прямые URL для каждого видео ──────────────────────
+    # ── Шаг 3: получаем прямые URL ─────────────────────────────────────────
     items = []
     for entry in candidates:
         if len(items) >= limit:
@@ -331,10 +302,8 @@ def fetch_rule34video(
             "prompt":    None,
         })
 
-        logger.debug(f"r34video: ✅ {detailed['id']} — {url[:60]}...")
+        logger.debug(f"r34video: ✅ {detailed['id']}")
+        time.sleep(random.uniform(0.3, 0.7))
 
-        # Пауза между запросами страниц видео
-        time.sleep(random.uniform(0.3, 0.8))
-
-    logger.info(f"r34video: итого готовых items: {len(items)}")
+    logger.info(f"r34video: итого items: {len(items)}")
     return items
