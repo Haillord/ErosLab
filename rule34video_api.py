@@ -170,7 +170,7 @@ def _parse_video_list(html: str) -> list[dict]:
 # ── Детали видео ───────────────────────────────────────────────────────────────
 
 def _upgrade_video_quality(url: str) -> str:
-    """Пробует заменить низкое качество на 1080p, 720p или 480p."""
+    """Пробует заменить низкое качество на 1080p, 720p, 480p или без суффикса."""
     for quality in ["1080", "720", "480"]:
         upgraded = re.sub(r'_\d+\.mp4', f'_{quality}.mp4', url)
         if upgraded == url:
@@ -182,6 +182,18 @@ def _upgrade_video_quality(url: str) -> str:
                 return upgraded
         except Exception:
             continue
+
+    # Последняя попытка — убрать суффикс качества совсем
+    no_suffix = re.sub(r'_\d+\.mp4', '.mp4', url)
+    if no_suffix != url:
+        try:
+            r = requests.head(no_suffix, headers=HEADERS, timeout=5, allow_redirects=True)
+            if r.status_code == 200:
+                logger.debug("r34video: качество → без суффикса")
+                return no_suffix
+        except Exception:
+            pass
+
     return url
 
 

@@ -451,7 +451,8 @@ def normalize_video_format(data: bytes) -> bytes:
             '-profile:v', 'main',
             '-level', '4.0',
             '-pix_fmt', 'yuv420p',
-            '-vf', "scale='if(gt(iw,ih),1080,-2)':'if(gt(iw,ih),-2,1080)'",
+            # Upscale: если разрешение меньше 480p — поднимаем до 480p для лучшего качества
+        '-vf', "scale='if(lt(min(iw\\,ih),480),if(gt(iw\\,ih),854,-2),if(gt(iw\\,ih),1080,-2))':'if(lt(min(iw\\,ih),480),if(gt(iw\\,ih),-2,480),if(gt(iw\\,ih),-2,1080))'",
             '-c:a', 'copy',
             '-movflags', '+faststart',
             tmp_out
@@ -1411,60 +1412,70 @@ async def main():
                 f"required_min={min_bitrate_kbps} kbps"
             )
 
-            if ENABLE_VIDEO_QOS and avg_bitrate_kbps < min_bitrate_kbps:
-                logger.warning(
-                    f"Skipping low-quality video: {avg_bitrate_kbps:.0f} < {min_bitrate_kbps} kbps"
-                )
-                run_metrics["skip_low_video_quality"] += 1
-                posted_ids.add(item["id"])
-                save_all()
-                continue
-            
-            # Скипаем видео с экстремальными соотношениями сторон
-            if img_width and img_height:
-                ratio = img_width / img_height
-                if ratio < 0.4 or ratio > 4.0:
-                    logger.warning(f"Skipping extreme aspect ratio: {img_width}x{img_height} ratio={ratio:.3f}")
-                    run_metrics["skip_bad_video_ratio"] = run_metrics.get("skip_bad_video_ratio", 0) + 1
-                    posted_ids.add(item["id"])
-                    save_all()
-                    continue
-            
-
-            # ✅ Автоматическая проверка и исправление формата видео для мобильного Telegram
-            data = normalize_video_format(data)
-
-            # Добавляем водяной знак ФИНАЛЬНЫМ ШАГОМ после всех конвертаций
-            if should_add_watermark(item.get("url", "")):
-                try:
-                    opacity = max(0.0, min(1.0, WATERMARK_IMAGE_OPACITY))
-                    data = add_watermark_to_video(
-                        video_data=data,
-                        text=WATERMARK_IMAGE_TEXT,
-                        opacity=opacity,
-                    )
-                except Exception as e:
-                    logger.warning(f"Video watermark apply failed, using original video: {e}")
-
-        img_hash = hashlib.sha256(data).hexdigest()
-        if img_hash in posted_hashes:
-            logger.warning("Duplicate content detected")
-            run_metrics["skip_duplicate_hash"] += 1
+    if ENABLE_VIDEO_QOS and avg_bitrate_kbps < min_bitrate_kbps:
+        # Для rule34video смягчаем порог — там часто только 360p
+        effective_min = min_bitrate_kbps
+        if item.get("source") == "rule34video":
+            effective_min = max(min_bitrate_kbps - 300, 500)
+        if avg_bitrate_kbps < effective_min:
+            logger.warning(
+                f"Skipping low-quality video: {avg_bitrate_kbps:.0f} < {effective_min} kbps"
+            )
+            run_metrics["skip_low_video_quality"] += 1
             posted_ids.add(item["id"])
             save_all()
             continue
+        else:
+            logger.info(
+                f"Video QoS: {avg_bitrate_kbps:.0f} < {min_bitrate_kbps} (standard), "
+                f"but passed softened rule34video threshold ({effective_min} kbps)"
+            )
+            
+    # Скипаем видео с экстремальными соотношениями сторон
+    if img_width and img_height:
+        ratio = img_width / img_height
+        if ratio < 0.4 or ratio > 4.0:
+            logger.warning(f"Skipping extreme aspect ratio: {img_width}x{img_height} ratio={ratio:.3f}")
+            run_metrics["skip_bad_video_ratio"] = run_metrics.get("skip_bad_video_ratio", 0) + 1
+            posted_ids.add(item["id"])
+            save_all()
+            continue
+    
 
-        # Добавляем вотермарк для GIF
-        if is_gif and should_add_watermark(item.get("url", "")):
-            try:
-                opacity = max(0.0, min(1.0, WATERMARK_IMAGE_OPACITY))
-                data = add_watermark_to_video(
-                    video_data=data,
-                    text=WATERMARK_IMAGE_TEXT,
-                    opacity=opacity,
-                )
-            except Exception as e:
-                logger.warning(f"GIF watermark apply failed, using original: {e}")
+    # ✅ Автоматическая проверка и исправление формата видео для мобильного Telegram
+    data = normalize_video_format(data)
+
+    # Добавляем водяной знак ФИНАЛЬНЫМ ШАГОМ после всех конвертаций
+    if should_add_watermark(item.get("url", "")):
+        try:
+            opacity = max(0.0, min(1.0, WATERMARK_IMAGE_OPACITY))
+            data = add_watermark_to_video(
+                video_data=data,
+                text=WATERMARK_IMAGE_TEXT,
+                opacity=opacity,
+            )
+        except Exception as e:
+            logger.warning(f"Video watermark apply failed, using original video: {e}")
+
+    img_hash = hashlib.sha256(data).hexdigest()
+    if img_hash in posted_hashes:
+        logger.warning("Duplicate content detected")
+        run_metrics["skip_duplicate_hash"] += 1
+        posted_ids.add(item["id"])
+        save_all()
+        continue
+
+    # Добавляем вотермарк для GIF
+    if is_gif and should_add_watermark(item.get("url", "")):
+        try:
+            opacity = max(0.0, min(1.0, WATERMARK_IMAGE_OPACITY))
+            data = add_watermark_to_video(
+                video_data=data,
+                text=WATERMARK_IMAGE_TEXT,
+                opacity=opacity,
+            )
+        except Exception as e:
+            logger.warning(f"GIF watermark apply failed, using original: {e}")
 
         break
     else:
