@@ -129,6 +129,24 @@ def _parse_video_list(html: str) -> list[dict]:
             except ValueError:
                 pass
 
+        # Продолжительность (div.time)
+        duration_sec = 0
+        time_tag = block.select_one("div.time")
+        if time_tag:
+            time_text = time_tag.get_text(strip=True)
+            # форматы: "0:10", "1:23", "12:34", "1:02:03"
+            parts = time_text.split(":")
+            if len(parts) == 2:
+                try:
+                    duration_sec = int(parts[0]) * 60 + int(parts[1])
+                except ValueError:
+                    pass
+            elif len(parts) == 3:
+                try:
+                    duration_sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                except ValueError:
+                    pass
+
         # Превью-mp4 (запасной источник прямого URL)
         preview = ""
         img_wrap = block.select_one("div.img.wrap_image")
@@ -136,13 +154,14 @@ def _parse_video_list(html: str) -> list[dict]:
             preview = img_wrap.get("data-preview", "")
 
         items.append({
-            "id":         f"r34v_{video_id}",
-            "page_url":   href if href.startswith("http") else BASE_URL + href,
-            "title":      title,
-            "preview":    preview,
-            "likes":      likes,
-            "rating_pct": rating_pct,
-            "views":      views,
+            "id":           f"r34v_{video_id}",
+            "page_url":     href if href.startswith("http") else BASE_URL + href,
+            "title":        title,
+            "preview":      preview,
+            "likes":        likes,
+            "rating_pct":   rating_pct,
+            "views":        views,
+            "duration_sec": duration_sec,
         })
 
     return items
@@ -151,8 +170,8 @@ def _parse_video_list(html: str) -> list[dict]:
 # ── Детали видео ───────────────────────────────────────────────────────────────
 
 def _upgrade_video_quality(url: str) -> str:
-    """Пробует заменить низкое качество на 1080p или 720p."""
-    for quality in ["1080", "720"]:
+    """Пробует заменить низкое качество на 1080p, 720p или 480p."""
+    for quality in ["1080", "720", "480"]:
         upgraded = re.sub(r'_\d+\.mp4', f'_{quality}.mp4', url)
         if upgraded == url:
             break
@@ -207,16 +226,37 @@ def _extract_tags_from_page(page_html: str, title: str = "") -> list[str]:
     soup = BeautifulSoup(page_html, "lxml")
     tags = []
 
-    for tag_link in soup.select(".tag a, .tags a, .video-tags a, ul.tags li a"):
-        tag_text = tag_link.get_text(strip=True).lower()
-        tag_text = re.sub(r"\s+", "_", tag_text)
-        if tag_text and tag_text not in R34V_STOP_WORDS and len(tag_text) <= 40:
-            tags.append(tag_text)
+    # Расширенный поиск тегов: разные верстки на разных страницах
+    selectors = [
+        ".tag a", ".tags a", ".video-tags a", "ul.tags li a",
+        ".tags_list a", ".item-tags a", ".info-block a[href*='/tags/']",
+        "div[class*='tag'] a", "span[class*='tag'] a",
+    ]
+    for selector in selectors:
+        for tag_link in soup.select(selector):
+            tag_text = tag_link.get_text(strip=True).lower()
+            tag_text = re.sub(r"\s+", "_", tag_text)
+            if tag_text and tag_text not in R34V_STOP_WORDS and len(tag_text) <= 40:
+                tags.append(tag_text)
 
-    # Fallback — из заголовка
-    if not tags and title:
+    # Удаляем дубликаты сохраняя порядок
+    seen = set()
+    tags_dedup = []
+    for t in tags:
+        if t not in seen:
+            seen.add(t)
+            tags_dedup.append(t)
+    tags = tags_dedup
+
+    # Fallback — из заголовка (даже если теги есть, дополняем)
+    if title:
         words = re.findall(r"[a-zA-Z]{3,}", title.lower())
-        tags = [w for w in words if w not in R34V_STOP_WORDS][:10]
+        for w in words:
+            if w not in R34V_STOP_WORDS and w not in seen and len(w) <= 40:
+                tags.append(w)
+                seen.add(w)
+                if len(tags) >= 20:
+                    break
 
     return tags[:20]
 
@@ -318,7 +358,18 @@ def fetch_rule34video(limit: int = 20) -> list[dict]:
 
     logger.info(f"r34video: всего собрано {len(all_raw)} сырых записей")
 
-    # ── Шаг 3: скоринг и сортировка ──────────────────────────────────────
+    # ── Шаг 3: фильтр длительности + скоринг и сортировка ────────────────
+    # Отсеиваем слишком длинные видео (>180 сек) — они жрут трафик и время
+    # Также отсеиваем нулевую длительность (не удалось распарсить)
+    before_filter = len(all_raw)
+    all_raw = [
+        e for e in all_raw
+        if e.get("duration_sec", 0) == 0 or e["duration_sec"] <= 180
+    ]
+    filtered = before_filter - len(all_raw)
+    if filtered:
+        logger.info(f"r34video: отфильтровано {filtered} длинных видео (>180s)")
+
     # score = rating_pct * log(votes+1) * log(views+1)
     # Аналог CivitAI: топ по лайкам с учётом популярности
     for e in all_raw:
