@@ -1,6 +1,7 @@
-﻿"""
-ErosLab Bot — CivitAI (только X и XXX рейтинг)
-Оптимизирован для GitHub Actions с защитой от повторов.
+"""
+ErosLab Bot — основной файл бота.
+Отвечает за оркестрацию: выбор источника, скачивание, обработку,
+наложение водяного знака и отправку в Telegram.
 """
 
 import asyncio
@@ -20,6 +21,7 @@ from PIL import Image
 import telegram
 from telegram import Bot
 from caption_generator import generate_caption
+from civitai_api import fetch_civitai
 from rule34_api import fetch_rule34
 from rule34video_api import fetch_rule34video
 from watermark import add_watermark, add_watermark_to_video, should_add_watermark
@@ -452,7 +454,7 @@ def normalize_video_format(data: bytes) -> bytes:
             '-level', '4.0',
             '-pix_fmt', 'yuv420p',
             # Upscale: если разрешение меньше 480p — поднимаем до 480p для лучшего качества
-        '-vf', "scale='if(lt(min(iw\\,ih),480),if(gt(iw\\,ih),854,-2),if(gt(iw\\,ih),1080,-2))':'if(lt(min(iw\\,ih),480),if(gt(iw\\,ih),-2,480),if(gt(iw\\,ih),-2,1080))'",
+            '-vf', "scale='if(lt(min(iw\\,ih),480),if(gt(iw\\,ih),854,-2),if(gt(iw\\,ih),1080,-2))':'if(lt(min(iw\\,ih),480),if(gt(iw\\,ih),-2,480),if(gt(iw\\,ih),-2,1080))'",
             '-c:a', 'copy',
             '-movflags', '+faststart',
             tmp_out
@@ -618,293 +620,7 @@ def extract_tags(item):
     return _shared_extract_tags_from_item(item, HASHTAG_STOP_WORDS, logger=logger, debug_logs=True)
 
 
-# ==================== CIVITAI API ====================
-def _request_with_backoff(url, params, headers, max_retries=3):
-    for attempt in range(max_retries):
-        try:
-            r = requests.get(url, params=params, headers=headers, timeout=30)
-            if r.status_code == 429:
-                wait = 2 ** attempt * 5
-                logger.warning(f"Rate limited (429), waiting {wait}s before retry {attempt + 1}/{max_retries}")
-                time.sleep(wait)
-                continue
-            if r.status_code == 500:
-                # CivitAI может быть нестабилен: не тратим время на длинные ретраи.
-                wait = 2 + attempt * 2  # 2, 4, 6
-                logger.warning(f"Server error 500, retry {attempt + 1}/{max_retries}")
-                if attempt >= max_retries - 1:
-                    return None
-                time.sleep(wait)
-                continue
-            if r.status_code == 400:
-                return r
-            r.raise_for_status()
-            return r
-        except requests.exceptions.Timeout:
-            logger.warning(f"Timeout on attempt {attempt + 1}/{max_retries}")
-            if attempt < max_retries - 1:
-                time.sleep(3)
-        except requests.exceptions.HTTPError as e:
-            if r.status_code >= 500:
-                logger.warning(f"Server error {r.status_code}, retry {attempt + 1}/{max_retries}")
-                time.sleep(2 ** attempt * 2)
-            else:
-                raise
-        except Exception as e:
-            logger.error(f"Request error: {e}")
-            raise
-    return None
-
-def _is_x_or_xxx(nsfw_level):
-    """Проверяет, что nsfwLevel соответствует X/XXX (или числовому эквиваленту)."""
-    if isinstance(nsfw_level, str):
-        value = nsfw_level.strip().lower()
-        return value in {"x", "xxx"}
-    if isinstance(nsfw_level, (int, float)):
-        # На старых/внутренних форматах высокий уровень соответствует explicit.
-        return nsfw_level >= 8
-    return False
-
-def _is_mature_or_higher(nsfw_level):
-    """Более мягкий фильтр: Mature/X/XXX (для случаев, когда X мало в выдаче)."""
-    if isinstance(nsfw_level, str):
-        value = nsfw_level.strip().lower()
-        return value in {"mature", "x", "xxx"}
-    if isinstance(nsfw_level, (int, float)):
-        # Консервативный порог для "Mature и выше" на числовых форматах.
-        return nsfw_level >= 4
-    return False
-
-def _to_int(value, default=0):
-    return _shared_to_int(value, default)
-
-def _extract_civitai_likes(item):
-    return _shared_extract_civitai_likes(item)
-
-def _extract_civitai_prompt(item: dict) -> str | None:
-    meta = item.get("meta")
-    if not isinstance(meta, dict):
-        return None
-    prompt = (
-        meta.get("prompt") or meta.get("Prompt") or meta.get("positive") or ""
-    ).strip()
-    if not prompt or len(prompt) < 20:
-        return None
-
-    prompt = re.sub(r'<[^>]+>', '', prompt)
-    prompt = re.sub(
-        r'\b(score_\d+[\w_]*|masterpiece|best quality|highres|absurdres'
-        r'|ultra[\w ]*|extremely detailed|step\d+|cfg\s*\d+|BREAK)\b',
-        '', prompt, flags=re.IGNORECASE
-    )
-    prompt = re.sub(r',\s*,', ',', prompt)
-    prompt = re.sub(r'\s+', ' ', prompt).strip(", ")
-
-    return prompt or None
-
-def _get_adaptive_max_pages(period: str | None) -> int:
-    """
-    Адаптивное количество страниц в зависимости от периода.
-    Day — свежий топ, хватает 5 страниц.
-    Week/Month/AllTime — больше контента, глубже копаем.
-    """
-    if period == "Day":
-        return 5
-    elif period in ("Week",):
-        return 10
-    else:  # Month, None (All Time) или неизвестный
-        return 15
-
-
-def _fetch_civitai_variation(base_params: dict, headers: dict, seen_ids: set) -> list[dict]:
-    """
-    Собирает items по одной вариации (одному запросу к API).
-    Возвращает список сырых item-ов.
-    """
-    all_items = []
-    next_page_url = None
-    max_pages = _get_adaptive_max_pages(base_params.get("period"))
-    
-    for page in range(1, max_pages + 1):
-        request_url = next_page_url or "https://civitai.com/api/v1/images"
-        params = None if next_page_url else {**base_params, "limit": 100}
-        
-        try:
-            r = _request_with_backoff(request_url, params=params, headers=headers)
-            if r is None:
-                logger.warning(f"CivitAI page {page}: no response for {base_params}")
-                if page == 1:
-                    return []
-                break
-
-            if r.status_code == 400:
-                logger.debug(f"CivitAI page {page}: 400 for {params}")
-                continue
-
-            data = r.json()
-            items = data.get("items", [])
-            if not items:
-                logger.debug(f"CivitAI page {page}: no items")
-                continue
-
-            for item in items:
-                item_id = item.get("id")
-                if item_id in seen_ids:
-                    continue
-                seen_ids.add(item_id)
-                all_items.append(item)
-
-            logger.info(f"CivitAI page {page}: got {len(items)} items (total: {len(all_items)})")
-
-            metadata = data.get("metadata", {}) if isinstance(data, dict) else {}
-            next_page_url = metadata.get("nextPage")
-            if not next_page_url:
-                break
-
-        except Exception as e:
-            logger.error(f"CivitAI page {page} error: {e}")
-            continue
-    
-    return all_items
-
-
-def _process_civitai_items(items: list[dict]) -> list[dict]:
-    """
-    Фильтрует сырые items: NSFW-проверка, блэклист, лайки.
-    Возвращает готовые erotic_items.
-    """
-    if not items:
-        return []
-
-    # Проверка доступности лайков
-    items_with_positive_reactions = 0
-    total_checked = 0
-    for item in items:
-        stats = item.get("stats")
-        if isinstance(stats, dict):
-            total_checked += 1
-            if any(stats.get(k, 0) for k in ("likeCount", "heartCount", "laughCount")):
-                items_with_positive_reactions += 1
-
-    likes_filter_enabled = (
-        total_checked > 0
-        and items_with_positive_reactions > total_checked * 0.1
-    )
-    logger.info(
-        f"Likes filter status: {'enabled' if likes_filter_enabled else 'disabled'} "
-        f"(items_with_reactions={items_with_positive_reactions}/{total_checked})"
-    )
-
-    erotic_items = []
-    for item in items:
-        try:
-            nsfw_level = item.get("nsfwLevel")
-            is_allowed_nsfw = _is_x_or_xxx(nsfw_level)
-            if not is_allowed_nsfw and ALLOW_MATURE_FALLBACK and _is_mature_or_higher(nsfw_level):
-                if random.random() < NSFW_RATIO:
-                    is_allowed_nsfw = True
-
-            if not is_allowed_nsfw:
-                continue
-
-            tags = extract_tags(item)
-            if has_blacklisted(tags):
-                continue
-
-            likes = _extract_civitai_likes(item)
-            if likes_filter_enabled and likes < MIN_CIVITAI_LIKES:
-                continue
-
-            erotic_items.append({
-                "id":        f"civitai_{item['id']}",
-                "url":       item.get("url", ""),
-                "tags":      tags[:15],
-                "likes":     likes,
-                "rating":    nsfw_level,
-                "post_id":   item.get("postId"),
-                "mime":      (item.get("mimeType") or "").lower(),
-                "createdAt": item.get("createdAt"),
-                "source":    "civitai",
-                "prompt":    _extract_civitai_prompt(item),
-            })
-        except Exception as e:
-            logger.error(f"Error processing item {item.get('id')}: {e}")
-            continue
-
-    return erotic_items
-
-
-def fetch_civitai(max_pages: int = 5):
-    """
-    Собирает топ-контент с CivitAI.
-
-    Стратегия:
-    1. Сначала собираем Most Reactions за все периоды (Day, Week, Month, All Time)
-       в общий пул, сортируем по лайкам, возвращаем топ.
-    2. Если ничего не нашли — fallback на Newest.
-    """
-    variations = [
-        # Most Reactions — главный источник, собираем со всех периодов
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Day", "mediaType": "video"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Week", "mediaType": "video"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Month", "mediaType": "video"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Day"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Week"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Month"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions"},  # All Time
-    ]
-
-    headers = {"Authorization": f"Bearer {CIVITAI_API_KEY}"} if CIVITAI_API_KEY else {}
-    seen_ids = set()
-
-    # ── Шаг 1: Most Reactions — собираем со всех периодов ────────────────
-    all_collected = []
-    for base_params in variations:
-        items = _fetch_civitai_variation(base_params, headers, seen_ids)
-        if items:
-            period = base_params.get("period", "All Time")
-            logger.info(
-                f"CivitAI {base_params['sort']} ({period}): "
-                f"collected {len(items)} raw items"
-            )
-            erotic = _process_civitai_items(items)
-            if erotic:
-                logger.info(
-                    f"CivitAI {base_params['sort']} ({period}): "
-                    f"{len(erotic)} suitable items"
-                )
-                all_collected.extend(erotic)
-
-    # Если нашли что-то — сортируем по лайкам и возвращаем топ
-    if all_collected:
-        all_collected.sort(key=lambda x: x["likes"], reverse=True)
-        logger.info(
-            f"CivitAI Most Reactions total: {len(all_collected)} items, "
-            f"top likes: {all_collected[0]['likes']}, "
-            f"median: {all_collected[len(all_collected)//2]['likes']}"
-        )
-        return all_collected
-
-    # ── Шаг 2: Fallback на Newest ────────────────────────────────────────
-    logger.info("CivitAI Most Reactions: no suitable items, falling back to Newest")
-    newest_variations = [
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Newest", "mediaType": "video"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Newest"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Newest", "period": "Week"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Newest", "period": "Month"},
-    ]
-
-    for base_params in newest_variations:
-        items = _fetch_civitai_variation(base_params, headers, seen_ids)
-        if items:
-            period = base_params.get("period", "N/A")
-            logger.info(f"CivitAI Newest ({period}): {len(items)} raw items")
-            erotic = _process_civitai_items(items)
-            if erotic:
-                logger.info(f"CivitAI Newest ({period}): {len(erotic)} suitable items")
-                return erotic
-
-    return []
+# ==================== ИСТОЧНИКИ / ВЕСА ====================
 
 VIDEO_EXTENSIONS = (".mp4", ".webm")
 GIF_EXTENSION = ".gif"
@@ -925,7 +641,6 @@ def _is_video_item(item: dict) -> bool:
     mime = (item.get("mime") or "").lower()
     if mime.startswith("video/"):
         return True
-    # GIF отправляем отдельно через send_animation
     if mime == "image/gif":
         return False
     return _is_video(item.get("url", ""))
@@ -939,7 +654,6 @@ def _is_photo_item(item: dict) -> bool:
 
 
 def _pick_by_content_type(fresh):
-    """70/30 видео или фото. Если нужного типа нет — берём что есть."""
     content_type = "video" if random.random() < 0.85 else "image"
     logger.info(f"Content type selection: {content_type}")
 
@@ -1002,14 +716,9 @@ def _select_item_from_fresh(source: str, fresh: list[dict]):
     return selected
 
 
-# ==================== ИСТОЧНИКИ / ВЕСА ====================
-
 def _load_source_weights() -> dict:
     """
     Читает веса источников из ENV SOURCE_WEIGHTS (JSON).
-    Пример в GitHub Secrets:
-        SOURCE_WEIGHTS = {"civitai":35,"rule34":25}
-    Если переменная не задана — дефолт ниже.
     """
     import json
     default = {
@@ -1066,7 +775,6 @@ def fetch_candidates_once():
 
     # ── Собираем доступные источники ──────────────────────────────────────
     def _fetch_rule34():
-        # Счётчики вызываем только при реальном использовании Rule34
         content_type = get_next_content_type()
         media_type = get_next_media_type()
         logger.info(f"Rule34 content_type={content_type}, media_type={media_type}")
@@ -1081,7 +789,6 @@ def fetch_candidates_once():
     weights_cfg = _load_source_weights()
     logger.info(f"Source weights: {weights_cfg}")
 
-    # Только те источники, для которых есть вес
     names   = [n for n in available if n in weights_cfg]
     weights = [weights_cfg[n] for n in names]
 
@@ -1089,9 +796,7 @@ def fetch_candidates_once():
         logger.error("Нет доступных источников!")
         return "none", []
 
-    # ── Взвешенный выбор + фоллбек-цепочка ───────────────────────────────
     primary = random.choices(names, weights=weights, k=1)[0]
-    # Цепочка: сначала выбранный, затем остальные по убыванию веса
     fallback_order = sorted(
         [n for n in names if n != primary],
         key=lambda n: weights_cfg.get(n, 0),
@@ -1113,10 +818,8 @@ def fetch_candidates_once():
             logger.warning(f"{source}: пустой ответ, пробуем следующий")
             continue
 
-        # Фильтр уже виденного
         fresh = [i for i in items if i["id"] not in posted_ids]
 
-        # Блэклист (CivitAI фильтрует сам внутри)
         if source != "civitai":
             fresh = [i for i in fresh if not has_blacklisted(i.get("tags", []))]
 
@@ -1174,10 +877,6 @@ def detect_content_type_by_tags(item):
 def _build_pack_caption_meta(image_pack: list[dict]) -> dict:
     """
     Агрегирует метаданные для общего caption альбома.
-    Приоритет:
-    - теги: общие по всем + топ уникальных
-    - likes: медиана по паку
-    - rating/date: от первого элемента (seed), чтобы сохранить контекст источника
     """
     if not image_pack:
         return {"tags": [], "likes": 0, "rating": None, "date": None}
@@ -1209,7 +908,6 @@ def _build_pack_caption_meta(image_pack: list[dict]) -> dict:
         reverse=True
     )
 
-    # Даем caption-генератору компактный, но информативный набор тегов.
     merged_tags = (shared_sorted[:10] + unique_sorted[:12])[:18]
 
     likes_values = sorted(max(0, int(i.get("likes", 0) or 0)) for i in items)
@@ -1297,7 +995,7 @@ async def main():
 
     target_chat_id = TELEGRAM_CHANNEL_ID
 
-    MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+    MAX_FILE_SIZE = 50 * 1024 * 1024
     MAX_ATTEMPTS  = 10
 
     source, fresh_items = fetch_candidates_once()
@@ -1307,7 +1005,6 @@ async def main():
         flush_stats_once()
         return
 
-    # Приоритет видео: с 85% вероятностью ставим видео первыми в attempts pool
     video_items = [i for i in fresh_items if _is_video_item(i)]
     photo_items = [i for i in fresh_items if not _is_video_item(i)]
 
@@ -1369,7 +1066,6 @@ async def main():
             and not is_gif
         )
 
-        # Получаем технические данные для caption
         img_width = None
         img_height = None
         file_size_bytes = len(data)
@@ -1381,7 +1077,6 @@ async def main():
                 posted_ids.add(item["id"])
                 save_all()
                 continue
-            # Получаем размеры изображения
             try:
                 img = Image.open(BytesIO(data))
                 img_width, img_height = img.size
@@ -1389,7 +1084,6 @@ async def main():
             except Exception as e:
                 logger.warning(f"Could not get image dimensions: {e}")
         else:
-            # Один ffprobe-вызов для всех метаданных видео
             meta = get_video_metadata(data)
             if meta["duration"] < 0.5:
                 logger.warning(f"Video too short ({meta['duration']:.2f}s), skipping")
@@ -1412,70 +1106,64 @@ async def main():
                 f"required_min={min_bitrate_kbps} kbps"
             )
 
-    if ENABLE_VIDEO_QOS and avg_bitrate_kbps < min_bitrate_kbps:
-        # Для rule34video смягчаем порог — там часто только 360p
-        effective_min = min_bitrate_kbps
-        if item.get("source") == "rule34video":
-            effective_min = max(min_bitrate_kbps - 300, 500)
-        if avg_bitrate_kbps < effective_min:
-            logger.warning(
-                f"Skipping low-quality video: {avg_bitrate_kbps:.0f} < {effective_min} kbps"
-            )
-            run_metrics["skip_low_video_quality"] += 1
+            if ENABLE_VIDEO_QOS and avg_bitrate_kbps < min_bitrate_kbps:
+                effective_min = min_bitrate_kbps
+                if item.get("source") == "rule34video":
+                    effective_min = max(min_bitrate_kbps - 300, 500)
+                if avg_bitrate_kbps < effective_min:
+                    logger.warning(
+                        f"Skipping low-quality video: {avg_bitrate_kbps:.0f} < {effective_min} kbps"
+                    )
+                    run_metrics["skip_low_video_quality"] += 1
+                    posted_ids.add(item["id"])
+                    save_all()
+                    continue
+                else:
+                    logger.info(
+                        f"Video QoS: {avg_bitrate_kbps:.0f} < {min_bitrate_kbps} (standard), "
+                        f"but passed softened rule34video threshold ({effective_min} kbps)"
+                    )
+
+            if img_width and img_height:
+                ratio = img_width / img_height
+                if ratio < 0.4 or ratio > 4.0:
+                    logger.warning(f"Skipping extreme aspect ratio: {img_width}x{img_height} ratio={ratio:.3f}")
+                    run_metrics["skip_bad_video_ratio"] = run_metrics.get("skip_bad_video_ratio", 0) + 1
+                    posted_ids.add(item["id"])
+                    save_all()
+                    continue
+
+            data = normalize_video_format(data)
+
+            if should_add_watermark(item.get("url", "")):
+                try:
+                    opacity = max(0.0, min(1.0, WATERMARK_IMAGE_OPACITY))
+                    data = add_watermark_to_video(
+                        video_data=data,
+                        text=WATERMARK_IMAGE_TEXT,
+                        opacity=opacity,
+                    )
+                except Exception as e:
+                    logger.warning(f"Video watermark apply failed, using original video: {e}")
+
+        img_hash = hashlib.sha256(data).hexdigest()
+        if img_hash in posted_hashes:
+            logger.warning("Duplicate content detected")
+            run_metrics["skip_duplicate_hash"] += 1
             posted_ids.add(item["id"])
             save_all()
             continue
-        else:
-            logger.info(
-                f"Video QoS: {avg_bitrate_kbps:.0f} < {min_bitrate_kbps} (standard), "
-                f"but passed softened rule34video threshold ({effective_min} kbps)"
-            )
-            
-    # Скипаем видео с экстремальными соотношениями сторон
-    if img_width and img_height:
-        ratio = img_width / img_height
-        if ratio < 0.4 or ratio > 4.0:
-            logger.warning(f"Skipping extreme aspect ratio: {img_width}x{img_height} ratio={ratio:.3f}")
-            run_metrics["skip_bad_video_ratio"] = run_metrics.get("skip_bad_video_ratio", 0) + 1
-            posted_ids.add(item["id"])
-            save_all()
-            continue
-    
 
-    # ✅ Автоматическая проверка и исправление формата видео для мобильного Telegram
-    data = normalize_video_format(data)
-
-    # Добавляем водяной знак ФИНАЛЬНЫМ ШАГОМ после всех конвертаций
-    if should_add_watermark(item.get("url", "")):
-        try:
-            opacity = max(0.0, min(1.0, WATERMARK_IMAGE_OPACITY))
-            data = add_watermark_to_video(
-                video_data=data,
-                text=WATERMARK_IMAGE_TEXT,
-                opacity=opacity,
-            )
-        except Exception as e:
-            logger.warning(f"Video watermark apply failed, using original video: {e}")
-
-    img_hash = hashlib.sha256(data).hexdigest()
-    if img_hash in posted_hashes:
-        logger.warning("Duplicate content detected")
-        run_metrics["skip_duplicate_hash"] += 1
-        posted_ids.add(item["id"])
-        save_all()
-        continue
-
-    # Добавляем вотермарк для GIF
-    if is_gif and should_add_watermark(item.get("url", "")):
-        try:
-            opacity = max(0.0, min(1.0, WATERMARK_IMAGE_OPACITY))
-            data = add_watermark_to_video(
-                video_data=data,
-                text=WATERMARK_IMAGE_TEXT,
-                opacity=opacity,
-            )
-        except Exception as e:
-            logger.warning(f"GIF watermark apply failed, using original: {e}")
+        if is_gif and should_add_watermark(item.get("url", "")):
+            try:
+                opacity = max(0.0, min(1.0, WATERMARK_IMAGE_OPACITY))
+                data = add_watermark_to_video(
+                    video_data=data,
+                    text=WATERMARK_IMAGE_TEXT,
+                    opacity=opacity,
+                )
+            except Exception as e:
+                logger.warning(f"GIF watermark apply failed, using original: {e}")
 
         break
     else:
@@ -1483,33 +1171,27 @@ async def main():
         flush_stats_once()
         return
 
-    # Считаем источник только один раз — по выбранному item
     source_key = f"source_{item.get('source', 'unknown')}_selected"
     run_metrics[source_key] = run_metrics.get(source_key, 0) + 1
 
-    # ========== СБОРКА ПАКА ФОТО (только CivitAI/Rule34) ==========
     image_pack = [{"item": item, "data": data, "hash": img_hash}]
     use_image_pack = False
 
     if IMAGE_PACK_ENABLED and _is_photo_item(item) and item.get("source") in ("civitai", "rule34") and IMAGE_PACK_SIZE > 1:
         pack_hashes = {img_hash}
-
-        # Используем attempts_pool вместо повторного API-запроса
         pack_candidates = [
             i for i in attempts_pool
             if i.get("id") != item.get("id")
             and _is_photo_item(i)
             and not has_blacklisted(i.get("tags", []))
         ]
-        # Сортируем по популярности
         pack_candidates.sort(key=lambda x: max(0, int(x.get("likes", 0))), reverse=True)
         candidates = pack_candidates[:IMAGE_PACK_CANDIDATE_POOL]
-        logger.info(f"Image pack candidates from pool: {len(candidates)} (pool has {len(attempts_pool)} items)")
+        logger.info(f"Image pack candidates from pool: {len(candidates)}")
 
         for candidate in candidates:
             if len(image_pack) >= IMAGE_PACK_SIZE:
                 break
-
             try:
                 r_extra = requests.get(candidate["url"], timeout=60)
                 r_extra.raise_for_status()
@@ -1518,11 +1200,8 @@ async def main():
             except Exception as e:
                 logger.warning(f"Image pack skip (download error): {candidate.get('id')} ({e})")
                 continue
-
             if len(extra_data) > MAX_FILE_SIZE:
-                logger.warning(f"Image pack skip (too large): {candidate.get('id')}")
                 continue
-
             candidate_mime = (candidate.get("mime") or "").lower()
             candidate_is_gif = (
                 "image/gif" in extra_ctype
@@ -1535,14 +1214,11 @@ async def main():
             )
             if candidate_is_gif or candidate_is_video:
                 continue
-
             if not check_media_size(extra_data, candidate["url"]):
                 continue
-
             extra_hash = hashlib.sha256(extra_data).hexdigest()
             if extra_hash in posted_hashes or extra_hash in pack_hashes:
                 continue
-
             pack_hashes.add(extra_hash)
             image_pack.append({"item": candidate, "data": extra_data, "hash": extra_hash})
 
@@ -1553,20 +1229,14 @@ async def main():
         )
 
     caption_image_data = None
-
     if is_video and data:
         thumb = get_video_thumbnail(data, seek_sec=2.0)
         if thumb:
             caption_image_data = thumb
             logger.info(f"Video thumbnail extracted for vision: {len(thumb)} bytes")
 
-    # ========== ОТПРАВКА В TELEGRAM ==========
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    
-    # Определяем тип контента (3D или AI) на основе тегов
     content_type = detect_content_type_by_tags(item)
-    
-    # Получаем дату из метаданных
     post_date = item.get("createdAt")
 
     caption_tags = item["tags"]
@@ -1583,7 +1253,6 @@ async def main():
         caption_rating = pack_meta["rating"] if pack_meta["rating"] is not None else caption_rating
         caption_likes = pack_meta["likes"]
         caption_date = pack_meta["date"] or caption_date
-        # Для альбома не фиксируем одно разрешение/размер, чтобы не вводить в заблуждение.
         caption_width = None
         caption_height = None
         caption_file_size = None
@@ -1605,14 +1274,12 @@ async def main():
         prompt_hint=item.get("prompt"),
     )
 
-
     logger.info(f"Tags for caption ({len(caption_tags)}): {caption_tags[:8]}")
     logger.info(f"Caption preview: {caption[:100]}")
 
     try:
         if is_video:
             logger.info("Sending as video")
-            logger.info("Using original video (no optimization)")
             video_io = BytesIO(data)
             video_io.name = "video.mp4"
             await send_with_retry(
@@ -1642,30 +1309,21 @@ async def main():
             if IMAGE_PACK_SPLIT_POSTS:
                 logger.info(f"Sending image pack as separate posts ({len(image_pack)} photos)")
                 for index, pack_entry in enumerate(image_pack):
-                    watermarked_data = _apply_watermark_for_image_bytes(
-                        pack_entry["data"],
-                        pack_entry["item"].get("url", ""),
-                    )
+                    watermarked_data = _apply_watermark_for_image_bytes(pack_entry["data"], pack_entry["item"].get("url", ""))
                     watermarked_data = _fit_photo_size_for_telegram(watermarked_data)
                     photo_io = BytesIO(watermarked_data)
                     photo_io.name = f"image_{index + 1}.jpg"
                     await send_with_retry(
-                        bot.send_photo,
-                        chat_id=target_chat_id,
-                        photo=photo_io,
+                        bot.send_photo, chat_id=target_chat_id, photo=photo_io,
                         caption=caption if index == 0 else None,
                         parse_mode="HTML" if index == 0 else None,
-                        write_timeout=60,
-                        read_timeout=60
+                        write_timeout=60, read_timeout=60
                     )
             else:
                 logger.info(f"Sending as image pack ({len(image_pack)} photos)")
                 media = []
                 for index, pack_entry in enumerate(image_pack):
-                    watermarked_data = _apply_watermark_for_image_bytes(
-                        pack_entry["data"],
-                        pack_entry["item"].get("url", ""),
-                    )
+                    watermarked_data = _apply_watermark_for_image_bytes(pack_entry["data"], pack_entry["item"].get("url", ""))
                     watermarked_data = _fit_photo_size_for_telegram(watermarked_data)
                     photo_io = BytesIO(watermarked_data)
                     photo_io.name = f"image_{index + 1}.jpg"
@@ -1673,13 +1331,9 @@ async def main():
                         media.append(telegram.InputMediaPhoto(media=photo_io, caption=caption, parse_mode="HTML"))
                     else:
                         media.append(telegram.InputMediaPhoto(media=photo_io))
-
                 await send_with_retry(
-                    bot.send_media_group,
-                    chat_id=target_chat_id,
-                    media=media,
-                    write_timeout=60,
-                    read_timeout=60
+                    bot.send_media_group, chat_id=target_chat_id, media=media,
+                    write_timeout=60, read_timeout=60
                 )
         else:
             logger.info("Sending as image with watermark")
@@ -1688,13 +1342,9 @@ async def main():
             photo_io = BytesIO(watermarked_data)
             photo_io.name = "image.jpg"
             await send_with_retry(
-                bot.send_photo,
-                chat_id=target_chat_id,
-                photo=photo_io,
-                caption=caption,
-                parse_mode="HTML",
-                write_timeout=60,
-                read_timeout=60
+                bot.send_photo, chat_id=target_chat_id, photo=photo_io,
+                caption=caption, parse_mode="HTML",
+                write_timeout=60, read_timeout=60
             )
 
         for pack_entry in image_pack if use_image_pack else [{"item": item, "hash": img_hash}]:

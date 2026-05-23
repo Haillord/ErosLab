@@ -89,4 +89,4 @@ jobs:
           CAPTION_STYLE: "minimal"
           STATS_TZ: "Europe/Moscow"
 
-        run: python civitai_bot.py
+        run: python eroslab_bot.py
