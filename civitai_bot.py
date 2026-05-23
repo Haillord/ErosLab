@@ -474,6 +474,89 @@ def normalize_video_format(data: bytes) -> bytes:
             os.unlink(tmp_out)
 
 
+def compress_video_to_limit(input_data: bytes, max_bytes: int = 49 * 1024 * 1024) -> bytes | None:
+    """
+    Пытается сжать видео до max_bytes через ffmpeg (target bitrate).
+    Возвращает сжатые данные или None если не получилось.
+    """
+    tmp_in = None
+    tmp_out = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp:
+            tmp.write(input_data)
+            tmp_in = tmp.name
+
+        # Узнаём длительность видео
+        probe = subprocess.run([
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            tmp_in
+        ], capture_output=True, text=True, timeout=10)
+
+        try:
+            duration = float(probe.stdout.strip())
+        except ValueError:
+            logger.warning("compress: не удалось получить длительность видео")
+            return None
+
+        if duration <= 0:
+            logger.warning("compress: нулевая длительность")
+            return None
+
+        # Целевой битрейт в kbps (оставляем 5% запас)
+        target_size_bits = max_bytes * 8 * 0.95
+        target_bitrate_kbps = int(target_size_bits / duration / 1000)
+
+        # Минимальный разумный битрейт — ниже качество будет совсем плохим
+        if target_bitrate_kbps < 300:
+            logger.warning(f"compress: целевой битрейт {target_bitrate_kbps} kbps слишком мал, скипаем")
+            return None
+
+        tmp_out = tmp_in + "_compressed.mp4"
+        logger.info(f"compress: пробуем сжать до {target_bitrate_kbps} kbps (лимит {max_bytes // 1024 // 1024} МБ)")
+
+        cmd = [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-i", tmp_in,
+            "-c:v", "libx264",
+            "-b:v", f"{target_bitrate_kbps}k",
+            "-maxrate", f"{target_bitrate_kbps}k",
+            "-bufsize", f"{target_bitrate_kbps * 2}k",
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+            tmp_out
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, timeout=300)
+        if result.returncode != 0:
+            logger.warning(f"compress: ffmpeg завершился с ошибкой: {result.stderr.decode(errors='ignore')[:200]}")
+            return None
+
+        actual_size = os.path.getsize(tmp_out)
+        if actual_size > max_bytes:
+            logger.warning(f"compress: после сжатия всё ещё {actual_size // 1024 // 1024} МБ, скипаем")
+            return None
+
+        with open(tmp_out, 'rb') as f:
+            compressed_data = f.read()
+
+        logger.info(f"compress: ✅ сжато {len(input_data) // 1024 // 1024} МБ → {actual_size // 1024 // 1024} МБ")
+        return compressed_data
+
+    except subprocess.TimeoutExpired:
+        logger.warning("compress: ffmpeg timeout")
+        return None
+    except Exception as e:
+        logger.error(f"compress: ошибка: {e}")
+        return None
+    finally:
+        if tmp_in and os.path.exists(tmp_in):
+            os.unlink(tmp_in)
+        if tmp_out and os.path.exists(tmp_out):
+            os.unlink(tmp_out)
+
+
 def get_video_thumbnail(data: bytes, seek_sec: float = 2.0) -> bytes:
     """Извлекает кадр видео как JPEG bytes для vision."""
     tmp_in = None
@@ -1243,11 +1326,16 @@ async def main():
             continue
 
         if len(data) > MAX_FILE_SIZE:
-            logger.warning(f"File too large ({len(data)} bytes > 50MB), skipping")
-            run_metrics["skip_file_too_large"] += 1
-            posted_ids.add(item["id"])
-            save_all()
-            continue
+            logger.warning(f"File too large ({len(data) // 1024 // 1024} МБ > 50MB), trying to compress...")
+            compressed_data = compress_video_to_limit(data)
+            if compressed_data is None:
+                logger.warning("Compression failed, skipping")
+                run_metrics["skip_file_too_large"] += 1
+                posted_ids.add(item["id"])
+                save_all()
+                continue
+            data = compressed_data
+            logger.info(f"Compressed to {len(data) // 1024 // 1024} MB, continuing with normal processing")
 
         item_mime = (item.get("mime") or "").lower()
         is_gif = (
@@ -1282,8 +1370,8 @@ async def main():
         else:
             # Один ffprobe-вызов для всех метаданных видео
             meta = get_video_metadata(data)
-            if meta["duration"] < 0.5 or meta["duration"] > 60:
-                logger.warning(f"Video too short ({meta['duration']:.2f}s) or too long, skipping")
+            if meta["duration"] < 0.5:
+                logger.warning(f"Video too short ({meta['duration']:.2f}s), skipping")
                 run_metrics["skip_bad_video_duration"] += 1
                 posted_ids.add(item["id"])
                 save_all()
