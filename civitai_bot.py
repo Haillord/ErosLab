@@ -21,6 +21,7 @@ import telegram
 from telegram import Bot
 from caption_generator import generate_caption
 from rule34_api import fetch_rule34
+from rule34video_api import fetch_rule34video
 from watermark import add_watermark, add_watermark_to_video, should_add_watermark
 from utils_state import (
     load_json as _shared_load_json,
@@ -1008,6 +1009,7 @@ def _load_source_weights() -> dict:
     default = {
         "civitai":  1,
         "rule34":   1,
+        "rule34video": 1,
     }
     raw = os.environ.get("SOURCE_WEIGHTS", "").strip()
     if not raw:
@@ -1055,6 +1057,7 @@ def fetch_candidates_once():
     available = {
         "civitai":  fetch_civitai,
         "rule34":   _fetch_rule34,
+        "rule34video": fetch_rule34video,
     }
 
     weights_cfg = _load_source_weights()
