@@ -1,10 +1,11 @@
 """
 rule34video.com scraper
-Парсит видео с rule34video.com, возвращает список items
-в формате совместимом с civitai_bot.py.
+Использует нативный AJAX API сайта для получения топ-видео
+по рейтингу, просмотрам и дате — аналогично CivitAI.
 """
 
 import logging
+import math
 import random
 import re
 import time
@@ -15,6 +16,7 @@ from bs4 import BeautifulSoup
 logger = logging.getLogger("ErosLab.Rule34Video")
 
 BASE_URL = "https://rule34video.com"
+API_URL  = "https://rule34video.com/?mode=async&function=get_block&block_id=custom_list_videos_most_recent_videos"
 
 HEADERS = {
     "User-Agent": (
@@ -24,29 +26,33 @@ HEADERS = {
     ),
     "Accept-Language": "en-US,en;q=0.9",
     "Referer": BASE_URL,
+    "X-Requested-With": "XMLHttpRequest",
 }
 
-# Страницы тегов — прямые URL, работают без авторизации
-# offset кратен 20 (по 20 видео на страницу)
-TAG_URLS = [
-    "https://rule34video.com/tags/source-filmmaker/?sort_by=rating&from_videos={offset}",
-    "https://rule34video.com/tags/3d/?sort_by=rating&from_videos={offset}",
-    "https://rule34video.com/tags/blender-sfm/?sort_by=rating&from_videos={offset}",
-    "https://rule34video.com/tags/animated/?sort_by=rating&from_videos={offset}",
-    "https://rule34video.com/tags/sfm/?sort_by=rating&from_videos={offset}",
+# Периоды для фильтрации по дате (параметр post_date_from)
+# Аналог CivitAI Day/Week/Month/AllTime
+DATE_FILTERS = [
+    {"post_date_from": "",       "label": "All Time"},
+    {"post_date_from": "today",  "label": "Today"},
+    {"post_date_from": "2daysago", "label": "2 Days"},
+    {"post_date_from": "weekago",  "label": "Week"},
+    {"post_date_from": "monthago", "label": "Month"},
 ]
 
 R34V_STOP_WORDS = {
     "3d", "animated", "sfm", "blender", "hentai", "video",
     "rule34", "r34", "xxx", "porn", "hd", "source_filmmaker",
-    "koikatsu", "honey_select", "animation",
+    "koikatsu", "honey_select", "animation", "the", "and",
+    "with", "for", "this", "that",
 }
 
 
-def _get(url: str, retries: int = 3) -> requests.Response | None:
+# ── HTTP ───────────────────────────────────────────────────────────────────────
+
+def _get(url: str, params: dict = None, retries: int = 3) -> requests.Response | None:
     for attempt in range(retries):
         try:
-            r = requests.get(url, headers=HEADERS, timeout=20)
+            r = requests.get(url, params=params, headers=HEADERS, timeout=20)
             if r.status_code == 200:
                 return r
             if r.status_code == 429:
@@ -54,7 +60,7 @@ def _get(url: str, retries: int = 3) -> requests.Response | None:
                 logger.warning(f"r34video: rate limited, waiting {wait}s")
                 time.sleep(wait)
                 continue
-            logger.warning(f"r34video: HTTP {r.status_code} for {url}")
+            logger.warning(f"r34video: HTTP {r.status_code}")
             return None
         except requests.exceptions.Timeout:
             logger.warning(f"r34video: timeout attempt {attempt + 1}/{retries}")
@@ -65,15 +71,18 @@ def _get(url: str, retries: int = 3) -> requests.Response | None:
     return None
 
 
+# ── Парсинг списка ─────────────────────────────────────────────────────────────
+
 def _parse_video_list(html: str) -> list[dict]:
     """
-    Парсит страницу с видео.
-    Реальная структура (из браузера):
-      div.item.thumb > a.th.js-open-popup[href=/video/ID/title/]
-        div.thumb_title  → название
-        div.rating       → "83% (6)"
-        div.views        → "774"
-        div.time         → "0:10"
+    Парсит HTML-ответ AJAX API.
+    Структура блока (из браузера):
+      div.item.thumb > a.th[href=/video/ID/title/]
+        div.thumb_title   → название
+        div.rating        → "83% (6)"
+        div.views         → "774"
+        div.time          → "0:10"
+        div.img.wrap_image[data-preview] → превью mp4
     """
     soup = BeautifulSoup(html, "lxml")
     items = []
@@ -97,17 +106,15 @@ def _parse_video_list(html: str) -> list[dict]:
         if not title:
             title = link.get("title", "")
 
-        # Рейтинг — "83% (6)" → берём число голосов как likes
+        # Рейтинг — "83% (6)"
         likes = 0
         rating_pct = 0
         rating_tag = block.select_one("div.rating")
         if rating_tag:
             text = rating_tag.get_text(strip=True)
-            # Процент
             m = re.search(r"(\d+)%", text)
             if m:
                 rating_pct = int(m.group(1))
-            # Количество голосов
             m = re.search(r"\((\d+)\)", text)
             if m:
                 likes = int(m.group(1))
@@ -122,23 +129,16 @@ def _parse_video_list(html: str) -> list[dict]:
             except ValueError:
                 pass
 
-        # Превью-видео URL (data-preview на div.img.wrap_image)
+        # Превью-mp4 (запасной источник прямого URL)
         preview = ""
         img_wrap = block.select_one("div.img.wrap_image")
         if img_wrap:
             preview = img_wrap.get("data-preview", "")
 
-        # Превью-картинка
-        thumb = ""
-        img_tag = block.select_one("img.thumb")
-        if img_tag:
-            thumb = img_tag.get("src") or img_tag.get("data-original") or ""
-
         items.append({
             "id":         f"r34v_{video_id}",
             "page_url":   href if href.startswith("http") else BASE_URL + href,
             "title":      title,
-            "thumb":      thumb,
             "preview":    preview,
             "likes":      likes,
             "rating_pct": rating_pct,
@@ -146,6 +146,24 @@ def _parse_video_list(html: str) -> list[dict]:
         })
 
     return items
+
+
+# ── Детали видео ───────────────────────────────────────────────────────────────
+
+def _upgrade_video_quality(url: str) -> str:
+    """Пробует заменить низкое качество на 1080p или 720p."""
+    for quality in ["1080", "720"]:
+        upgraded = re.sub(r'_\d+\.mp4', f'_{quality}.mp4', url)
+        if upgraded == url:
+            break
+        try:
+            r = requests.head(upgraded, headers=HEADERS, timeout=5, allow_redirects=True)
+            if r.status_code == 200:
+                logger.debug(f"r34video: качество → {quality}p")
+                return upgraded
+        except Exception:
+            continue
+    return url
 
 
 def _extract_direct_url(page_html: str) -> str | None:
@@ -156,39 +174,36 @@ def _extract_direct_url(page_html: str) -> str | None:
     for source in soup.select("source"):
         src = source.get("src", "")
         if src and ".mp4" in src:
-            return src
+            return _upgrade_video_quality(src)
 
     # Метод 2: <video src="...">
     video_tag = soup.select_one("video[src]")
     if video_tag:
         src = video_tag.get("src", "")
         if ".mp4" in src:
-            return src
+            return _upgrade_video_quality(src)
 
-    # Метод 3: JS-переменные в script-тегах
+    # Метод 3: JS-переменные
     for script in soup.find_all("script"):
         text = script.string or ""
 
-        # "file":"https://...mp4"
         m = re.search(r'"file"\s*:\s*"([^"]+\.mp4[^"]*)"', text)
         if m:
-            return m.group(1).replace("\\/", "/")
+            return _upgrade_video_quality(m.group(1).replace("\\/", "/"))
 
-        # video_url = "..."
         m = re.search(r'video_url\s*[=:]\s*["\']([^"\']+\.mp4[^"\']*)["\']', text)
         if m:
-            return m.group(1)
+            return _upgrade_video_quality(m.group(1))
 
-        # sources:[{file:"..."}]
         m = re.search(r'sources\s*:\s*\[.*?file\s*:\s*["\']([^"\']+\.mp4[^"\']*)["\']', text, re.DOTALL)
         if m:
-            return m.group(1)
+            return _upgrade_video_quality(m.group(1))
 
     return None
 
 
 def _extract_tags_from_page(page_html: str, title: str = "") -> list[str]:
-    """Извлекает теги со страницы видео."""
+    """Извлекает теги со страницы видео для caption."""
     soup = BeautifulSoup(page_html, "lxml")
     tags = []
 
@@ -214,9 +229,9 @@ def _fetch_video_details(entry: dict) -> dict | None:
 
     direct_url = _extract_direct_url(r.text)
     if not direct_url:
-        # Иногда прямой URL есть в data-preview превью-блока
+        # Fallback: превью-mp4 из data-preview
         if entry.get("preview") and ".mp4" in entry["preview"]:
-            direct_url = entry["preview"]
+            direct_url = _upgrade_video_quality(entry["preview"])
         else:
             logger.debug(f"r34video: нет прямого URL для {entry['page_url']}")
             return None
@@ -226,57 +241,105 @@ def _fetch_video_details(entry: dict) -> dict | None:
     return {**entry, "url": direct_url, "tags": tags}
 
 
-def fetch_rule34video(limit: int = 20, max_pages: int = 3) -> list[dict]:
-    """
-    Парсит rule34video.com и возвращает items в формате civitai_bot.py.
-    """
-    tag_url_template = random.choice(TAG_URLS)
-    logger.info(f"r34video: шаблон URL: {tag_url_template.split('?')[0]}")
+# ── Сбор по одной вариации API ─────────────────────────────────────────────────
 
-    # ── Шаг 1: собираем список видео ──────────────────────────────────────
-    raw_entries = []
-    seen_ids: set[str] = set()
+def _fetch_variation(sort_by: str, date_filter: dict, pages: int, seen_ids: set) -> list[dict]:
+    """
+    Запрашивает AJAX API для одной комбинации sort_by + период.
+    Возвращает список сырых записей.
+    """
+    label = date_filter.get("label", "")
+    post_date_from = date_filter.get("post_date_from", "")
+    collected = []
 
-    for page in range(max_pages):
+    for page in range(pages):
         offset = page * 20
-        url = tag_url_template.format(offset=offset)
-        r = _get(url)
+        params = {
+            "tag_ids":        "",
+            "sort_by":        sort_by,
+            "from_videos":    offset,
+        }
+        if post_date_from:
+            params["post_date_from"] = post_date_from
+
+        r = _get(API_URL, params=params)
         if not r:
-            logger.warning(f"r34video: нет ответа, страница {page + 1}")
             break
 
         entries = _parse_video_list(r.text)
         if not entries:
-            logger.info(f"r34video: страница {page + 1} пустая, стоп")
             break
 
         new = 0
         for e in entries:
             if e["id"] not in seen_ids:
                 seen_ids.add(e["id"])
-                raw_entries.append(e)
+                collected.append(e)
                 new += 1
 
-        logger.info(f"r34video: страница {page + 1}: {new} новых, итого {len(raw_entries)}")
+        if new == 0:
+            break  # все уже видели
 
-        if len(raw_entries) >= limit * 3:
-            break
+        time.sleep(random.uniform(0.3, 0.7))
 
-        time.sleep(random.uniform(0.5, 1.0))
+    if collected:
+        logger.info(f"r34video: sort={sort_by} period={label}: {len(collected)} видео")
 
-    if not raw_entries:
-        logger.warning("r34video: список видео пуст")
+    return collected
+
+
+# ── Основная функция ───────────────────────────────────────────────────────────
+
+def fetch_rule34video(limit: int = 20) -> list[dict]:
+    """
+    Парсит rule34video.com через нативный AJAX API.
+    Стратегия аналогична CivitAI:
+      1. Собираем топ по рейтингу за разные периоды
+      2. Добавляем топ по просмотрам
+      3. Объединяем, сортируем по score, берём лучшие
+      4. Для каждого получаем прямой URL видео
+    """
+
+    seen_ids: set[str] = set()
+    all_raw: list[dict] = []
+
+    # ── Шаг 1: топ по рейтингу за разные периоды ─────────────────────────
+    for date_filter in DATE_FILTERS:
+        entries = _fetch_variation("rating", date_filter, pages=2, seen_ids=seen_ids)
+        all_raw.extend(entries)
+
+    # ── Шаг 2: топ по просмотрам (All Time) ──────────────────────────────
+    entries = _fetch_variation("video_viewed", {"label": "All Time", "post_date_from": ""}, pages=2, seen_ids=seen_ids)
+    all_raw.extend(entries)
+
+    if not all_raw:
+        logger.warning("r34video: ничего не нашли")
         return []
 
-    # ── Шаг 2: сортируем по рейтингу × голоса ─────────────────────────────
-    raw_entries.sort(
-        key=lambda x: x.get("rating_pct", 0) * max(x.get("likes", 0), 1),
-        reverse=True,
-    )
-    candidates = raw_entries[:limit * 2]
-    logger.info(f"r34video: кандидатов для парсинга деталей: {len(candidates)}")
+    logger.info(f"r34video: всего собрано {len(all_raw)} сырых записей")
 
-    # ── Шаг 3: получаем прямые URL ─────────────────────────────────────────
+    # ── Шаг 3: скоринг и сортировка ──────────────────────────────────────
+    # score = rating_pct * log(votes+1) * log(views+1)
+    # Аналог CivitAI: топ по лайкам с учётом популярности
+    for e in all_raw:
+        votes = max(e.get("likes", 0), 0)
+        views = max(e.get("views", 0), 0)
+        pct   = max(e.get("rating_pct", 0), 0)
+        e["_score"] = pct * math.log(votes + 1) * math.log(views + 1)
+
+    all_raw.sort(key=lambda x: x["_score"], reverse=True)
+
+    top_score = all_raw[0]["_score"] if all_raw else 0
+    med_score = all_raw[len(all_raw) // 2]["_score"] if all_raw else 0
+    logger.info(
+        f"r34video: top_score={top_score:.1f}, "
+        f"median_score={med_score:.1f}, "
+        f"кандидатов для деталей: {min(len(all_raw), limit * 2)}"
+    )
+
+    candidates = all_raw[:limit * 2]
+
+    # ── Шаг 4: получаем прямые URL и теги ─────────────────────────────────
     items = []
     for entry in candidates:
         if len(items) >= limit:
@@ -302,8 +365,7 @@ def fetch_rule34video(limit: int = 20, max_pages: int = 3) -> list[dict]:
             "prompt":    None,
         })
 
-        logger.debug(f"r34video: ✅ {detailed['id']}")
-        time.sleep(random.uniform(0.3, 0.7))
+        time.sleep(random.uniform(0.2, 0.5))
 
     logger.info(f"r34video: итого items: {len(items)}")
     return items
