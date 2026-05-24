@@ -29,6 +29,24 @@ HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
 }
 
+# Глобальная сессия с куками
+_session = requests.Session()
+_session.headers.update(HEADERS)
+_session_initialized = False
+
+
+def _init_session():
+    """Инициализирует сессию — получает куки с главной страницы."""
+    global _session_initialized
+    if _session_initialized:
+        return
+    try:
+        _session.get(BASE_URL, timeout=10)
+        _session_initialized = True
+        logger.debug(f"r34video: сессия инициализирована, куки: {dict(_session.cookies)}")
+    except Exception as e:
+        logger.warning(f"r34video: не удалось инициализировать сессию: {e}")
+
 # Только most viewed за разные периоды — там самый сок
 VARIATIONS = [
     {"sort_by": "video_viewed", "post_date_from": "",         "label": "All Time"},
@@ -52,9 +70,10 @@ R34V_STOP_WORDS = {
 # ── HTTP ───────────────────────────────────────────────────────────────────────
 
 def _get(url: str, params: dict = None, retries: int = 3) -> requests.Response | None:
+    _init_session()
     for attempt in range(retries):
         try:
-            r = requests.get(url, params=params, headers=HEADERS, timeout=20)
+            r = _session.get(url, params=params, timeout=20)
             if r.status_code == 200:
                 return r
             if r.status_code == 429:
@@ -174,7 +193,7 @@ def _upgrade_video_quality(url: str) -> str:
         if upgraded == url:
             break
         try:
-            r = requests.head(upgraded, headers=HEADERS, timeout=5, allow_redirects=True)
+            r = _session.head(upgraded, timeout=5, allow_redirects=True)
             if r.status_code == 200:
                 logger.debug(f"r34video: качество → {quality}p")
                 return upgraded
