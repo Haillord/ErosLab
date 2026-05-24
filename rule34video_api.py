@@ -185,53 +185,35 @@ def _upgrade_video_quality(url: str) -> str:
 
 
 def _extract_direct_url(page_html: str) -> str | None:
-    """Извлекает прямую ссылку на mp4 со страницы видео. Выбирает максимальное качество."""
+    """Извлекает прямую ссылку на mp4 со страницы видео."""
     soup = BeautifulSoup(page_html, "lxml")
 
-    # Метод 1: собираем ВСЕ <source> теги и берём максимальное качество
-    # Страница сама отдаёт все варианты — токены уже валидные, HEAD не нужен
+    # Метод 1: <video src="..."> — основной, содержит токен и качество
+    video_tag = soup.select_one("video[src]")
+    if video_tag:
+        src = video_tag.get("src", "")
+        if ".mp4" in src:
+            logger.debug(f"r34video: URL из <video src>: {src[:80]}...")
+            return src
+
+    # Метод 2: <source src="..."> (на случай другой вёрстки)
     quality_map = {}
     for source in soup.select("source"):
         src = source.get("src", "")
         if not src or ".mp4" not in src:
             continue
-        m = re.search(r'_(\d+)\.mp4', src)
-        if m:
-            quality_map[int(m.group(1))] = src
-        else:
-            quality_map[0] = src  # без суффикса качества
+        m = re.search(r'_(\d+p?)\.mp4', src)
+        quality_map[int(m.group(1).replace("p", "")) if m else 0] = src
 
     if quality_map:
-        best_q = max(quality_map.keys())
-        best_url = quality_map[best_q]
-        logger.debug(f"r34video: качество {best_q}p из доступных {sorted(quality_map.keys())}")
+        best_url = quality_map[max(quality_map.keys())]
+        logger.debug(f"r34video: URL из <source>: {best_url[:80]}...")
         return best_url
 
-    # Метод 2: <video src="...">
-    video_tag = soup.select_one("video[src]")
-    if video_tag:
-        src = video_tag.get("src", "")
-        if ".mp4" in src:
-            return src
-
-    # Метод 3: JS-переменные в script-тегах
+    # Метод 3: JS-переменные
     for script in soup.find_all("script"):
         text = script.string or ""
 
-        # Ищем все mp4 ссылки с качеством в JS
-        js_quality_map = {}
-        for js_m in re.finditer(r'"([^"]+_(\d+)\.mp4[^"]*)"', text):
-            url_candidate = js_m.group(1).replace("\\/", "/")
-            q = int(js_m.group(2))
-            if url_candidate.startswith("http"):
-                js_quality_map[q] = url_candidate
-
-        if js_quality_map:
-            best_q = max(js_quality_map.keys())
-            logger.debug(f"r34video: JS качество {best_q}p")
-            return js_quality_map[best_q]
-
-        # Fallback паттерны если качества нет в имени файла
         m = re.search(r'"file"\s*:\s*"([^"]+\.mp4[^"]*)"', text)
         if m:
             return m.group(1).replace("\\/", "/")
