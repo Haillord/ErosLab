@@ -213,6 +213,21 @@ def _extract_direct_url(page_html: str) -> str | None:
         src = video_tag.get("src", "")
         if ".mp4" in src:
             logger.debug(f"r34video: URL из <video src>: {src[:80]}...")
+            # Пробуем апгрейд качества, сохраняя токен в query-строке
+            base = src.split("?")[0]
+            query = src[len(base):]  # включая "?" или пусто
+            for quality in ["1080p", "720p", "480p"]:
+                upgraded = re.sub(r'_\d+p?\.mp4', f'_{quality}.mp4', base) + query
+                if upgraded == src:
+                    continue
+                try:
+                    r = _session.head(upgraded, timeout=5, allow_redirects=True)
+                    if r.status_code == 200:
+                        logger.debug(f"r34video: апгрейд → {quality}")
+                        return upgraded
+                except Exception:
+                    continue
+            # Если апгрейд не удался — возвращаем оригинал
             return src
 
     # Метод 2: <source src="..."> (на случай другой вёрстки)
