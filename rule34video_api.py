@@ -6,6 +6,7 @@ rule34video.com scraper
 
 import logging
 import math
+import os
 import random
 import re
 import time
@@ -34,6 +35,10 @@ _session = requests.Session()
 _session.headers.update(HEADERS)
 _session_initialized = False
 
+# Авторизационные куки из переменных окружения (если заданы)
+R34V_PHPSESSID = os.getenv("R34V_PHPSESSID", "")
+R34V_KT_ACCTOKEN = os.getenv("R34V_KT_ACCTOKEN", "")
+
 
 def _init_session():
     """Инициализирует сессию — получает куки с главной страницы."""
@@ -42,6 +47,15 @@ def _init_session():
         return
     try:
         _session.get(BASE_URL, timeout=10)
+        # Если заданы авторизационные куки — устанавливаем их принудительно
+        if R34V_PHPSESSID or R34V_KT_ACCTOKEN:
+            auth_cookies = {}
+            if R34V_PHPSESSID:
+                auth_cookies["PHPSESSID"] = R34V_PHPSESSID
+            if R34V_KT_ACCTOKEN:
+                auth_cookies["kt_acctoken"] = R34V_KT_ACCTOKEN
+            requests.utils.add_dict_to_cookiejar(_session.cookies, auth_cookies)
+            logger.info(f"r34video: установлены авторизационные куки ({len(auth_cookies)} шт.)")
         _session_initialized = True
         logger.debug(f"r34video: сессия инициализирована, куки: {dict(_session.cookies)}")
     except Exception as e:

@@ -65,6 +65,8 @@ jobs:
           R34_API_KEY: ${{ secrets.R34_API_KEY }}
           R34_USER_ID: ${{ secrets.R34_USER_ID }}
           RULE34_MIN_SCORE: "10"
+          R34V_PHPSESSID: ${{ secrets.R34V_PHPSESSID }}
+          R34V_KT_ACCTOKEN: ${{ secrets.R34V_KT_ACCTOKEN }}
 
           # ── Настройки бота ─────────────────────────────────────────────
           REVIEW_MODE: "false"
