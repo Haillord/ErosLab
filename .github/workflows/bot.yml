@@ -17,6 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          # Если скрипт пушит в репозиторий, замените на ${{ secrets.GH_TOKEN }}
           token: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Setup Python
@@ -34,7 +35,7 @@ jobs:
           
       - name: Install Python dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Install Playwright browser
@@ -42,6 +43,7 @@ jobs:
           playwright install chromium --with-deps
 
       - name: Setup yt-dlp
+        id: setup-yt-dlp  # <-- ДОБАВЛЕН ID ДЛЯ КОРРЕКТНОЙ ПРОВЕРКИ УСЛОВИЯ
         uses: AnimMouse/setup-yt-dlp@v3
         with:
           ffmpeg: true
@@ -49,8 +51,8 @@ jobs:
       - name: Install ffmpeg (fallback)
         if: steps.setup-yt-dlp.outputs.ffmpeg != 'true'
         run: |
-          timeout 300 sudo apt-get update --quiet || true
-          timeout 300 sudo apt-get install -y ffmpeg --no-install-recommends || true
+          sudo apt-get update --quiet || true
+          sudo apt-get install -y ffmpeg --no-install-recommends || true
 
       - name: Run ErosLab Bot (CivitAI)
         env:
