@@ -25,6 +25,20 @@
 
 <br>
 
+<p align="center">
+  <b>🌐 Выбери язык / Choose language:</b>
+  <br><br>
+  <a href="#-русская-версия">🇷🇺 Русский</a>
+  &nbsp;&nbsp;|&nbsp;&nbsp;
+  <a href="#-english-version">🇬🇧 English</a>
+</p>
+
+<br>
+
+<details>
+<summary><b>🇷🇺 Русская версия</b></summary>
+<br>
+
 <div align="center" style="background: linear-gradient(135deg, rgba(255,34,68,0.08) 0%, rgba(26,26,26,0.95) 100%); border: 1px solid #333; border-radius: 14px; padding: 22px 28px; margin: 10px 0;">
 
 **ErosLab** — полностью автономная система постинга контента в Telegram.
@@ -151,6 +165,139 @@ ErosLab/
 
 </details>
 
+</details>
+
+<details>
+<summary><b>🇬🇧 English version</b></summary>
+<br>
+
+<div align="center" style="background: linear-gradient(135deg, rgba(255,34,68,0.08) 0%, rgba(26,26,26,0.95) 100%); border: 1px solid #333; border-radius: 14px; padding: 22px 28px; margin: 10px 0;">
+
+**ErosLab** — a fully autonomous Telegram content posting system.
+
+Runs **24/7 for free** on GitHub Actions. No server. No costs.
+
+Content is selected, filtered, captioned and published **automatically**.
+
+</div>
+
+<br>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### ⚙️ Infrastructure
+- **Serverless** — GitHub Actions, $0/month
+- **Gist as DB** — state without repo commits
+- **2 sources** — CivitAI, Rule34
+- **Fallback chain** — if a source fails, picks next by weight
+
+</td>
+<td width="50%" valign="top">
+
+### 🧠 Intelligence
+- **AI captions** — Groq + OpenRouter + Vision
+- **Deduplication** — SHA256 hash of each file
+- **QoS filter** — minimum bitrate for 480p/720p/1080p
+- **Blacklist** — auto-filtering of unwanted tags
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🎨 Media
+- **Watermarks** — on photos & video via PIL + FFmpeg
+- **Image Pack** — auto-albums from 3 photos
+- **Video normalization** — yuv420p, h264, max 1080p
+- **Aspect ratio fix** — skip extreme aspect ratios
+
+</td>
+<td width="50%" valign="top">
+
+### 🛡️ Safety
+- **History of 5000** — duplicate protection
+- **Content filter** — NSFW only of required type
+- **Size filter** — min. 720px on both sides
+
+</td>
+</tr>
+</table>
+
+<br>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
+  <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Gist_API-181717?style=for-the-badge&logo=github&logoColor=white"/>
+  <br>
+  <img src="https://img.shields.io/badge/CivitAI-FF2244?style=for-the-badge&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Rule34-FF6600?style=for-the-badge&logoColor=white"/>
+  <br>
+  <img src="https://img.shields.io/badge/Groq-00A67E?style=for-the-badge&logoColor=white"/>
+  <img src="https://img.shields.io/badge/FFmpeg-007808?style=for-the-badge&logo=ffmpeg&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Pillow-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
+  <img src="https://img.shields.io/badge/python--telegram--bot-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white"/>
+</p>
+
+<br>
+
+<details>
+<summary><b>📂 Show project structure</b></summary>
+<br>
+
+```
+ErosLab/
+│
+├── 🔴  civitai_bot.py          — main engine (NSFW)
+├── 🤍  wallpapers_bot.py       — wallpapers bot (SFW, Wallhaven)
+│
+├── ⚙️  gist_storage.py         — state storage in Gist
+├── 🧠  caption_generator.py    — AI caption generator
+├── 🖼️  watermark.py            — watermarks (photo + video)
+├── 🎬  make_slideshow.py       — wallpaper slideshow builder
+│
+├── 🔎  rule34_api.py           — Rule34 parser
+│
+├── 🛠️  utils_state.py          — statistics & state
+├── 🛠️  utils_tags.py           — tag processing
+└── 🛠️  utils_telegram_media.py — sending media to Telegram
+```
+
+</details>
+
+<details>
+<summary><b>⚙️ Setup — GitHub Secrets</b></summary>
+<br>
+
+`Settings` → `Secrets and variables` → `Actions`
+
+**NSFW bot:**
+
+| Secret | Description | |
+|--------|-------------|-|
+| `TELEGRAM_BOT_TOKEN` | Main bot token | ✅ |
+| `TELEGRAM_CHANNEL_ID` | ID or @username of NSFW channel | ✅ |
+| `GH_TOKEN` | Classic Token with Gist permissions | ✅ |
+| `GIST_ID` | Secret Gist ID | ✅ |
+| `CIVITAI_API_KEY` | CivitAI API access | ✅ |
+| `R34_USER_ID` / `R34_API_KEY` | Rule34 authorization | ✅ |
+| `SOURCE_WEIGHTS` | JSON weights: `{"civitai":35,"rule34":25}` | ⚡ opt. |
+| `GROQ_API_KEY` | AI caption generation | ⚡ opt. |
+| `OPENROUTER_API_KEY` | Vision models for captions | ⚡ opt. |
+
+**Wallpapers bot:**
+
+| Secret | Description | |
+|--------|-------------|-|
+| `TELEGRAM_BOT_TOKEN_WALLPAPERS` | Wallpapers bot token | ✅ |
+| `TELEGRAM_CHANNEL_ID_WALLPAPERS` | ID or @username of SFW channel | ✅ |
+| `WALLHAVEN_API_KEY` | Wallhaven access | ✅ |
+
+</details>
+
+</details>
 
 <br>
 
