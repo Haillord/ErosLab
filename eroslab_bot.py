@@ -24,7 +24,7 @@ from caption_generator import generate_caption
 from civitai_api import fetch_civitai
 from rule34_api import fetch_rule34
 from rule34video_api import fetch_rule34video
-from rule34gen_api import fetch_rule34gen
+from rule34gen_api import fetch_rule34gen, download_file as r34gen_download
 from watermark import add_watermark, add_watermark_to_video, should_add_watermark
 from utils_state import (
     load_json as _shared_load_json,
@@ -1049,11 +1049,17 @@ async def main():
 
         try:
             logger.info(f"Downloading: {item['url']}")
-            r = requests.get(item["url"], timeout=60)
-            r.raise_for_status()
-            data = r.content
-            logger.info(f"Downloaded {len(data)} bytes")
-            download_content_type = (r.headers.get("Content-Type") or "").lower()
+            if item.get("source") == "rule34gen":
+                data, download_content_type = r34gen_download(item["url"])
+                if data is None:
+                    raise Exception("r34gen download failed")
+                logger.info(f"Downloaded {len(data)} bytes")
+            else:
+                r = requests.get(item["url"], timeout=60)
+                r.raise_for_status()
+                data = r.content
+                logger.info(f"Downloaded {len(data)} bytes")
+                download_content_type = (r.headers.get("Content-Type") or "").lower()
         except Exception as e:
             logger.error(f"Download Error: {e}")
             run_metrics["skip_download_error"] += 1
@@ -1211,10 +1217,15 @@ async def main():
             if len(image_pack) >= IMAGE_PACK_SIZE:
                 break
             try:
-                r_extra = requests.get(candidate["url"], timeout=60)
-                r_extra.raise_for_status()
-                extra_data = r_extra.content
-                extra_ctype = (r_extra.headers.get("Content-Type") or "").lower()
+                if candidate.get("source") == "rule34gen":
+                    extra_data, extra_ctype = r34gen_download(candidate["url"])
+                    if extra_data is None:
+                        raise Exception("r34gen download failed")
+                else:
+                    r_extra = requests.get(candidate["url"], timeout=60)
+                    r_extra.raise_for_status()
+                    extra_data = r_extra.content
+                    extra_ctype = (r_extra.headers.get("Content-Type") or "").lower()
             except Exception as e:
                 logger.warning(f"Image pack skip (download error): {candidate.get('id')} ({e})")
                 continue

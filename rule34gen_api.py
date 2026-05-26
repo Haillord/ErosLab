@@ -418,3 +418,20 @@ async def fetch_rule34gen(limit: int = 20) -> list[dict]:
 
     logger.info(f"r34gen: итого items: {len(items)}")
     return items
+
+
+# ── Скачивание файла через сессию (для eroslab_bot.py) ─────────────────────────
+
+def download_file(url: str, timeout: int = 60) -> tuple[Optional[bytes], Optional[str]]:
+    """
+    Скачивает файл через авторизованную сессию rule34gen.
+    Возвращает (data, content_type).
+    """
+    _init_session()
+    try:
+        r = _session.get(url, timeout=timeout)
+        r.raise_for_status()
+        return r.content, r.headers.get("Content-Type", "").lower()
+    except Exception as e:
+        logger.error(f"r34gen: ошибка скачивания {url}: {e}")
+        return None, None
