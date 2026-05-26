@@ -76,16 +76,13 @@ def _init_session():
         return
     try:
         _session.get(BASE_URL, timeout=15)
-        auth_cookies = {}
         if R34G_PHPSESSID:
-            auth_cookies["PHPSESSID"] = R34G_PHPSESSID
-        if R34G_KT_ACCTOKEN:
-            auth_cookies["kt_acctoken"] = R34G_KT_ACCTOKEN
-        if auth_cookies:
-            requests.utils.add_dict_to_cookiejar(_session.cookies, auth_cookies)
-            logger.info(f"r34gen: куки авторизации установлены ({len(auth_cookies)} шт.)")
+            requests.utils.add_dict_to_cookiejar(
+                _session.cookies, {"PHPSESSID": R34G_PHPSESSID}
+            )
+            logger.info("r34gen: PHPSESSID установлен")
         _session_initialized = True
-        logger.debug(f"r34gen: сессия инициализирована")
+        logger.debug("r34gen: сессия инициализирована")
     except Exception as e:
         logger.warning(f"r34gen: не удалось инициализировать сессию: {e}")
 
@@ -208,16 +205,24 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
             viewport={"width": 1280, "height": 720},
         )
 
-        # Передаём куки сессии в Playwright
-        playwright_cookies = []
+        # Передаём PHPSESSID в Playwright, если есть
         if R34G_PHPSESSID:
-            playwright_cookies.append({"name": "PHPSESSID", "value": R34G_PHPSESSID,
-                                        "domain": "rule34gen.com", "path": "/"})
-        if R34G_KT_ACCTOKEN:
-            playwright_cookies.append({"name": "kt_acctoken", "value": R34G_KT_ACCTOKEN,
-                                        "domain": "rule34gen.com", "path": "/"})
-        if playwright_cookies:
-            await context.add_cookies(playwright_cookies)
+            await context.add_cookies([{
+                "name": "PHPSESSID", "value": R34G_PHPSESSID,
+                "domain": "rule34gen.com", "path": "/"
+            }])
+
+        # Загружаем главную страницу чтобы получить актуальные куки (kt_acctoken и др.)
+        init_page = await context.new_page()
+        await init_page.goto(BASE_URL, timeout=15_000, wait_until="domcontentloaded")
+        await init_page.close()
+
+        # Синхронизируем куки из браузера в requests-сессию
+        pw_cookies = await context.cookies()
+        _session_initialized = True  # сессия уже инициализирована
+        for c in pw_cookies:
+            _session.cookies.set(c["name"], c["value"], domain=c.get("domain", "rule34gen.com"))
+        logger.info(f"r34gen: синхронизировано {len(pw_cookies)} кук из Playwright → requests")
 
         for entry in entries:
             mp4_urls: list[str] = []
