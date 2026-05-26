@@ -8,7 +8,6 @@ on:
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     permissions:
       contents: write
     
@@ -17,6 +16,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          # Если GitHub снова выдаст 403 на GITHUB_TOKEN, замените строчку ниже на: token: ${{ secrets.GH_TOKEN }}
           token: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Setup Python
@@ -34,13 +34,15 @@ jobs:
           
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install -r requirements.txt
 
+      # Новые шаги установки Playwright, если они нужны для новой версии скрипта
       - name: Install Playwright browser
         run: |
           playwright install chromium --with-deps
 
+      # Прямая и стабильная установка зависимостей без использования сторонних упавших экшенов
       - name: Install system ffmpeg
         run: |
           sudo apt-get update --quiet
@@ -48,7 +50,7 @@ jobs:
 
       - name: Install yt-dlp via pip
         run: |
-          python -m pip install --upgrade yt-dlp
+          pip install --upgrade yt-dlp
 
       - name: Run ErosLab Bot (CivitAI)
         env:
@@ -68,8 +70,8 @@ jobs:
           R34_API_KEY: ${{ secrets.R34_API_KEY }}
           R34_USER_ID: ${{ secrets.R34_USER_ID }}
           RULE34_MIN_SCORE: "10"
-          R34V_PHPSESSID: ${{ secrets.R34V_PHPSESSID }}
-          R34V_KT_ACCTOKEN: ${{ secrets.R34V_KT_ACCTOKEN }}
+          R34V_PHPSESSID: ${{ secrets.R34V_PHPSESSID }}       # Новая переменная
+          R34V_KT_ACCTOKEN: ${{ secrets.R34V_KT_ACCTOKEN }}   # Новая переменная
 
           # ── Настройки бота ─────────────────────────────────────────────
           REVIEW_MODE: "false"
@@ -94,4 +96,5 @@ jobs:
           CAPTION_STYLE: "minimal"
           STATS_TZ: "Europe/Moscow"
 
+        # ВНИМАНИЕ: Проверьте, как точно называется ваш файл в репозитории: civitai_bot.py или eroslab_bot.py
         run: python eroslab_bot.py
