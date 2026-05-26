@@ -25,16 +25,6 @@
 
 <br>
 
-<p align="center">
-  <b>🌐 Выбери язык / Choose language:</b>
-  <br><br>
-  <a href="#-русская-версия">🇷🇺 Русский</a>
-  &nbsp;&nbsp;|&nbsp;&nbsp;
-  <a href="#-english-version">🇬🇧 English</a>
-</p>
-
-<br>
-
 <details>
 <summary><b>🇷🇺 Русская версия</b></summary>
 <br>
