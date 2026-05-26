@@ -50,8 +50,6 @@
 - **Gist как БД** — состояние без коммитов в репо
 - **4 источника** — CivitAI, Rule34 API, Rule34Video, Rule34Gen
 - **Fallback-цепочка** — если источник упал, берёт следующий по весу
-- **Steam Deals** — отдельный бот по скидкам NSFW-игр
-
 </td>
 <td width="50%" valign="top">
 
@@ -97,7 +95,6 @@
   <img src="https://img.shields.io/badge/CivitAI-FF2244?style=for-the-badge&logoColor=white"/>
   <img src="https://img.shields.io/badge/Rule34-FF6600?style=for-the-badge&logoColor=white"/>
   <br>
-  <img src="https://img.shields.io/badge/Steam-000000?style=for-the-badge&logo=steam&logoColor=white"/>
   <img src="https://img.shields.io/badge/Groq-00A67E?style=for-the-badge&logoColor=white"/>
   <img src="https://img.shields.io/badge/FFmpeg-007808?style=for-the-badge&logo=ffmpeg&logoColor=white"/>
   <img src="https://img.shields.io/badge/Pillow-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
@@ -118,7 +115,6 @@ ErosLab/
 │
 ├── 🔴  eroslab_bot.py           — основной движок (NSFW)
 ├── 🤍  wallpapers_bot.py        — бот обоев (SFW, Wallhaven)
-├── 🎮  steam_deals.py           — бот скидок NSFW-игр (Steam)
 │
 ├── ⚙️  gist_storage.py          — хранилище состояния в Gist
 ├── 🧠  caption_generator.py     — AI генератор подписей
@@ -185,22 +181,6 @@ ErosLab/
 | `TELEGRAM_CHANNEL_ID_WALLPAPERS` | ID или @username SFW-канала | ✅ |
 | `WALLHAVEN_API_KEY` | Доступ к Wallhaven | ✅ |
 
-**Steam Deals-бот:**
-
-| Secret | Описание | |
-|--------|----------|-|
-| `STEAM_API_KEY` | API ключ Steam | ✅ |
-| `TELEGRAM_BOT_TOKEN` | Токен бота | ✅ |
-| `TELEGRAM_CHANNEL_ID` | ID канала | ✅ |
-| `GH_TOKEN` | Classic Token | ✅ |
-| `GIST_ID` | ID Gist | ✅ |
-| `GROQ_API_KEY` | AI генерация | ⚡ опц. |
-| `OPENROUTER_API_KEY` | Vision модели | ⚡ опц. |
-| `AI_PROVIDER` | Провайдер AI | ⚡ опц. |
-| `AI_TIMEOUT_SEC` | Таймаут AI (def: 20) | ⚡ опц. |
-| `MAX_DEAL_PRICE_USD` | Макс. цена сделки (def: 15) | ⚡ опц. |
-| `MIN_DISCOUNT_PCT` | Мин. скидка в % (def: 40) | ⚡ опц. |
-
 </details>
 
 </details>
@@ -230,8 +210,6 @@ Content is selected, filtered, captioned and published **automatically**.
 - **Gist as DB** — state without repo commits
 - **4 sources** — CivitAI, Rule34 API, Rule34Video, Rule34Gen
 - **Fallback chain** — if a source fails, picks next by weight
-- **Steam Deals** — separate bot for NSFW game deals
-
 </td>
 <td width="50%" valign="top">
 
@@ -277,7 +255,6 @@ Content is selected, filtered, captioned and published **automatically**.
   <img src="https://img.shields.io/badge/CivitAI-FF2244?style=for-the-badge&logoColor=white"/>
   <img src="https://img.shields.io/badge/Rule34-FF6600?style=for-the-badge&logoColor=white"/>
   <br>
-  <img src="https://img.shields.io/badge/Steam-000000?style=for-the-badge&logo=steam&logoColor=white"/>
   <img src="https://img.shields.io/badge/Groq-00A67E?style=for-the-badge&logoColor=white"/>
   <img src="https://img.shields.io/badge/FFmpeg-007808?style=for-the-badge&logo=ffmpeg&logoColor=white"/>
   <img src="https://img.shields.io/badge/Pillow-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
@@ -298,7 +275,6 @@ ErosLab/
 │
 ├── 🔴  eroslab_bot.py           — main engine (NSFW)
 ├── 🤍  wallpapers_bot.py        — wallpapers bot (SFW, Wallhaven)
-├── 🎮  steam_deals.py           — NSFW Steam deals bot
 │
 ├── ⚙️  gist_storage.py          — state storage in Gist
 ├── 🧠  caption_generator.py     — AI caption generator
@@ -364,22 +340,6 @@ ErosLab/
 | `TELEGRAM_BOT_TOKEN_WALLPAPERS` | Wallpapers bot token | ✅ |
 | `TELEGRAM_CHANNEL_ID_WALLPAPERS` | ID or @username of SFW channel | ✅ |
 | `WALLHAVEN_API_KEY` | Wallhaven access | ✅ |
-
-**Steam Deals bot:**
-
-| Secret | Description | |
-|--------|-------------|-|
-| `STEAM_API_KEY` | Steam API key | ✅ |
-| `TELEGRAM_BOT_TOKEN` | Bot token | ✅ |
-| `TELEGRAM_CHANNEL_ID` | Channel ID | ✅ |
-| `GH_TOKEN` | Classic Token | ✅ |
-| `GIST_ID` | Gist ID | ✅ |
-| `GROQ_API_KEY` | AI caption generation | ⚡ opt. |
-| `OPENROUTER_API_KEY` | Vision models | ⚡ opt. |
-| `AI_PROVIDER` | AI provider | ⚡ opt. |
-| `AI_TIMEOUT_SEC` | AI timeout (def: 20) | ⚡ opt. |
-| `MAX_DEAL_PRICE_USD` | Max deal price (def: 15) | ⚡ opt. |
-| `MIN_DISCOUNT_PCT` | Min discount % (def: 40) | ⚡ opt. |
 
 </details>
 
