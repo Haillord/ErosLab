@@ -8,6 +8,7 @@ on:
 jobs:
   post:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: write
     
@@ -44,8 +45,8 @@ jobs:
       - name: Install ffmpeg (fallback)
         if: steps.setup-yt-dlp.outputs.ffmpeg != 'true'
         run: |
-          sudo apt-get update --quiet
-          sudo apt-get install -y ffmpeg --no-install-recommends
+          timeout 300 sudo apt-get update --quiet || true
+          timeout 300 sudo apt-get install -y ffmpeg --no-install-recommends || true
 
       - name: Run ErosLab Bot (CivitAI)
         env:
