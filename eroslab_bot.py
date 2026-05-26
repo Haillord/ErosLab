@@ -24,6 +24,7 @@ from caption_generator import generate_caption
 from civitai_api import fetch_civitai
 from rule34_api import fetch_rule34
 from rule34video_api import fetch_rule34video
+from rule34gen_api import fetch_rule34gen
 from watermark import add_watermark, add_watermark_to_video, should_add_watermark
 from utils_state import (
     load_json as _shared_load_json,
@@ -74,6 +75,9 @@ TEST_CIVITAI_ONLY = False
 
 # Режим отладки: только rule34video (True = только Rule34Video для тестов)
 TEST_RULE34VIDEO_ONLY = False
+
+# Режим отладки: только rule34gen (True = только Rule34Gen для тестов)
+TEST_RULE34GEN_ONLY = True
 
 HISTORY_FILE = "posted_ids.json"
 HASHES_FILE  = "posted_hashes.json"
@@ -725,6 +729,7 @@ def _load_source_weights() -> dict:
         "civitai":  1,
         "rule34":   1,
         "rule34video": 0.15,
+        "rule34gen":   0.15,
     }
     raw = os.environ.get("SOURCE_WEIGHTS", "").strip()
     if not raw:
@@ -762,6 +767,18 @@ def fetch_candidates_once():
         logger.info(f"Rule34Video fresh: {len(fresh)} / {len(items)}")
         return "rule34video", fresh
 
+    # ── Режим отладки: только Rule34Gen ──────────────────────────────────
+    if TEST_RULE34GEN_ONLY:
+        logger.info("Source: Rule34Gen only (TEST_RULE34GEN_ONLY=True)")
+        items = fetch_rule34gen()
+        if not items:
+            logger.warning("TEST_RULE34GEN_ONLY=True и Rule34Gen ничего не вернул")
+            return "rule34gen", []
+        fresh = [i for i in items if i["id"] not in posted_ids]
+        fresh = [i for i in fresh if not has_blacklisted(i.get("tags", []))]
+        logger.info(f"Rule34Gen fresh: {len(fresh)} / {len(items)}")
+        return "rule34gen", fresh
+
     # ── Режим отладки: только CivitAI ─────────────────────────────────────
     if TEST_CIVITAI_ONLY:
         logger.info("Source: CivitAI only (TEST_CIVITAI_ONLY=True)")
@@ -784,6 +801,7 @@ def fetch_candidates_once():
         "civitai":  fetch_civitai,
         "rule34":   _fetch_rule34,
         "rule34video": fetch_rule34video,
+        "rule34gen":   fetch_rule34gen,
     }
 
     weights_cfg = _load_source_weights()
