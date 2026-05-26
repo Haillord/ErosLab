@@ -1,10 +1,8 @@
 name: ErosLab Bot
-
 on:
   schedule:
     - cron: '0 */2 * * *'
   workflow_dispatch:
-
 jobs:
   post:
     runs-on: ubuntu-latest
@@ -38,42 +36,30 @@ jobs:
           pip install -r requirements.txt
 
       - name: Install Playwright browser
-        run: |
-          playwright install chromium --with-deps
+        run: playwright install chromium --with-deps
 
-      - name: Setup yt-dlp
-        id: setup-yt-dlp  # <-- ИСПРАВЛЕНО: Добавлен ID, чтобы шаг ниже не ломал синтаксис
-        uses: AnimMouse/setup-yt-dlp@v3
-        with:
-          ffmpeg: true
-
-      - name: Install ffmpeg (fallback)
-        if: steps.setup-yt-dlp.outputs.ffmpeg != 'true'
+      - name: Setup yt-dlp + ffmpeg
         run: |
-          timeout 300 sudo apt-get update --quiet || true
-          timeout 300 sudo apt-get install -y ffmpeg --no-install-recommends || true
+          pip install yt-dlp
+          sudo apt-get install -y ffmpeg --no-install-recommends
 
       - name: Run ErosLab Bot (CivitAI)
         env:
           # ── Хранилище ──────────────────────────────────────────────────
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
-
           # ── Telegram ───────────────────────────────────────────────────
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
-
           # ── CivitAI ────────────────────────────────────────────────────
           CIVITAI_API_KEY: ${{ secrets.CIVITAI_API_KEY }}
-
           # ── Rule34 ─────────────────────────────────────────────────────
           R34_API_KEY: ${{ secrets.R34_API_KEY }}
           R34_USER_ID: ${{ secrets.R34_USER_ID }}
           RULE34_MIN_SCORE: "10"
           R34V_PHPSESSID: ${{ secrets.R34V_PHPSESSID }}
           R34V_KT_ACCTOKEN: ${{ secrets.R34V_KT_ACCTOKEN }}
-
           # ── Настройки бота ─────────────────────────────────────────────
           REVIEW_MODE: "false"
           ALLOW_MATURE_FALLBACK: "false"
@@ -81,7 +67,6 @@ jobs:
           MIN_BITRATE_480P: "900"
           MIN_BITRATE_720P: "1400"
           MIN_BITRATE_1080P: "2200"
-
           # ── AI Caption ─────────────────────────────────────────────────
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -96,5 +81,4 @@ jobs:
           STYLE_BLOCK_MAX_ITEMS: "3"
           CAPTION_STYLE: "minimal"
           STATS_TZ: "Europe/Moscow"
-
         run: python eroslab_bot.py
