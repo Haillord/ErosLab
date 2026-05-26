@@ -41,17 +41,18 @@ jobs:
         run: |
           playwright install chromium --with-deps
 
-      # ── НАДЕЖНАЯ УСТАНОВКА FFMPEG И YT-DLP НАПРЯМУЮ БЕЗ СБОЙНЫХ ЭКШЕНОВ ──
-      - name: Install system ffmpeg
-        run: |
-          sudo apt-get update --quiet || true
-          sudo apt-get install -y ffmpeg --no-install-recommends || true
+      - name: Setup yt-dlp
+        id: setup-yt-dlp  # <-- ИСПРАВЛЕНО: Добавлен ID, чтобы шаг ниже не ломал синтаксис
+        uses: AnimMouse/setup-yt-dlp@v3
+        with:
+          ffmpeg: true
 
-      - name: Install yt-dlp via pip
+      - name: Install ffmpeg (fallback)
+        if: steps.setup-yt-dlp.outputs.ffmpeg != 'true'
         run: |
-          pip install --upgrade yt-dlp
+          timeout 300 sudo apt-get update --quiet || true
+          timeout 300 sudo apt-get install -y ffmpeg --no-install-recommends || true
 
-      # ── ЗАПУСК ──────────────────────────────────────────────────────────
       - name: Run ErosLab Bot (CivitAI)
         env:
           # ── Хранилище ──────────────────────────────────────────────────
