@@ -6,6 +6,7 @@ rule34gen.com scraper
   2. Playwright для открытия попапа и перехвата mp4 с acctoken
 """
 
+import asyncio
 import logging
 import os
 import random
@@ -183,25 +184,26 @@ def _parse_listing(html: str) -> list[dict]:
 
 # ── Детали видео через Playwright ─────────────────────────────────────────────
 
-def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
+async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
     """
     Открывает страницы видео через Playwright и перехватывает mp4 с acctoken.
     Обрабатывает сразу пачку entries для экономии времени запуска браузера.
+    Асинхронная версия (async API).
     """
     try:
-        from playwright.sync_api import sync_playwright
+        from playwright.async_api import async_playwright
     except ImportError:
         logger.error("r34gen: playwright не установлен — pip install playwright && playwright install chromium")
         return []
 
     results = []
 
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(
             headless=True,
             args=["--no-sandbox", "--disable-blink-features=AutomationControlled"],
         )
-        context = browser.new_context(
+        context = await browser.new_context(
             user_agent=HEADERS["User-Agent"],
             viewport={"width": 1280, "height": 720},
         )
@@ -215,11 +217,11 @@ def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
             playwright_cookies.append({"name": "kt_acctoken", "value": R34G_KT_ACCTOKEN,
                                         "domain": "rule34gen.com", "path": "/"})
         if playwright_cookies:
-            context.add_cookies(playwright_cookies)
+            await context.add_cookies(playwright_cookies)
 
         for entry in entries:
             mp4_urls: list[str] = []
-            page = context.new_page()
+            page = await context.new_page()
 
             def on_response(response):
                 url = response.url
@@ -231,15 +233,15 @@ def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
             page.on("response", on_response)
 
             try:
-                page.goto(entry["page_url"], timeout=25_000, wait_until="domcontentloaded")
-                page.wait_for_timeout(3000)  # ждём загрузку видео-запроса
+                await page.goto(entry["page_url"], timeout=25_000, wait_until="domcontentloaded")
+                await page.wait_for_timeout(3000)  # ждём загрузку видео-запроса
 
                 # Если попап — пробуем кликнуть по .th
                 if not mp4_urls:
-                    thumb = page.query_selector("a.th, a.js-open-popup")
+                    thumb = await page.query_selector("a.th, a.js-open-popup")
                     if thumb:
-                        thumb.click()
-                        page.wait_for_timeout(2000)
+                        await thumb.click()
+                        await page.wait_for_timeout(2000)
 
                 if not mp4_urls:
                     logger.debug(f"r34gen: mp4 не перехвачен для {entry['page_url']}")
@@ -249,7 +251,7 @@ def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
                 direct_url = mp4_urls[0]
 
                 # Теги из попапа/страницы
-                tags = _extract_tags_playwright(page, entry.get("title", ""))
+                tags = await _extract_tags_playwright(page, entry.get("title", ""))
 
                 results.append({
                     **entry,
@@ -261,17 +263,17 @@ def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
             except Exception as e:
                 logger.warning(f"r34gen: ошибка при открытии {entry['page_url']}: {e}")
             finally:
-                page.close()
+                await page.close()
 
-            time.sleep(random.uniform(0.5, 1.0))
+            await asyncio.sleep(random.uniform(0.5, 1.0))
 
-        context.close()
-        browser.close()
+        await context.close()
+        await browser.close()
 
     return results
 
 
-def _extract_tags_playwright(page, title: str = "") -> list[str]:
+async def _extract_tags_playwright(page, title: str = "") -> list[str]:
     """Извлекает теги через Playwright — ищет a.button внутри попапа/страницы."""
     raw: list[str] = []
 
@@ -283,11 +285,12 @@ def _extract_tags_playwright(page, title: str = "") -> list[str]:
         "a.button",
     ]
     for selector in selectors:
-        els = page.query_selector_all(selector)
+        els = await page.query_selector_all(selector)
         if els:
             for el in els:
                 try:
-                    t = el.inner_text().strip().lower()
+                    t = await el.inner_text()
+                    t = t.strip().lower()
                     t = re.sub(r"\s+", "_", t)
                     if t and len(t) <= 40 and t not in STOP_WORDS:
                         raw.append(t)
@@ -363,7 +366,7 @@ def _fetch_variation(variation: dict, pages: int, seen_ids: set) -> list[dict]:
 
 # ── Основная функция ───────────────────────────────────────────────────────────
 
-def fetch_rule34gen(limit: int = 20) -> list[dict]:
+async def fetch_rule34gen(limit: int = 20) -> list[dict]:
     """
     Парсит rule34gen.com.
     1. AJAX API (requests) для листинга — быстро
@@ -392,7 +395,7 @@ def fetch_rule34gen(limit: int = 20) -> list[dict]:
         all_raw = [e for e in all_raw if e.get("likes", 0) >= R34G_MIN_SCORE]
 
     candidates = all_raw[:limit * 3]
-    detailed = _fetch_video_details_playwright(candidates)
+    detailed = await _fetch_video_details_playwright(candidates)
 
     items: list[dict] = []
     for entry in detailed:

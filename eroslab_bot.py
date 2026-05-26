@@ -743,7 +743,7 @@ def _load_source_weights() -> dict:
     return default
 
 
-def fetch_candidates_once():
+async def fetch_candidates_once():
     """
     Выбирает источник по взвешенной случайности и возвращает (source, fresh_items).
 
@@ -758,7 +758,7 @@ def fetch_candidates_once():
     # ── Режим отладки: только Rule34Video ─────────────────────────────────
     if TEST_RULE34VIDEO_ONLY:
         logger.info("Source: Rule34Video only (TEST_RULE34VIDEO_ONLY=True)")
-        items = fetch_rule34video()
+        items = await asyncio.to_thread(fetch_rule34video)
         if not items:
             logger.warning("TEST_RULE34VIDEO_ONLY=True и Rule34Video ничего не вернул")
             return "rule34video", []
@@ -770,7 +770,7 @@ def fetch_candidates_once():
     # ── Режим отладки: только Rule34Gen ──────────────────────────────────
     if TEST_RULE34GEN_ONLY:
         logger.info("Source: Rule34Gen only (TEST_RULE34GEN_ONLY=True)")
-        items = fetch_rule34gen()
+        items = await fetch_rule34gen()
         if not items:
             logger.warning("TEST_RULE34GEN_ONLY=True и Rule34Gen ничего не вернул")
             return "rule34gen", []
@@ -782,7 +782,7 @@ def fetch_candidates_once():
     # ── Режим отладки: только CivitAI ─────────────────────────────────────
     if TEST_CIVITAI_ONLY:
         logger.info("Source: CivitAI only (TEST_CIVITAI_ONLY=True)")
-        items = fetch_civitai()
+        items = await asyncio.to_thread(fetch_civitai)
         if not items:
             logger.warning("TEST_CIVITAI_ONLY=True и CivitAI ничего не вернул")
             return "civitai", []
@@ -791,16 +791,16 @@ def fetch_candidates_once():
         return "civitai", fresh
 
     # ── Собираем доступные источники ──────────────────────────────────────
-    def _fetch_rule34():
+    async def _fetch_rule34_async():
         content_type = get_next_content_type()
         media_type = get_next_media_type()
         logger.info(f"Rule34 content_type={content_type}, media_type={media_type}")
-        return fetch_rule34(limit=100, content_type=content_type, media_type=media_type)
+        return await asyncio.to_thread(fetch_rule34, limit=100, content_type=content_type, media_type=media_type)
 
     available = {
-        "civitai":  fetch_civitai,
-        "rule34":   _fetch_rule34,
-        "rule34video": fetch_rule34video,
+        "civitai":     lambda: asyncio.to_thread(fetch_civitai),
+        "rule34":      _fetch_rule34_async,
+        "rule34video": lambda: asyncio.to_thread(fetch_rule34video),
         "rule34gen":   fetch_rule34gen,
     }
 
@@ -827,7 +827,7 @@ def fetch_candidates_once():
         logger.info(f"Source: {source}" + (" (fallback)" if is_fallback else ""))
 
         try:
-            items = available[source]()
+            items = await available[source]()
         except Exception as e:
             logger.error(f"Источник {source} упал с ошибкой: {e}")
             continue
@@ -992,7 +992,7 @@ async def main():
         flush_stats_once()
         return
 
-    if not CIVITAI_API_KEY and not TEST_RULE34VIDEO_ONLY:
+    if not CIVITAI_API_KEY and not TEST_RULE34VIDEO_ONLY and not TEST_RULE34GEN_ONLY:
         logger.error("No CIVITAI_API_KEY found!")
         flush_stats_once()
         return
@@ -1016,7 +1016,7 @@ async def main():
     MAX_FILE_SIZE = 50 * 1024 * 1024
     MAX_ATTEMPTS  = 10
 
-    source, fresh_items = fetch_candidates_once()
+    source, fresh_items = await fetch_candidates_once()
     if not fresh_items:
         logger.info("No more fresh posts available")
         run_metrics["skip_no_item"] += 1
