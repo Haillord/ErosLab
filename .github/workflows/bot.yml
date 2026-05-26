@@ -42,6 +42,7 @@ jobs:
           playwright install chromium --with-deps
 
       - name: Setup yt-dlp
+        id: setup-yt-dlp
         uses: AnimMouse/setup-yt-dlp@v3
         with:
           ffmpeg: true
