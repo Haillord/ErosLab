@@ -48,14 +48,16 @@
 ### ⚙️ Инфраструктура
 - **Serverless** — GitHub Actions, 0 руб/месяц
 - **Gist как БД** — состояние без коммитов в репо
-- **2 источника** — CivitAI, Rule34
+- **4 источника** — CivitAI, Rule34 API, Rule34Video, Rule34Gen
 - **Fallback-цепочка** — если источник упал, берёт следующий по весу
+- **Steam Deals** — отдельный бот по скидкам NSFW-игр
 
 </td>
 <td width="50%" valign="top">
 
 ### 🧠 Интеллект
 - **AI подписи** — Groq + OpenRouter + Vision
+- **AI CTA** — призывы к действию на основе контента
 - **Дедупликация** — SHA256 хеш каждого файла
 - **QoS фильтр** — минимальный битрейт для 480p/720p/1080p
 - **Блэклист** — автофильтрация нежелательных тегов
@@ -70,6 +72,7 @@
 - **Image Pack** — автосборка альбомов из 3 фото
 - **Видео нормализация** — yuv420p, h264, max 1080p
 - **Aspect ratio fix** — скип экстремальных соотношений сторон
+- **Playwright** — для рендеринга страниц (Rule34Gen)
 
 </td>
 <td width="50%" valign="top">
@@ -78,6 +81,7 @@
 - **История 5000** — защита от повторов
 - **Content filter** — NSFW только нужного типа
 - **Размерный фильтр** — мин. 720px по обеим сторонам
+- **Review mode** — опциональная модерация перед постом
 
 </td>
 </tr>
@@ -86,17 +90,21 @@
 <br>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
   <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white"/>
   <img src="https://img.shields.io/badge/Gist_API-181717?style=for-the-badge&logo=github&logoColor=white"/>
   <br>
   <img src="https://img.shields.io/badge/CivitAI-FF2244?style=for-the-badge&logoColor=white"/>
   <img src="https://img.shields.io/badge/Rule34-FF6600?style=for-the-badge&logoColor=white"/>
   <br>
+  <img src="https://img.shields.io/badge/Steam-000000?style=for-the-badge&logo=steam&logoColor=white"/>
   <img src="https://img.shields.io/badge/Groq-00A67E?style=for-the-badge&logoColor=white"/>
   <img src="https://img.shields.io/badge/FFmpeg-007808?style=for-the-badge&logo=ffmpeg&logoColor=white"/>
   <img src="https://img.shields.io/badge/Pillow-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
   <img src="https://img.shields.io/badge/python--telegram--bot-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white"/>
+  <br>
+  <img src="https://img.shields.io/badge/Playwright-45ba4b?style=for-the-badge&logo=playwright&logoColor=white"/>
+  <img src="https://img.shields.io/badge/yt--dlp-FF0000?style=for-the-badge&logo=youtube&logoColor=white"/>
 </p>
 
 <br>
@@ -108,19 +116,23 @@
 ```
 ErosLab/
 │
-├── 🔴  civitai_bot.py          — основной движок (NSFW)
-├── 🤍  wallpapers_bot.py       — бот обоев (SFW, Wallhaven)
+├── 🔴  eroslab_bot.py           — основной движок (NSFW)
+├── 🤍  wallpapers_bot.py        — бот обоев (SFW, Wallhaven)
+├── 🎮  steam_deals.py           — бот скидок NSFW-игр (Steam)
 │
-├── ⚙️  gist_storage.py         — хранилище состояния в Gist
-├── 🧠  caption_generator.py    — AI генератор подписей
-├── 🖼️  watermark.py            — водяные знаки (фото + видео)
-├── 🎬  make_slideshow.py       — сборка слайдшоу из обоев
+├── ⚙️  gist_storage.py          — хранилище состояния в Gist
+├── 🧠  caption_generator.py     — AI генератор подписей
+├── 🖼️  watermark.py             — водяные знаки (фото + видео)
+├── 🎬  make_slideshow.py        — сборка слайдшоу из обоев
 │
-├── 🔎  rule34_api.py           — парсер Rule34
+├── 🔎  rule34_api.py            — парсер Rule34 (API)
+├── 🔎  rule34video_api.py       — парсер Rule34Video
+├── 🔎  rule34gen_api.py         — парсер Rule34Gen (через Playwright)
+├── 🔎  civitai_api.py           — парсер CivitAI
 │
-├── 🛠️  utils_state.py          — статистика и состояние
-├── 🛠️  utils_tags.py           — обработка тегов
-└── 🛠️  utils_telegram_media.py — отправка медиа в Telegram
+├── 🛠️  utils_state.py           — статистика и состояние
+├── 🛠️  utils_tags.py            — обработка тегов
+└── 🛠️  utils_telegram_media.py  — отправка медиа в Telegram
 ```
 
 </details>
@@ -131,19 +143,39 @@ ErosLab/
 
 `Settings` → `Secrets and variables` → `Actions`
 
-**NSFW-бот:**
+**NSFW-бот (eroslab_bot.yml):**
 
 | Secret | Описание | |
 |--------|----------|-|
 | `TELEGRAM_BOT_TOKEN` | Токен основного бота | ✅ |
 | `TELEGRAM_CHANNEL_ID` | ID или @username NSFW-канала | ✅ |
+| `ADMIN_USER_ID` | ID админа для ревью-режима | ⚡ опц. |
 | `GH_TOKEN` | Classic Token с правами на Gist | ✅ |
 | `GIST_ID` | ID секретного Gist | ✅ |
 | `CIVITAI_API_KEY` | Доступ к API CivitAI | ✅ |
 | `R34_USER_ID` / `R34_API_KEY` | Авторизация Rule34 | ✅ |
+| `R34V_PHPSESSID` / `R34V_KT_ACCTOKEN` | Авторизация Rule34Video | ⚡ опц. |
+| `RULE34_MIN_SCORE` | Мин. рейтинг для постов Rule34 (def: 10) | ⚡ опц. |
 | `SOURCE_WEIGHTS` | JSON весов: `{"civitai":35,"rule34":25}` | ⚡ опц. |
-| `GROQ_API_KEY` | AI генерация подписей | ⚡ опц. |
+| `GROQ_API_KEY` | AI генерация подписей (Groq) | ⚡ опц. |
 | `OPENROUTER_API_KEY` | Vision модели для подписей | ⚡ опц. |
+| `GROQ_MODEL` | Модель Groq (def: `llama-3.3-70b-versatile`) | ⚡ опц. |
+| `OPENROUTER_MODEL` | Модель OpenRouter (def: `openai/gpt-4o-mini`) | ⚡ опц. |
+| `AI_PROVIDER` | Провайдер AI: `auto`, `groq`, `openrouter` | ⚡ опц. |
+| `AI_TIMEOUT_SEC` | Таймаут AI (def: 12) | ⚡ опц. |
+| `ENABLE_AI_CAPTION` | Включить AI подписи (`true`/`false`) | ⚡ опц. |
+| `ENABLE_AI_CTA` | Включить CTA-блок (`true`/`false`) | ⚡ опц. |
+| `AI_DRY_RUN` | Режим просмотра без отправки | ⚡ опц. |
+| `ENABLE_STYLE_BLOCK` | Блок стилей в подписи | ⚡ опц. |
+| `STYLE_BLOCK_MAX_ITEMS` | Макс. элементов стиля (def: 3) | ⚡ опц. |
+| `CAPTION_STYLE` | Стиль: `minimal`, `default`, `detailed` | ⚡ опц. |
+| `REVIEW_MODE` | Модерация перед постом (`true`/`false`) | ⚡ опц. |
+| `ALLOW_MATURE_FALLBACK` | Fallback на mature контент | ⚡ опц. |
+| `ENABLE_VIDEO_QOS` | QoS для видео (`true`/`false`) | ⚡ опц. |
+| `MIN_BITRATE_480P` | Мин. битрейт для 480p (def: 900) | ⚡ опц. |
+| `MIN_BITRATE_720P` | Мин. битрейт для 720p (def: 1400) | ⚡ опц. |
+| `MIN_BITRATE_1080P` | Мин. битрейт для 1080p (def: 2200) | ⚡ опц. |
+| `STATS_TZ` | Часовой пояс статистики (def: `Europe/Moscow`) | ⚡ опц. |
 
 **Wallpapers-бот:**
 
@@ -151,7 +183,23 @@ ErosLab/
 |--------|----------|-|
 | `TELEGRAM_BOT_TOKEN_WALLPAPERS` | Токен wallpapers-бота | ✅ |
 | `TELEGRAM_CHANNEL_ID_WALLPAPERS` | ID или @username SFW-канала | ✅ |
-| `WALLHAVEN_API_KEY` | Доступ к NSFW-контенту на Wallhaven | ✅ |
+| `WALLHAVEN_API_KEY` | Доступ к Wallhaven | ✅ |
+
+**Steam Deals-бот:**
+
+| Secret | Описание | |
+|--------|----------|-|
+| `STEAM_API_KEY` | API ключ Steam | ✅ |
+| `TELEGRAM_BOT_TOKEN` | Токен бота | ✅ |
+| `TELEGRAM_CHANNEL_ID` | ID канала | ✅ |
+| `GH_TOKEN` | Classic Token | ✅ |
+| `GIST_ID` | ID Gist | ✅ |
+| `GROQ_API_KEY` | AI генерация | ⚡ опц. |
+| `OPENROUTER_API_KEY` | Vision модели | ⚡ опц. |
+| `AI_PROVIDER` | Провайдер AI | ⚡ опц. |
+| `AI_TIMEOUT_SEC` | Таймаут AI (def: 20) | ⚡ опц. |
+| `MAX_DEAL_PRICE_USD` | Макс. цена сделки (def: 15) | ⚡ опц. |
+| `MIN_DISCOUNT_PCT` | Мин. скидка в % (def: 40) | ⚡ опц. |
 
 </details>
 
@@ -180,14 +228,16 @@ Content is selected, filtered, captioned and published **automatically**.
 ### ⚙️ Infrastructure
 - **Serverless** — GitHub Actions, $0/month
 - **Gist as DB** — state without repo commits
-- **2 sources** — CivitAI, Rule34
+- **4 sources** — CivitAI, Rule34 API, Rule34Video, Rule34Gen
 - **Fallback chain** — if a source fails, picks next by weight
+- **Steam Deals** — separate bot for NSFW game deals
 
 </td>
 <td width="50%" valign="top">
 
 ### 🧠 Intelligence
 - **AI captions** — Groq + OpenRouter + Vision
+- **AI CTA** — content-based call-to-action generation
 - **Deduplication** — SHA256 hash of each file
 - **QoS filter** — minimum bitrate for 480p/720p/1080p
 - **Blacklist** — auto-filtering of unwanted tags
@@ -202,6 +252,7 @@ Content is selected, filtered, captioned and published **automatically**.
 - **Image Pack** — auto-albums from 3 photos
 - **Video normalization** — yuv420p, h264, max 1080p
 - **Aspect ratio fix** — skip extreme aspect ratios
+- **Playwright** — headless browser for page rendering
 
 </td>
 <td width="50%" valign="top">
@@ -210,6 +261,7 @@ Content is selected, filtered, captioned and published **automatically**.
 - **History of 5000** — duplicate protection
 - **Content filter** — NSFW only of required type
 - **Size filter** — min. 720px on both sides
+- **Review mode** — optional moderation before posting
 
 </td>
 </tr>
@@ -218,17 +270,21 @@ Content is selected, filtered, captioned and published **automatically**.
 <br>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
   <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white"/>
   <img src="https://img.shields.io/badge/Gist_API-181717?style=for-the-badge&logo=github&logoColor=white"/>
   <br>
   <img src="https://img.shields.io/badge/CivitAI-FF2244?style=for-the-badge&logoColor=white"/>
   <img src="https://img.shields.io/badge/Rule34-FF6600?style=for-the-badge&logoColor=white"/>
   <br>
+  <img src="https://img.shields.io/badge/Steam-000000?style=for-the-badge&logo=steam&logoColor=white"/>
   <img src="https://img.shields.io/badge/Groq-00A67E?style=for-the-badge&logoColor=white"/>
   <img src="https://img.shields.io/badge/FFmpeg-007808?style=for-the-badge&logo=ffmpeg&logoColor=white"/>
   <img src="https://img.shields.io/badge/Pillow-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
   <img src="https://img.shields.io/badge/python--telegram--bot-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white"/>
+  <br>
+  <img src="https://img.shields.io/badge/Playwright-45ba4b?style=for-the-badge&logo=playwright&logoColor=white"/>
+  <img src="https://img.shields.io/badge/yt--dlp-FF0000?style=for-the-badge&logo=youtube&logoColor=white"/>
 </p>
 
 <br>
@@ -240,19 +296,23 @@ Content is selected, filtered, captioned and published **automatically**.
 ```
 ErosLab/
 │
-├── 🔴  civitai_bot.py          — main engine (NSFW)
-├── 🤍  wallpapers_bot.py       — wallpapers bot (SFW, Wallhaven)
+├── 🔴  eroslab_bot.py           — main engine (NSFW)
+├── 🤍  wallpapers_bot.py        — wallpapers bot (SFW, Wallhaven)
+├── 🎮  steam_deals.py           — NSFW Steam deals bot
 │
-├── ⚙️  gist_storage.py         — state storage in Gist
-├── 🧠  caption_generator.py    — AI caption generator
-├── 🖼️  watermark.py            — watermarks (photo + video)
-├── 🎬  make_slideshow.py       — wallpaper slideshow builder
+├── ⚙️  gist_storage.py          — state storage in Gist
+├── 🧠  caption_generator.py     — AI caption generator
+├── 🖼️  watermark.py             — watermarks (photo + video)
+├── 🎬  make_slideshow.py        — wallpaper slideshow builder
 │
-├── 🔎  rule34_api.py           — Rule34 parser
+├── 🔎  rule34_api.py            — Rule34 API parser
+├── 🔎  rule34video_api.py       — Rule34Video parser
+├── 🔎  rule34gen_api.py         — Rule34Gen parser (Playwright)
+├── 🔎  civitai_api.py           — CivitAI parser
 │
-├── 🛠️  utils_state.py          — statistics & state
-├── 🛠️  utils_tags.py           — tag processing
-└── 🛠️  utils_telegram_media.py — sending media to Telegram
+├── 🛠️  utils_state.py           — statistics & state
+├── 🛠️  utils_tags.py            — tag processing
+└── 🛠️  utils_telegram_media.py  — sending media to Telegram
 ```
 
 </details>
@@ -263,19 +323,39 @@ ErosLab/
 
 `Settings` → `Secrets and variables` → `Actions`
 
-**NSFW bot:**
+**NSFW bot (eroslab_bot.yml):**
 
 | Secret | Description | |
 |--------|-------------|-|
 | `TELEGRAM_BOT_TOKEN` | Main bot token | ✅ |
 | `TELEGRAM_CHANNEL_ID` | ID or @username of NSFW channel | ✅ |
+| `ADMIN_USER_ID` | Admin ID for review mode | ⚡ opt. |
 | `GH_TOKEN` | Classic Token with Gist permissions | ✅ |
 | `GIST_ID` | Secret Gist ID | ✅ |
 | `CIVITAI_API_KEY` | CivitAI API access | ✅ |
 | `R34_USER_ID` / `R34_API_KEY` | Rule34 authorization | ✅ |
+| `R34V_PHPSESSID` / `R34V_KT_ACCTOKEN` | Rule34Video auth | ⚡ opt. |
+| `RULE34_MIN_SCORE` | Min score for Rule34 posts (def: 10) | ⚡ opt. |
 | `SOURCE_WEIGHTS` | JSON weights: `{"civitai":35,"rule34":25}` | ⚡ opt. |
-| `GROQ_API_KEY` | AI caption generation | ⚡ opt. |
+| `GROQ_API_KEY` | AI caption generation (Groq) | ⚡ opt. |
 | `OPENROUTER_API_KEY` | Vision models for captions | ⚡ opt. |
+| `GROQ_MODEL` | Groq model (def: `llama-3.3-70b-versatile`) | ⚡ opt. |
+| `OPENROUTER_MODEL` | OpenRouter model (def: `openai/gpt-4o-mini`) | ⚡ opt. |
+| `AI_PROVIDER` | AI provider: `auto`, `groq`, `openrouter` | ⚡ opt. |
+| `AI_TIMEOUT_SEC` | AI timeout (def: 12) | ⚡ opt. |
+| `ENABLE_AI_CAPTION` | Enable AI captions (`true`/`false`) | ⚡ opt. |
+| `ENABLE_AI_CTA` | Enable CTA block (`true`/`false`) | ⚡ opt. |
+| `AI_DRY_RUN` | Preview mode without sending | ⚡ opt. |
+| `ENABLE_STYLE_BLOCK` | Style block in caption | ⚡ opt. |
+| `STYLE_BLOCK_MAX_ITEMS` | Max style items (def: 3) | ⚡ opt. |
+| `CAPTION_STYLE` | Style: `minimal`, `default`, `detailed` | ⚡ opt. |
+| `REVIEW_MODE` | Moderation before posting (`true`/`false`) | ⚡ opt. |
+| `ALLOW_MATURE_FALLBACK` | Allow mature fallback content | ⚡ opt. |
+| `ENABLE_VIDEO_QOS` | Video QoS (`true`/`false`) | ⚡ opt. |
+| `MIN_BITRATE_480P` | Min bitrate for 480p (def: 900) | ⚡ opt. |
+| `MIN_BITRATE_720P` | Min bitrate for 720p (def: 1400) | ⚡ opt. |
+| `MIN_BITRATE_1080P` | Min bitrate for 1080p (def: 2200) | ⚡ opt. |
+| `STATS_TZ` | Stats timezone (def: `Europe/Moscow`) | ⚡ opt. |
 
 **Wallpapers bot:**
 
@@ -284,6 +364,22 @@ ErosLab/
 | `TELEGRAM_BOT_TOKEN_WALLPAPERS` | Wallpapers bot token | ✅ |
 | `TELEGRAM_CHANNEL_ID_WALLPAPERS` | ID or @username of SFW channel | ✅ |
 | `WALLHAVEN_API_KEY` | Wallhaven access | ✅ |
+
+**Steam Deals bot:**
+
+| Secret | Description | |
+|--------|-------------|-|
+| `STEAM_API_KEY` | Steam API key | ✅ |
+| `TELEGRAM_BOT_TOKEN` | Bot token | ✅ |
+| `TELEGRAM_CHANNEL_ID` | Channel ID | ✅ |
+| `GH_TOKEN` | Classic Token | ✅ |
+| `GIST_ID` | Gist ID | ✅ |
+| `GROQ_API_KEY` | AI caption generation | ⚡ opt. |
+| `OPENROUTER_API_KEY` | Vision models | ⚡ opt. |
+| `AI_PROVIDER` | AI provider | ⚡ opt. |
+| `AI_TIMEOUT_SEC` | AI timeout (def: 20) | ⚡ opt. |
+| `MAX_DEAL_PRICE_USD` | Max deal price (def: 15) | ⚡ opt. |
+| `MIN_DISCOUNT_PCT` | Min discount % (def: 40) | ⚡ opt. |
 
 </details>
 
