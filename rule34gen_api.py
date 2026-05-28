@@ -260,6 +260,13 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
 
                 direct_url, video_data = next(iter(mp4_bodies.items()))
 
+                # Пробуем апгрейднуть качество
+                higher = await _try_higher_quality(context, direct_url, entry["page_url"])
+                if higher:
+                    direct_url, video_data = higher
+                else:
+                    logger.info(f"r34gen: только базовое качество ({len(video_data)} байт)")
+
                 # Теги из попапа/страницы
                 tags = await _extract_tags_playwright(page, entry.get("title", ""))
 
@@ -331,6 +338,37 @@ def _clean_tags(raw: list[str], title: str = "") -> list[str]:
                 if len(result) >= 20:
                     break
     return result[:20]
+
+
+async def _try_higher_quality(
+    context, url: str, referer: str
+) -> tuple[str, bytes] | None:
+    """Пробует 1080p → 720p → возвращает (url, data) или None если недоступно."""
+    import re
+
+    def replace_quality(u: str, q: str) -> str:
+        return re.sub(r'_\d+\.mp4', f'_{q}.mp4', u)
+
+    base_url = url.split('?')[0]  # без acctoken
+
+    for quality in ["1080", "720"]:
+        test_url = replace_quality(base_url, quality)
+        if test_url == base_url:
+            continue
+        try:
+            resp = await context.request.fetch(
+                test_url,
+                headers={"Referer": referer, "User-Agent": HEADERS["User-Agent"]}
+            )
+            if resp.ok:
+                body = await resp.body()
+                if len(body) > 100_000:  # не заглушка
+                    logger.info(f"r34gen: качество {quality}p доступно, {len(body)} байт")
+                    return test_url, body
+        except Exception:
+            continue
+
+    return None  # остаёмся на оригинале
 
 
 # ── Сбор одной вариации ────────────────────────────────────────────────────────
