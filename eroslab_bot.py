@@ -74,7 +74,7 @@ NSFW_RATIO = float(os.environ.get("NSFW_RATIO", "0.6"))  # 60% XXX, 40% Mature
 TEST_CIVITAI_ONLY = False
 
 # Режим отладки: только rule34video (True = только Rule34Video для тестов)
-TEST_RULE34VIDEO_ONLY = True
+TEST_RULE34VIDEO_ONLY = False
 
 # Режим отладки: только rule34gen (True = только Rule34Gen для тестов)
 TEST_RULE34GEN_ONLY = False
@@ -728,8 +728,8 @@ def _load_source_weights() -> dict:
     default = {
         "civitai":  1,
         "rule34":   1,
-        "rule34video": 0.15,
-        "rule34gen":   0.15,
+        "rule34video": 1,
+        "rule34gen":   1,
     }
     raw = os.environ.get("SOURCE_WEIGHTS", "").strip()
     if not raw:

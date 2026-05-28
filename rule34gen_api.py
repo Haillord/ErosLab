@@ -55,6 +55,7 @@ STOP_WORDS = {
     "ai", "generated", "ai_generated", "rule34", "r34", "xxx", "porn",
     "hentai", "video", "the", "and", "with", "for", "this", "that",
     "animated", "animation", "hd", "full", "rule", "gen",
+    "login", "signup", "register", "upload", "search", "home",
 }
 
 # Варианты сортировки (KVS стандарт)
