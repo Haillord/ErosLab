@@ -4,7 +4,7 @@ rule34gen.com scraper
 Стратегия:
   1. AJAX API для листинга (как у rule34video) — быстро, без Playwright
   2. Playwright для открытия попапа и перехвата mp4 с acctoken
-  3. Скачивание mp4 через Playwright (context.request.fetch) — acctoken валиден
+  3. Скачивание mp4 через page.evaluate() с fetch() — все куки и origin уже на месте
 """
 
 import asyncio
@@ -185,7 +185,7 @@ def _parse_listing(html: str) -> list[dict]:
 async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
     """
     Открывает страницы видео через Playwright и перехватывает mp4 с acctoken.
-    Скачивает mp4 через тот же browser context (acctoken работает только из браузера).
+    Скачивает mp4 через page.evaluate() с fetch() — куки и origin валидны.
     """
     try:
         from playwright.async_api import async_playwright
@@ -258,23 +258,34 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
                 # Теги из попапа/страницы
                 tags = await _extract_tags_playwright(page, entry.get("title", ""))
 
-                # Скачиваем mp4 через Playwright (та же сессия браузера, acctoken валиден)
+                # Скачиваем mp4 через page.evaluate() — все куки и origin уже на месте
                 video_data: bytes | None = None
                 try:
-                    logger.info(f"r34gen: перехвачен URL: {direct_url}")
-                    resp = await context.request.fetch(direct_url)
-                    content_type = resp.headers.get('content-type', '???')
-                    logger.info(f"r34gen: статус={resp.status}, Content-Type={content_type}")
-                    if resp.ok:
-                        video_data = await resp.body()
-                        if len(video_data) < 200:
-                            logger.warning(f"r34gen: подозрительно мало байт ({len(video_data)}), тело: {video_data}")
+                    video_data_list = await page.evaluate("""
+                        async (url) => {
+                            const r = await fetch(url, {
+                                credentials: 'include',
+                                headers: { 'Referer': window.location.href }
+                            });
+                            if (!r.ok) return null;
+                            const buf = await r.arrayBuffer();
+                            return Array.from(new Uint8Array(buf));
+                        }
+                    """, direct_url)
+
+                    if video_data_list:
+                        video_data = bytes(video_data_list)
+                        if len(video_data) < 1000:
+                            logger.warning(f"r34gen: слишком мало байт через evaluate ({len(video_data)}), скип")
+                            video_data = None
                         else:
                             logger.info(f"r34gen: скачано {len(video_data)} байт для {entry['id']}")
                     else:
-                        logger.warning(f"r34gen: HTTP {resp.status} при скачивании {entry['id']}")
+                        logger.warning(f"r34gen: evaluate вернул null для {entry['id']}")
+                        video_data = None
                 except Exception as e:
-                    logger.warning(f"r34gen: ошибка скачивания {entry['id']}: {e}")
+                    logger.warning(f"r34gen: ошибка evaluate {entry['id']}: {e}")
+                    video_data = None
 
                 results.append({
                     **entry,
