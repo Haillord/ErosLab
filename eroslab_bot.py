@@ -77,7 +77,7 @@ TEST_CIVITAI_ONLY = False
 TEST_RULE34VIDEO_ONLY = False
 
 # Режим отладки: только rule34gen (True = только Rule34Gen для тестов)
-TEST_RULE34GEN_ONLY = False
+TEST_RULE34GEN_ONLY = True
 
 HISTORY_FILE = "posted_ids.json"
 HASHES_FILE  = "posted_hashes.json"
