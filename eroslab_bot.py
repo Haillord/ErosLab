@@ -1050,10 +1050,17 @@ async def main():
         try:
             logger.info(f"Downloading: {item['url']}")
             if item.get("source") == "rule34gen":
-                data, download_content_type = r34gen_download(item["url"])
-                if data is None:
-                    raise Exception("r34gen download failed")
-                logger.info(f"Downloaded {len(data)} bytes")
+                # Используем предзагруженные данные из Playwright, если есть
+                preloaded = item.get("data")
+                if preloaded is not None:
+                    data = preloaded
+                    download_content_type = "video/mp4"
+                    logger.info(f"Using preloaded data: {len(data)} bytes")
+                else:
+                    data, download_content_type = r34gen_download(item["url"])
+                    if data is None:
+                        raise Exception("r34gen download failed")
+                    logger.info(f"Downloaded via requests: {len(data)} bytes")
             else:
                 r = requests.get(item["url"], timeout=60)
                 r.raise_for_status()

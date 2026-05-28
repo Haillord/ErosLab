@@ -4,6 +4,7 @@ rule34gen.com scraper
 Стратегия:
   1. AJAX API для листинга (как у rule34video) — быстро, без Playwright
   2. Playwright для открытия попапа и перехвата mp4 с acctoken
+  3. Скачивание mp4 через Playwright (context.request.fetch) — acctoken валиден
 """
 
 import asyncio
@@ -184,8 +185,7 @@ def _parse_listing(html: str) -> list[dict]:
 async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
     """
     Открывает страницы видео через Playwright и перехватывает mp4 с acctoken.
-    Обрабатывает сразу пачку entries для экономии времени запуска браузера.
-    Асинхронная версия (async API).
+    Скачивает mp4 через тот же browser context (acctoken работает только из браузера).
     """
     try:
         from playwright.async_api import async_playwright
@@ -258,10 +258,23 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
                 # Теги из попапа/страницы
                 tags = await _extract_tags_playwright(page, entry.get("title", ""))
 
+                # Скачиваем mp4 через Playwright (та же сессия браузера, acctoken валиден)
+                video_data: bytes | None = None
+                try:
+                    resp = await context.request.fetch(direct_url)
+                    if resp.ok:
+                        video_data = await resp.body()
+                        logger.info(f"r34gen: скачано {len(video_data)} байт для {entry['id']}")
+                    else:
+                        logger.warning(f"r34gen: HTTP {resp.status} при скачивании {entry['id']}")
+                except Exception as e:
+                    logger.warning(f"r34gen: ошибка скачивания {entry['id']}: {e}")
+
                 results.append({
                     **entry,
-                    "url":  direct_url,
-                    "tags": tags,
+                    "url":   direct_url,
+                    "tags":  tags,
+                    "data":  video_data,  # сырые байты mp4, None если не удалось
                 })
                 logger.debug(f"r34gen: получен mp4 для {entry['id']}")
 
@@ -375,7 +388,7 @@ async def fetch_rule34gen(limit: int = 20) -> list[dict]:
     """
     Парсит rule34gen.com.
     1. AJAX API (requests) для листинга — быстро
-    2. Playwright для получения mp4 URL с acctoken
+    2. Playwright для получения mp4 URL с acctoken и скачивания
     """
     seen_ids: set[str] = set()
     all_raw: list[dict] = []
@@ -412,6 +425,7 @@ async def fetch_rule34gen(limit: int = 20) -> list[dict]:
         items.append({
             "id":        entry["id"],
             "url":       url,
+            "data":      entry.get("data"),  # предзагруженные mp4 байты, может быть None
             "tags":      entry.get("tags", []),
             "likes":     entry.get("likes", 0),
             "rating":    "xxx",
@@ -431,6 +445,7 @@ def download_file(url: str, timeout: int = 60) -> tuple[Optional[bytes], Optiona
     """
     Скачивает файл через авторизованную сессию rule34gen.
     Возвращает (data, content_type).
+    Используется как fallback, если data из Playwright недоступен.
     """
     _init_session()
     try:
