@@ -269,9 +269,6 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
                     "data":  video_data,  # сырые байты mp4, захваченные через route
                 })
                 logger.info(f"r34gen: ✅ {entry['id']} — {len(video_data)} байт")
-                if len(results) >= 1:
-                    logger.info("r34gen: достаточно кандидатов, выходим раньше")
-                    break
 
             except Exception as e:
                 logger.warning(f"r34gen: ошибка {entry['page_url']}: {e}")
