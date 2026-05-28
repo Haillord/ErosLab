@@ -269,6 +269,9 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
                     "data":  video_data,  # сырые байты mp4, захваченные через route
                 })
                 logger.info(f"r34gen: ✅ {entry['id']} — {len(video_data)} байт")
+                if len(results) >= 1:
+                    logger.info("r34gen: достаточно кандидатов, выходим раньше")
+                    break
 
             except Exception as e:
                 logger.warning(f"r34gen: ошибка {entry['page_url']}: {e}")
@@ -405,7 +408,7 @@ async def fetch_rule34gen(limit: int = 20) -> list[dict]:
     if R34G_MIN_SCORE:
         all_raw = [e for e in all_raw if e.get("likes", 0) >= R34G_MIN_SCORE]
 
-    candidates = all_raw[:limit * 3]
+    candidates = all_raw[:5]
     detailed = await _fetch_video_details_playwright(candidates)
 
     items: list[dict] = []
