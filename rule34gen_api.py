@@ -4,7 +4,7 @@ rule34gen.com scraper
 Стратегия:
   1. AJAX API для листинга (как у rule34video) — быстро, без Playwright
   2. Playwright для открытия попапа и перехвата mp4 с acctoken
-  3. Скачивание mp4 через page.evaluate() с fetch() — все куки и origin уже на месте
+  3. Скачивание mp4 через page.route() — перехват тела запроса с Sec-Fetch-Dest: video
 """
 
 import asyncio
@@ -185,7 +185,7 @@ def _parse_listing(html: str) -> list[dict]:
 async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
     """
     Открывает страницы видео через Playwright и перехватывает mp4 с acctoken.
-    Скачивает mp4 через page.evaluate() с fetch() — куки и origin валидны.
+    Скачивает mp4 через page.route() — перехват тела запроса с Sec-Fetch-Dest: video.
     """
     try:
         from playwright.async_api import async_playwright
@@ -225,82 +225,58 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
         logger.info(f"r34gen: синхронизировано {len(pw_cookies)} кук из Playwright → requests")
 
         for entry in entries:
-            mp4_urls: list[str] = []
+            mp4_bodies: dict[str, bytes] = {}
             page = await context.new_page()
 
-            def on_response(response):
-                url = response.url
-                if "remote_control.php" in url and ".mp4" in url:
-                    mp4_urls.append(url)
-                elif ".mp4" in url and "rule34gen" in url and response.status == 200:
-                    mp4_urls.append(url)
+            # Перехватываем mp4 на уровне route — здесь Sec-Fetch-Dest: video уже стоит
+            async def capture_mp4(route, request):
+                response = await route.fetch()
+                try:
+                    body = await response.body()
+                    if len(body) > 1000:
+                        mp4_bodies[request.url] = body
+                        logger.info(f"r34gen: route захватил {len(body)} байт: {request.url[:80]}")
+                except Exception as e:
+                    logger.debug(f"r34gen: route body failed: {e}")
+                await route.fulfill(response=response)
 
-            page.on("response", on_response)
+            await page.route("**/get_file/**", capture_mp4)
 
             try:
                 await page.goto(entry["page_url"], timeout=25_000, wait_until="domcontentloaded")
-                await page.wait_for_timeout(3000)  # ждём загрузку видео-запроса
+                await page.wait_for_timeout(5000)  # ждём пока video element загрузит файл
 
-                # Если попап — пробуем кликнуть по .th
-                if not mp4_urls:
+                if not mp4_bodies:
+                    # Пробуем кликнуть по попапу если ничего не перехватили
                     thumb = await page.query_selector("a.th, a.js-open-popup")
                     if thumb:
                         await thumb.click()
-                        await page.wait_for_timeout(2000)
+                        await page.wait_for_timeout(4000)
 
-                if not mp4_urls:
+                if not mp4_bodies:
                     logger.debug(f"r34gen: mp4 не перехвачен для {entry['page_url']}")
                     continue
 
-                # Берём первый перехваченный (с acctoken уже внутри)
-                direct_url = mp4_urls[0]
+                direct_url, video_data = next(iter(mp4_bodies.items()))
 
                 # Теги из попапа/страницы
                 tags = await _extract_tags_playwright(page, entry.get("title", ""))
-
-                # Скачиваем mp4 через page.evaluate() — все куки и origin уже на месте
-                video_data: bytes | None = None
-                try:
-                    video_data_list = await page.evaluate("""
-                        async (url) => {
-                            const r = await fetch(url, {
-                                credentials: 'include',
-                                headers: { 'Referer': window.location.href }
-                            });
-                            if (!r.ok) return null;
-                            const buf = await r.arrayBuffer();
-                            return Array.from(new Uint8Array(buf));
-                        }
-                    """, direct_url)
-
-                    if video_data_list:
-                        video_data = bytes(video_data_list)
-                        if len(video_data) < 1000:
-                            logger.warning(f"r34gen: слишком мало байт через evaluate ({len(video_data)}), скип")
-                            video_data = None
-                        else:
-                            logger.info(f"r34gen: скачано {len(video_data)} байт для {entry['id']}")
-                    else:
-                        logger.warning(f"r34gen: evaluate вернул null для {entry['id']}")
-                        video_data = None
-                except Exception as e:
-                    logger.warning(f"r34gen: ошибка evaluate {entry['id']}: {e}")
-                    video_data = None
 
                 results.append({
                     **entry,
                     "url":   direct_url,
                     "tags":  tags,
-                    "data":  video_data,  # сырые байты mp4, None если не удалось
+                    "data":  video_data,  # сырые байты mp4, захваченные через route
                 })
-                logger.debug(f"r34gen: получен mp4 для {entry['id']}")
+                logger.info(f"r34gen: ✅ {entry['id']} — {len(video_data)} байт")
 
             except Exception as e:
-                logger.warning(f"r34gen: ошибка при открытии {entry['page_url']}: {e}")
+                logger.warning(f"r34gen: ошибка {entry['page_url']}: {e}")
             finally:
+                await page.unroute("**/get_file/**")
                 await page.close()
 
-            await asyncio.sleep(random.uniform(0.5, 1.0))
+            await asyncio.sleep(random.uniform(1.0, 2.0))
 
         await context.close()
         await browser.close()
