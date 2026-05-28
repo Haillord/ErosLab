@@ -261,10 +261,16 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
                 # Скачиваем mp4 через Playwright (та же сессия браузера, acctoken валиден)
                 video_data: bytes | None = None
                 try:
+                    logger.info(f"r34gen: перехвачен URL: {direct_url}")
                     resp = await context.request.fetch(direct_url)
+                    content_type = resp.headers.get('content-type', '???')
+                    logger.info(f"r34gen: статус={resp.status}, Content-Type={content_type}")
                     if resp.ok:
                         video_data = await resp.body()
-                        logger.info(f"r34gen: скачано {len(video_data)} байт для {entry['id']}")
+                        if len(video_data) < 200:
+                            logger.warning(f"r34gen: подозрительно мало байт ({len(video_data)}), тело: {video_data}")
+                        else:
+                            logger.info(f"r34gen: скачано {len(video_data)} байт для {entry['id']}")
                     else:
                         logger.warning(f"r34gen: HTTP {resp.status} при скачивании {entry['id']}")
                 except Exception as e:
