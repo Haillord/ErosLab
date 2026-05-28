@@ -334,7 +334,7 @@ def _clean_tags(raw: list[str], title: str = "") -> list[str]:
 
 # ── Сбор одной вариации ────────────────────────────────────────────────────────
 
-def _fetch_variation(variation: dict, pages: int, seen_ids: set) -> list[dict]:
+def _fetch_variation(variation: dict, pages: int) -> list[dict]:
     label = variation["label"]
     collected: list[dict] = []
 
@@ -358,17 +358,9 @@ def _fetch_variation(variation: dict, pages: int, seen_ids: set) -> list[dict]:
             logger.debug(f"r34gen [{label}] стр.{page_num}: пусто")
             break
 
-        new = 0
-        for e in entries:
-            if e["id"] not in seen_ids:
-                seen_ids.add(e["id"])
-                collected.append(e)
-                new += 1
+        collected.extend(entries)
 
-        logger.info(f"r34gen [{label}] стр.{page_num}: {len(entries)} карточек, новых: {new}")
-
-        if new == 0:
-            break
+        logger.info(f"r34gen [{label}] стр.{page_num}: {len(entries)} карточек, всего: {len(collected)}")
 
         time.sleep(random.uniform(0.4, 0.8))
 
@@ -383,11 +375,10 @@ async def fetch_rule34gen(limit: int = 20) -> list[dict]:
     1. AJAX API (requests) для листинга — быстро
     2. Playwright для получения mp4 URL с acctoken и скачивания
     """
-    seen_ids: set[str] = set()
     all_raw: list[dict] = []
 
     for variation in VARIATIONS:
-        entries = _fetch_variation(variation, pages=3, seen_ids=seen_ids)
+        entries = _fetch_variation(variation, pages=20)
         all_raw.extend(entries)
 
     if not all_raw:

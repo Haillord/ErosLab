@@ -774,8 +774,8 @@ async def fetch_candidates_once():
         if not items:
             logger.warning("TEST_RULE34GEN_ONLY=True и Rule34Gen ничего не вернул")
             return "rule34gen", []
-        fresh = [i for i in items if i["id"] not in posted_ids]
-        fresh = [i for i in fresh if not has_blacklisted(i.get("tags", []))]
+        # Не фильтруем по posted_ids — первый пост всё равно не постился
+        fresh = [i for i in items if not has_blacklisted(i.get("tags", []))]
         logger.info(f"Rule34Gen fresh: {len(fresh)} / {len(items)}")
         return "rule34gen", fresh
 
