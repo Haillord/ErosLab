@@ -74,10 +74,10 @@ NSFW_RATIO = float(os.environ.get("NSFW_RATIO", "0.6"))  # 60% XXX, 40% Mature
 TEST_CIVITAI_ONLY = False
 
 # Режим отладки: только rule34video (True = только Rule34Video для тестов)
-TEST_RULE34VIDEO_ONLY = False
+TEST_RULE34VIDEO_ONLY = True
 
 # Режим отладки: только rule34gen (True = только Rule34Gen для тестов)
-TEST_RULE34GEN_ONLY = True
+TEST_RULE34GEN_ONLY = False
 
 HISTORY_FILE = "posted_ids.json"
 HASHES_FILE  = "posted_hashes.json"
