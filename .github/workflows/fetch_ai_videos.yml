@@ -51,7 +51,8 @@ jobs:
         env:
           R34_USER_ID: ${{ secrets.R34_USER_ID }}
           R34_API_KEY: ${{ secrets.R34_API_KEY }}
-          RULE34_MIN_SCORE: ${{ github.event.inputs.min_score || '100' }}
+          # rule34_api должен пропустить ВСЕ посты, фильтр по score делаем в fetch_ai_videos.py
+          RULE34_MIN_SCORE: "0"
         run: python fetch_ai_videos.py
 
       - name: Upload artifact

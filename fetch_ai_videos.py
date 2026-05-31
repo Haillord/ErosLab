@@ -48,9 +48,12 @@ MIN_WIDTH = 512       # минимальная ширина, px
 MIN_FILE_SIZE = 100 * 1024        # 100 КБ
 MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 МБ
 
-# ── Индикатор AI-контента ──────────────────────────────────────────────────────
-# Определяем только по тегу ai_generated. Всё что без него — не AI.
-AI_INDICATOR = "ai_generated"
+# ── Индикаторы AI-контента ──────────────────────────────────────────────────
+# Набор тегов, указывающих на AI-генерацию. Расширяемый.
+AI_KEYWORDS = {
+    "ai_generated", "ai", "ai_art", "ai_video",
+    "ai_animation", "generated",
+}
 
 
 # ── Утилиты ────────────────────────────────────────────────────────────────────
@@ -61,8 +64,9 @@ def _is_video_url(url: str) -> bool:
 
 
 def _is_ai_generated(tags: list[str]) -> bool:
-    """Проверяет наличие тега ai_generated в списке тегов."""
-    return any(t.lower() == AI_INDICATOR for t in tags)
+    """Проверяет наличие AI-тегов в списке тегов поста."""
+    tag_set = set(t.lower() for t in tags)
+    return bool(tag_set & AI_KEYWORDS)
 
 
 def _get_video_metadata(data: bytes) -> dict:
@@ -240,11 +244,13 @@ def main():
 
     # Шаг 1: Получаем посты через rule34_api
     logger.info("Шаг 1: Запрашиваем AI-видео с rule34.xxx...")
+    # media_type="mixed" — не фильтруем по типу на уровне API,
+    # отфильтруем сами по URL (.mp4/.webm) ниже
     all_items = fetch_rule34(
         tags=None,
         limit=100,
         content_type="ai",
-        media_type="video",
+        media_type="mixed",
     )
 
     if not all_items:
