@@ -71,7 +71,7 @@ def _is_ai_generated(tags: list[str]) -> bool:
 
 def _get_video_metadata(data: bytes) -> dict:
     """
-    ffprobe — получение метаданных видео.
+    ffprobe — получение метаданных видео (парсинг ключ=значение).
     Возвращает: {duration, width, height, is_valid, issues}
     """
     result = {
@@ -90,7 +90,7 @@ def _get_video_metadata(data: bytes) -> dict:
         cmd = [
             "ffprobe", "-v", "error",
             "-show_entries", "format=duration:stream=width,height",
-            "-of", "default=noprint_wrappers=1:nokey=1",
+            "-of", "default=noprint_wrappers=1:nokey=0",
             "-select_streams", "v:0",
             tmp_path,
         ]
@@ -99,25 +99,34 @@ def _get_video_metadata(data: bytes) -> dict:
             result["issues"].append("ffprobe failed")
             return result
 
-        lines = [l.strip() for l in proc.stdout.strip().splitlines() if l.strip()]
-        if len(lines) >= 3:
-            duration_str = lines[0]
-            width_str = lines[1]
-            height_str = lines[2]
-            try:
-                result["duration"] = float(duration_str)
-            except ValueError:
-                result["issues"].append(f"invalid duration: {duration_str}")
-            try:
-                result["width"] = int(width_str)
-            except ValueError:
-                result["issues"].append(f"invalid width: {width_str}")
-            try:
-                result["height"] = int(height_str)
-            except ValueError:
-                result["issues"].append(f"invalid height: {height_str}")
-        else:
-            result["issues"].append("not enough ffprobe output")
+        # Парсим ключ=значение (nokey=0 — выводит с ключами)
+        for line in proc.stdout.strip().splitlines():
+            line = line.strip()
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            value = value.strip()
+            if key == "duration":
+                try:
+                    result["duration"] = float(value) if value and value != "N/A" else 0.0
+                except ValueError:
+                    result["issues"].append(f"invalid duration: {value}")
+            elif key == "width":
+                try:
+                    result["width"] = int(value)
+                except ValueError:
+                    result["issues"].append(f"invalid width: {value}")
+            elif key == "height":
+                try:
+                    result["height"] = int(value)
+                except ValueError:
+                    result["issues"].append(f"invalid height: {value}")
+
+        # Проверяем что получили данные
+        if result["width"] <= 0 or result["height"] <= 0:
+            result["issues"].append(f"bad resolution: {result['width']}x{result['height']}")
+        if result["duration"] <= 0:
+            result["issues"].append(f"bad duration: {result['duration']}")
 
         result["is_valid"] = len(result["issues"]) == 0
         return result

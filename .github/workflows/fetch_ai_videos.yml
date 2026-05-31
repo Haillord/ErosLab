@@ -8,11 +8,6 @@ on:
         required: false
         default: "10"
         type: string
-      min_score:
-        description: "Minimum score (likes)"
-        required: false
-        default: "100"
-        type: string
 
 jobs:
   fetch-ai-videos:
