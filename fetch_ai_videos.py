@@ -40,7 +40,7 @@ REPORT_FILE = Path("report.json")
 MAX_VIDEOS = 10
 
 # ── Пороги качества ────────────────────────────────────────────────────────────
-MIN_SCORE = 100       # минимальный score (лайки)
+MIN_SCORE = 20        # минимальный score (лайки)
 MIN_DURATION = 3.0    # минимальная длительность видео, сек
 MIN_WIDTH = 512       # минимальная ширина, px
 
@@ -261,23 +261,37 @@ def main():
     logger.info(f"Получено всего постов: {len(all_items)}")
 
     # Шаг 2: Фильтруем только видео, применяем score
+    debug_not_video = 0
+    debug_low_score = 0
+    debug_not_ai = 0
     candidates = []
+
+    # Покажем первые 3 поста для диагностики
+    logger.info("Первые 3 поста из API (raw):")
+    for i, item in enumerate(all_items[:3]):
+        logger.info(f"  [{i}] id={item.get('id','?')} url={str(item.get('url',''))[:80]} score={item.get('likes',0)} tags={item.get('tags',[])[:5]}")
+
     for item in all_items:
         if not _is_video_url(item.get("url", "")):
+            debug_not_video += 1
             continue
 
         score = max(0, int(item.get("likes", 0)))
         if score < MIN_SCORE:
+            debug_low_score += 1
             continue
 
         tags = item.get("tags", [])
         if not _is_ai_generated(tags):
+            debug_not_ai += 1
             continue
 
         candidates.append({
             "item": item,
             "score": score,
         })
+
+    logger.info(f"Отсев: не видео={debug_not_video}, score<{MIN_SCORE}={debug_low_score}, нет AI-тегов={debug_not_ai}")
 
     logger.info(f"Кандидатов после фильтрации: {len(candidates)}")
 
