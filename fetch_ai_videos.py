@@ -40,7 +40,7 @@ REPORT_FILE = Path("report.json")
 MAX_VIDEOS = 10
 
 # ── Пороги качества ────────────────────────────────────────────────────────────
-MIN_SCORE = 20        # минимальный score (лайки)
+MIN_SCORE = 5         # минимальный score (лайки) — на Rule34 скор у AI-видео низкий
 MIN_DURATION = 3.0    # минимальная длительность видео, сек
 MIN_WIDTH = 512       # минимальная ширина, px
 
@@ -243,13 +243,13 @@ def main():
     logger.info("=" * 50)
 
     # Шаг 1: Получаем посты через rule34_api
+    # Передаём теги напрямую с принудительным video, чтобы API отдавал именно видео
     logger.info("Шаг 1: Запрашиваем AI-видео с rule34.xxx...")
-    # media_type="mixed" — не фильтруем по типу на уровне API,
-    # отфильтруем сами по URL (.mp4/.webm) ниже
+    # animated — стандартный тег Rule34 для видео/анимации
     all_items = fetch_rule34(
-        tags=None,
+        tags="ai_generated animated rating:explicit",
         limit=100,
-        content_type="ai",
+        content_type="mixed",
         media_type="mixed",
     )
 
