@@ -445,6 +445,13 @@ async def fetch_rule34gen(limit: int = 20) -> list[dict]:
         url = entry.get("url", "")
         if not url or not url.startswith("http"):
             continue
+
+        # Фильтр: пропускаем видео с качеством ниже 480p
+        quality_match = re.search(r'_(\d{3})p?\.mp4', url)
+        if quality_match and int(quality_match.group(1)) < 480:
+            logger.debug(f"r34gen: пропускаем {quality_match.group(1)}p видео")
+            continue
+
         items.append({
             "id":        entry["id"],
             "url":       url,

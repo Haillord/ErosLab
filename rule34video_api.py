@@ -205,7 +205,7 @@ def _upgrade_video_quality(url: str) -> str:
     for quality in ["1080", "720", "480"]:
         upgraded = re.sub(r'_(\d+)(\.mp4)', f'_{quality}\\2', url)
         if upgraded == url:
-            break
+            continue
         try:
             r = _session.head(upgraded, timeout=5, allow_redirects=True)
             if r.status_code == 200:
@@ -434,6 +434,12 @@ def fetch_rule34video(limit: int = 20) -> list[dict]:
 
         url = detailed.get("url", "")
         if not url or not url.startswith("http"):
+            continue
+
+        # Фильтр: пропускаем видео с качеством ниже 480p
+        quality_match = re.search(r'_(\d{3})p?\.mp4', url)
+        if quality_match and int(quality_match.group(1)) < 480:
+            logger.debug(f"r34video: пропускаем {quality_match.group(1)}p видео")
             continue
 
         items.append({
