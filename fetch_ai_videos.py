@@ -26,6 +26,7 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rule34_api import fetch_rule34
+from watermark import add_watermark_to_video
 
 logging.basicConfig(
     level=logging.INFO,
@@ -234,6 +235,17 @@ def save_video(item: dict, index: int) -> str | None:
         f"  Качество OK: {meta['width']}x{meta['height']}, "
         f"{meta['duration']:.1f}с"
     )
+
+    # ── Водяной знак ──
+    try:
+        data = add_watermark_to_video(
+            video_data=data,
+            text="📣 @eroslabai",
+            opacity=0.3,
+        )
+        logger.info(f"  Водяной знак нанесён ({len(data) // 1024 // 1024} МБ)")
+    except Exception as e:
+        logger.warning(f"  Ошибка нанесения водяного знака, сохраняю оригинал: {e}")
 
     # ── Сохранение ──
     filepath.parent.mkdir(parents=True, exist_ok=True)
