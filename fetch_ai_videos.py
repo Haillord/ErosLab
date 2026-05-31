@@ -48,17 +48,9 @@ MIN_WIDTH = 512       # минимальная ширина, px
 MIN_FILE_SIZE = 100 * 1024        # 100 КБ
 MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 МБ
 
-# ── Индикаторы AI vs авторская 3D ──────────────────────────────────────────────
-AI_INDICATORS = {
-    "ai_generated", "ai", "ai_art", "ai_video", "ai_animation",
-    "stable_diffusion", "novelai", "midjourney", "generated",
-    "synthetic", "machine_learning",
-}
-
-AUTHOR_3D_INDICATORS = {
-    "3d_(artwork)", "sfm", "blender", "source_filmmaker",
-    "daz3d", "koikatsu", "honey_select", "mmd",
-}
+# ── Индикатор AI-контента ──────────────────────────────────────────────────────
+# Определяем только по тегу ai_generated. Всё что без него — не AI.
+AI_INDICATOR = "ai_generated"
 
 
 # ── Утилиты ────────────────────────────────────────────────────────────────────
@@ -68,22 +60,9 @@ def _is_video_url(url: str) -> bool:
     return path.endswith((".mp4", ".webm"))
 
 
-def _detect_content_type(tags: list[str]) -> str:
-    """
-    Определяет тип контента по тегам.
-    Возвращает: "ai_generated", "author_3d", "unknown"
-    """
-    tag_set = set(t.lower() for t in tags)
-    has_ai = bool(tag_set & AI_INDICATORS)
-    has_3d = bool(tag_set & AUTHOR_3D_INDICATORS)
-
-    if has_ai and not has_3d:
-        return "ai_generated"
-    if has_3d and not has_ai:
-        return "author_3d"
-    if has_ai and has_3d:
-        return "ai_generated"   # если есть и AI, и 3D — считаем AI
-    return "unknown"
+def _is_ai_generated(tags: list[str]) -> bool:
+    """Проверяет наличие тега ai_generated в списке тегов."""
+    return any(t.lower() == AI_INDICATOR for t in tags)
 
 
 def _get_video_metadata(data: bytes) -> dict:
@@ -286,8 +265,7 @@ def main():
             continue
 
         tags = item.get("tags", [])
-        content_type = _detect_content_type(tags)
-        if content_type != "ai_generated":
+        if not _is_ai_generated(tags):
             continue
 
         candidates.append({
@@ -358,7 +336,7 @@ def main():
             "min_duration_sec": MIN_DURATION,
             "min_width_px": MIN_WIDTH,
         },
-        "search_tags": "ai_generated animated rating:explicit",
+        "search_tags": "ai_generated video",
         "ai_videos": downloaded,
     }
 
