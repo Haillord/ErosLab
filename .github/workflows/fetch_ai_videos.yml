@@ -1,0 +1,64 @@
+name: Fetch AI Videos from Rule34
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Number of AI videos to download"
+        required: false
+        default: "10"
+        type: string
+      min_score:
+        description: "Minimum score (likes)"
+        required: false
+        default: "100"
+        type: string
+
+jobs:
+  fetch-ai-videos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install ffmpeg (for ffprobe)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg --no-install-recommends -qq
+          ffprobe -version
+
+      - name: Fetch AI videos
+        env:
+          R34_USER_ID: ${{ secrets.R34_USER_ID }}
+          R34_API_KEY: ${{ secrets.R34_API_KEY }}
+          RULE34_MIN_SCORE: ${{ github.event.inputs.min_score || '100' }}
+        run: python fetch_ai_videos.py
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-videos
+          path: |
+            ai_videos/
+            report.json
