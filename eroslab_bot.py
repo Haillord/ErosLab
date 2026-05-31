@@ -79,6 +79,11 @@ TEST_RULE34VIDEO_ONLY = False
 # Режим отладки: только rule34gen (True = только Rule34Gen для тестов)
 TEST_RULE34GEN_ONLY = False
 
+# Тумблеры отключения источников (ENV: "true" / "false")
+# По умолчанию выключены — включить: ENABLE_RULE34VIDEO=true
+ENABLE_RULE34VIDEO = os.environ.get("ENABLE_RULE34VIDEO", "false").lower() in ("1", "true", "yes", "on")
+ENABLE_RULE34GEN = os.environ.get("ENABLE_RULE34GEN", "false").lower() in ("1", "true", "yes", "on")
+
 HISTORY_FILE = "posted_ids.json"
 HASHES_FILE  = "posted_hashes.json"
 CONTENT_STATE_FILE = "content_state.json"
@@ -728,9 +733,11 @@ def _load_source_weights() -> dict:
     default = {
         "civitai":  1,
         "rule34":   1,
-        "rule34video": 1,
-        "rule34gen":   1,
     }
+    if ENABLE_RULE34VIDEO:
+        default["rule34video"] = 1
+    if ENABLE_RULE34GEN:
+        default["rule34gen"] = 1
     raw = os.environ.get("SOURCE_WEIGHTS", "").strip()
     if not raw:
         return default
@@ -800,9 +807,11 @@ async def fetch_candidates_once():
     available = {
         "civitai":     lambda: asyncio.to_thread(fetch_civitai),
         "rule34":      _fetch_rule34_async,
-        "rule34video": lambda: asyncio.to_thread(fetch_rule34video),
-        "rule34gen":   fetch_rule34gen,
     }
+    if ENABLE_RULE34VIDEO:
+        available["rule34video"] = lambda: asyncio.to_thread(fetch_rule34video)
+    if ENABLE_RULE34GEN:
+        available["rule34gen"] = fetch_rule34gen
 
     weights_cfg = _load_source_weights()
     logger.info(f"Source weights: {weights_cfg}")
@@ -1009,6 +1018,7 @@ async def main():
         f"min_bitrate_720p={MIN_BITRATE_720P}, "
         f"min_bitrate_1080p={MIN_BITRATE_1080P}"
     )
+    logger.info(f"ENABLE_RULE34VIDEO={ENABLE_RULE34VIDEO}, ENABLE_RULE34GEN={ENABLE_RULE34GEN}")
     logger.info("=" * 50)
 
     target_chat_id = TELEGRAM_CHANNEL_ID
