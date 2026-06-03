@@ -208,26 +208,25 @@ async def _try_higher_quality(
 ) -> tuple[str, bytes] | None:
     """
     Если route не перехватил высокое качество — запрашиваем отдельно.
-    URL паттерн: .../18752/18752.mp4?v-acctoken=...
+    URL паттерн: .../18752/18752_360.mp4?v-acctoken=...
     Цель:        .../18752/18752_1080p.mp4?v-acctoken=...
-
-    Acctoken генерируется сервером под конкретный файл, поэтому
-    используем context.request.fetch — браузерный контекст с куками,
-    который получит редирект на правильный токен.
     """
     path, _, query = url.partition('?')
 
     if not path.endswith('.mp4'):
         return None
 
-    # Уже с качеством — апгрейдить нечего
-    if any(q in path for q in ['_1080p', '_720p', '_480p']):
-        return None
+    # Нормализуем — убираем любое текущее качество (_360, _480p, _720p, _1080p)
+    base_path = re.sub(r'_(360|480p?|720p?|1080p?)\.mp4$', '', path)
 
-    base_path = path[:-4]  # убираем .mp4
+    # Если ничего не убралось — просто снимаем .mp4
+    if base_path == path:
+        base_path = path[:-4]
 
     for quality in ["1080p", "720p", "480p"]:
-        test_url = f"{base_path}_{quality}.mp4?{query}"
+        test_url = f"{base_path}_{quality}.mp4"
+        if query:
+            test_url = f"{test_url}?{query}"
         try:
             resp = await context.request.fetch(
                 test_url,
@@ -298,8 +297,10 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
                 try:
                     body = await response.body()
                     if len(body) > 1000:
-                        _bodies[request.url] = body
-                        logger.info(f"r34gen: route захватил {len(body)} байт: {request.url[:80]}")
+                        # Берём финальный URL после редиректа, там уже _360.mp4
+                        final_url = response.url if hasattr(response, 'url') else request.url
+                        _bodies[final_url] = body
+                        logger.info(f"r34gen: route захватил {len(body)} байт: {final_url[:80]}")
                 except Exception as e:
                     logger.debug(f"r34gen: route body failed: {e}")
                 await route.fulfill(response=response)
