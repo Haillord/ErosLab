@@ -297,10 +297,9 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
                 try:
                     body = await response.body()
                     if len(body) > 1000:
-                        # Берём финальный URL после редиректа, там уже _360.mp4
-                        final_url = response.url if hasattr(response, 'url') else request.url
-                        _bodies[final_url] = body
-                        logger.info(f"r34gen: route захватил {len(body)} байт: {final_url[:80]}")
+                        # Используем ИСХОДНЫЙ request.url, не финальный CDN
+                        _bodies[request.url] = body
+                        logger.info(f"r34gen: route захватил {len(body)} байт: {request.url[:80]}")
                 except Exception as e:
                     logger.debug(f"r34gen: route body failed: {e}")
                 await route.fulfill(response=response)
@@ -309,6 +308,16 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
 
             try:
                 await page.goto(entry["page_url"], timeout=25_000, wait_until="domcontentloaded")
+
+                # Читаем src из video тега ДО того как браузер начал скачивать
+                video_src = await page.evaluate("""
+                    () => {
+                        const v = document.querySelector('video source, video');
+                        return v ? (v.src || v.getAttribute('src')) : null;
+                    }
+                """)
+                logger.info(f"r34gen: video src из DOM: {video_src}")
+
                 await page.wait_for_timeout(5000)
 
                 if not mp4_bodies:
