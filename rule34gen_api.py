@@ -206,20 +206,52 @@ def _pick_best_quality(mp4_bodies: dict[str, bytes]) -> tuple[str, bytes]:
 async def _try_higher_quality(
     context, url: str, referer: str
 ) -> tuple[str, bytes] | None:
-    """
-    Пробует 1080p → 720p → 480p от DOM video src.
-    URL: .../18752/18752_360.mp4/?v-acctoken=...  (trailing slash возможен!)
-    Цель: .../18752/18752_720p.mp4/?v-acctoken=...
-    """
     logger.info(f"r34gen: _try_higher_quality url={url[:100]}")
 
-    # Разбиваем на path и query
     path, _, query = url.partition('?')
-    path = path.rstrip('/')  # убираем trailing slash: .mp4/ → .mp4
+    path = path.rstrip('/')
 
     if not path.endswith('.mp4'):
-        logger.info(f"r34gen: path не заканчивается на .mp4 после strip: {path[-30:]}")
+        logger.info(f"r34gen: не mp4: {path[-30:]}")
         return None
+
+    # Убираем суффикс качества — получаем чистый base
+    base_path = re.sub(r'_(360|480p?|720p?|1080p?)\.mp4$', '', path)
+    if base_path == path:
+        base_path = path[:-4]
+
+    logger.info(f"r34gen: base_path={base_path[-50:]}")
+
+    # Пробуем: сначала без суффикса (сервер сам редиректит на лучшее),
+    # потом явные качества
+    candidates = [
+        ("auto",  f"{base_path}.mp4/"),
+        ("1080p", f"{base_path}_1080p.mp4/"),
+        ("720p",  f"{base_path}_720p.mp4/"),
+        ("480p",  f"{base_path}_480p.mp4/"),
+    ]
+
+    for label, test_path in candidates:
+        test_url = f"{test_path}?{query}" if query else test_path
+        logger.info(f"r34gen: пробуем {label}: {test_url[:100]}")
+        try:
+            resp = await context.request.fetch(
+                test_url,
+                headers={
+                    "Referer": referer,
+                    "User-Agent": HEADERS["User-Agent"],
+                }
+            )
+            logger.info(f"r34gen: {label} → HTTP {resp.status}, url={resp.url[-50:]}")
+            if resp.ok:
+                body = await resp.body()
+                logger.info(f"r34gen: {label} тело {len(body)} байт")
+                if len(body) > 100_000:
+                    return test_url, body
+        except Exception as e:
+            logger.info(f"r34gen: {label} ошибка: {e}")
+
+    return None
 
     # Убираем текущее качество (_360, _480p, _720p, _1080p)
     base_path = re.sub(r'_(360|480p?|720p?|1080p?)\.mp4$', '', path)
