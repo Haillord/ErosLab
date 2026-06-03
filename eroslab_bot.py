@@ -23,7 +23,6 @@ from telegram import Bot
 from caption_generator import generate_caption
 from civitai_api import fetch_civitai
 from rule34_api import fetch_rule34
-from rule34video_api import fetch_rule34video
 from rule34gen_api import fetch_rule34gen, download_file as r34gen_download
 from watermark import add_watermark, add_watermark_to_video, should_add_watermark
 from utils_state import (
@@ -73,15 +72,10 @@ NSFW_RATIO = float(os.environ.get("NSFW_RATIO", "0.6"))  # 60% XXX, 40% Mature
 # Временно отключить Rule34 (True = только CivitAI для тестов)
 TEST_CIVITAI_ONLY = False
 
-# Режим отладки: только rule34video (True = только Rule34Video для тестов)
-TEST_RULE34VIDEO_ONLY = False
-
 # Режим отладки: только rule34gen (True = только Rule34Gen для тестов)
-TEST_RULE34GEN_ONLY = False
+TEST_RULE34GEN_ONLY = True
 
 # Тумблеры отключения источников (ENV: "true" / "false")
-# По умолчанию выключены — включить: ENABLE_RULE34VIDEO=true
-ENABLE_RULE34VIDEO = os.environ.get("ENABLE_RULE34VIDEO", "false").lower() in ("1", "true", "yes", "on")
 ENABLE_RULE34GEN = os.environ.get("ENABLE_RULE34GEN", "false").lower() in ("1", "true", "yes", "on")
 
 HISTORY_FILE = "posted_ids.json"
@@ -193,12 +187,8 @@ def record_run_stats(metrics: dict):
     )
 
 def get_next_content_type():
-    """Чередует между 3d и ai контентом"""
-    global content_state
-    next_type = "ai" if content_state["last_type"] == "3d" else "3d"
-    content_state["last_type"] = next_type
-    save_json(CONTENT_STATE_FILE, content_state)
-    return next_type
+    """Всегда возвращает ai — 3D контент удалён."""
+    return "ai"
 
 def get_next_media_type():
     """Строгое распределение: 85% video, 15% image."""
@@ -737,8 +727,6 @@ def _load_source_weights() -> dict:
         "civitai":  1,
         "rule34":   1,
     }
-    if ENABLE_RULE34VIDEO:
-        default["rule34video"] = 1
     if ENABLE_RULE34GEN:
         default["rule34gen"] = 1
     raw = os.environ.get("SOURCE_WEIGHTS", "").strip()
@@ -764,18 +752,6 @@ async def fetch_candidates_once():
     - Блэклист применяется здесь для всех источников кроме CivitAI
       (у него фильтрация встроена внутри fetch_civitai()).
     """
-
-    # ── Режим отладки: только Rule34Video ─────────────────────────────────
-    if TEST_RULE34VIDEO_ONLY:
-        logger.info("Source: Rule34Video only (TEST_RULE34VIDEO_ONLY=True)")
-        items = await asyncio.to_thread(fetch_rule34video)
-        if not items:
-            logger.warning("TEST_RULE34VIDEO_ONLY=True и Rule34Video ничего не вернул")
-            return "rule34video", []
-        fresh = [i for i in items if i["id"] not in posted_ids]
-        fresh = [i for i in fresh if not has_blacklisted(i.get("tags", []))]
-        logger.info(f"Rule34Video fresh: {len(fresh)} / {len(items)}")
-        return "rule34video", fresh
 
     # ── Режим отладки: только Rule34Gen ──────────────────────────────────
     if TEST_RULE34GEN_ONLY:
@@ -811,8 +787,6 @@ async def fetch_candidates_once():
         "civitai":     lambda: asyncio.to_thread(fetch_civitai),
         "rule34":      _fetch_rule34_async,
     }
-    if ENABLE_RULE34VIDEO:
-        available["rule34video"] = lambda: asyncio.to_thread(fetch_rule34video)
     if ENABLE_RULE34GEN:
         available["rule34gen"] = fetch_rule34gen
 
@@ -1004,7 +978,7 @@ async def main():
         flush_stats_once()
         return
 
-    if not CIVITAI_API_KEY and not TEST_RULE34VIDEO_ONLY and not TEST_RULE34GEN_ONLY:
+    if not CIVITAI_API_KEY and not TEST_RULE34GEN_ONLY:
         logger.error("No CIVITAI_API_KEY found!")
         flush_stats_once()
         return
@@ -1021,7 +995,7 @@ async def main():
         f"min_bitrate_720p={MIN_BITRATE_720P}, "
         f"min_bitrate_1080p={MIN_BITRATE_1080P}"
     )
-    logger.info(f"ENABLE_RULE34VIDEO={ENABLE_RULE34VIDEO}, ENABLE_RULE34GEN={ENABLE_RULE34GEN}")
+    logger.info(f"ENABLE_RULE34GEN={ENABLE_RULE34GEN}")
     logger.info("=" * 50)
 
     target_chat_id = TELEGRAM_CHANNEL_ID
@@ -1151,22 +1125,13 @@ async def main():
             )
 
             if ENABLE_VIDEO_QOS and avg_bitrate_kbps < min_bitrate_kbps:
-                effective_min = min_bitrate_kbps
-                if item.get("source") == "rule34video":
-                    effective_min = max(min_bitrate_kbps - 300, 500)
-                if avg_bitrate_kbps < effective_min:
-                    logger.warning(
-                        f"Skipping low-quality video: {avg_bitrate_kbps:.0f} < {effective_min} kbps"
-                    )
-                    run_metrics["skip_low_video_quality"] += 1
-                    posted_ids.add(item["id"])
-                    save_all()
-                    continue
-                else:
-                    logger.info(
-                        f"Video QoS: {avg_bitrate_kbps:.0f} < {min_bitrate_kbps} (standard), "
-                        f"but passed softened rule34video threshold ({effective_min} kbps)"
-                    )
+                logger.warning(
+                    f"Skipping low-quality video: {avg_bitrate_kbps:.0f} < {min_bitrate_kbps} kbps"
+                )
+                run_metrics["skip_low_video_quality"] += 1
+                posted_ids.add(item["id"])
+                save_all()
+                continue
 
             if img_width and img_height:
                 ratio = img_width / img_height

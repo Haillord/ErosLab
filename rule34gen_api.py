@@ -343,17 +343,18 @@ def _clean_tags(raw: list[str], title: str = "") -> list[str]:
 async def _try_higher_quality(
     context, url: str, referer: str
 ) -> tuple[str, bytes] | None:
-    """Пробует 1080p → 720p → возвращает (url, data) или None если недоступно."""
+    """Пробует 1080p → 720p → 480p, возвращает (url, data) или None."""
     import re
 
     def replace_quality(u: str, q: str) -> str:
-        return re.sub(r'_\d+\.mp4', f'_{q}.mp4', u)
+        path = u.split('?')[0]
+        query = u[len(path):]  # сохраняем ?acctoken=...
+        new_path = re.sub(r'_\d+\.mp4', f'_{q}.mp4', path)
+        return new_path + query
 
-    base_url = url.split('?')[0]  # без acctoken
-
-    for quality in ["1080", "720"]:
-        test_url = replace_quality(base_url, quality)
-        if test_url == base_url:
+    for quality in ["1080", "720", "480"]:
+        test_url = replace_quality(url, quality)
+        if test_url == url:
             continue
         try:
             resp = await context.request.fetch(
@@ -368,7 +369,7 @@ async def _try_higher_quality(
         except Exception:
             continue
 
-    return None  # остаёмся на оригинале
+    return None  # не удалось апгрейдить качество
 
 
 # ── Сбор одной вариации ────────────────────────────────────────────────────────
@@ -435,7 +436,7 @@ async def fetch_rule34gen(limit: int = 20) -> list[dict]:
     if R34G_MIN_SCORE:
         all_raw = [e for e in all_raw if e.get("likes", 0) >= R34G_MIN_SCORE]
 
-    candidates = all_raw[:5]
+    candidates = all_raw[:15]
     detailed = await _fetch_video_details_playwright(candidates)
 
     items: list[dict] = []

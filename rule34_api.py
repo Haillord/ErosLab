@@ -13,18 +13,6 @@ RULE34_REQUIRE_COMMENTS = os.getenv("RULE34_REQUIRE_COMMENTS", "false").lower() 
 
 logger = logging.getLogger("ErosLab.Rule34")
 
-# Разнообразные наборы тегов — выбираем случайный каждый раз
-TAG_SETS = [
-    # Базовые качественные 3D/анимация (самые рабочие в 2026)
-    "3d_(artwork) animated rating:explicit",
-    "3d_(artwork) video rating:explicit",
-
-    # Для чистой анимации (не обязательно 3D)
-    "animated rating:explicit",
-    "gif rating:explicit",
-    "webm rating:explicit"
-]
-
 # Теги для ИИ-контента (AI generated) — обновлено под 2026
 AI_TAG_SETS = [
     # Изображения
@@ -34,12 +22,6 @@ AI_TAG_SETS = [
     "ai_generated animated rating:explicit",
     "ai_generated webm rating:explicit",
     "ai_generated video rating:explicit",
-]
-
-# Теги для чистого 3D (с сильным исключением 2D и low-quality)
-THREE_D_TAG_SETS = [
-    "3d_(artwork) animated rating:explicit",
-    "3d_(artwork) video rating:explicit"
 ]
 
 
@@ -113,31 +95,24 @@ def _request_with_backoff(url, params, headers, max_retries=3):
     return None
 
 
-def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "mixed", media_type: str = "mixed") -> List[Dict[str, Any]]:
+def fetch_rule34(tags: str = None, limit: int = 100, content_type: str = "ai", media_type: str = "mixed") -> List[Dict[str, Any]]:
     """
     Парсинг Rule34 через API с авторизацией и пагинацией
     
     Args:
         tags: конкретные теги (если None, выбираются случайно)
         limit: количество постов
-        content_type: "mixed", "3d", "ai" — тип контента
+        content_type: (не используется, всегда AI)
         media_type: "mixed", "video", "image" — тип медиа
     """
     
-    # Выбор тегов на основе типа контента
+    # Выбор тегов — только AI
     if tags is None:
-        if content_type == "ai":
-            if media_type == "video":
-                animated_tags = [t for t in AI_TAG_SETS if "animated" in t.lower()]
-                tags = random.choice(animated_tags) if animated_tags else random.choice(AI_TAG_SETS)
-            else:
-                tags = random.choice(AI_TAG_SETS)
-        elif content_type == "3d":
-            filtered = _filter_tags_by_media_type(THREE_D_TAG_SETS, media_type)
-            tags = random.choice(filtered)
+        if media_type == "video":
+            animated_tags = [t for t in AI_TAG_SETS if "animated" in t.lower()]
+            tags = random.choice(animated_tags) if animated_tags else random.choice(AI_TAG_SETS)
         else:
-            filtered = _filter_tags_by_media_type(TAG_SETS, media_type)
-            tags = random.choice(filtered)
+            tags = random.choice(AI_TAG_SETS)
     
     # Добавляем rating:explicit если нет
     if "rating:explicit" not in tags:
