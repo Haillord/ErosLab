@@ -198,8 +198,8 @@ def _pick_best_quality(mp4_bodies: dict[str, bytes]) -> tuple[str, bytes]:
             if q in url:
                 logger.info(f"r34gen: выбрано качество {q} из перехваченных route-ом")
                 return url, data
-    # Ничего с явным качеством — берём первый
     url, data = next(iter(mp4_bodies.items()))
+    logger.debug(f"r34gen: базовое качество в route, попробуем апгрейд: {url[-40:]}")
     return url, data
 
 
@@ -207,26 +207,34 @@ async def _try_higher_quality(
     context, url: str, referer: str
 ) -> tuple[str, bytes] | None:
     """
-    Если route не перехватил высокое качество — запрашиваем отдельно.
-    URL паттерн: .../18752/18752_360.mp4?v-acctoken=...
-    Цель:        .../18752/18752_1080p.mp4?v-acctoken=...
+    Пробует 1080p → 720p → 480p от DOM video src.
+    URL: .../18752/18752_360.mp4/?v-acctoken=...  (trailing slash возможен!)
+    Цель: .../18752/18752_720p.mp4/?v-acctoken=...
     """
+    logger.info(f"r34gen: _try_higher_quality url={url[:100]}")
+
+    # Разбиваем на path и query
     path, _, query = url.partition('?')
+    path = path.rstrip('/')  # убираем trailing slash: .mp4/ → .mp4
 
     if not path.endswith('.mp4'):
+        logger.info(f"r34gen: path не заканчивается на .mp4 после strip: {path[-30:]}")
         return None
 
-    # Нормализуем — убираем любое текущее качество (_360, _480p, _720p, _1080p)
+    # Убираем текущее качество (_360, _480p, _720p, _1080p)
     base_path = re.sub(r'_(360|480p?|720p?|1080p?)\.mp4$', '', path)
-
-    # Если ничего не убралось — просто снимаем .mp4
     if base_path == path:
+        # Суффикса качества нет — просто убираем .mp4
         base_path = path[:-4]
 
+    logger.info(f"r34gen: base_path={base_path[-50:]}")
+
     for quality in ["1080p", "720p", "480p"]:
-        test_url = f"{base_path}_{quality}.mp4"
+        # Слэш в конце оставляем как в оригинале (сервер может требовать)
+        test_url = f"{base_path}_{quality}.mp4/"
         if query:
             test_url = f"{test_url}?{query}"
+        logger.info(f"r34gen: пробуем {quality}: {test_url[:100]}")
         try:
             resp = await context.request.fetch(
                 test_url,
@@ -235,17 +243,16 @@ async def _try_higher_quality(
                     "User-Agent": HEADERS["User-Agent"],
                 }
             )
+            logger.info(f"r34gen: {quality} → HTTP {resp.status}")
             if resp.ok:
                 body = await resp.body()
                 if len(body) > 100_000:
-                    logger.info(f"r34gen: {quality} доступен ({len(body)} байт)")
+                    logger.info(f"r34gen: ✅ {quality} доступен ({len(body)} байт)")
                     return test_url, body
                 else:
-                    logger.debug(f"r34gen: {quality} вернул слишком мало ({len(body)} байт)")
-            else:
-                logger.debug(f"r34gen: {quality} → HTTP {resp.status}")
+                    logger.info(f"r34gen: {quality} слишком мало байт ({len(body)}), скип")
         except Exception as e:
-            logger.debug(f"r34gen: {quality} ошибка: {e}")
+            logger.info(f"r34gen: {quality} ошибка: {e}")
 
     return None
 
@@ -297,7 +304,6 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
                 try:
                     body = await response.body()
                     if len(body) > 1000:
-                        # Используем ИСХОДНЫЙ request.url, не финальный CDN
                         _bodies[request.url] = body
                         logger.info(f"r34gen: route захватил {len(body)} байт: {request.url[:80]}")
                 except Exception as e:
@@ -309,7 +315,7 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
             try:
                 await page.goto(entry["page_url"], timeout=25_000, wait_until="domcontentloaded")
 
-                # Читаем src из video тега ДО скачивания
+                # Читаем src из video тега — там нормальный URL с _360.mp4/?v-acctoken=...
                 video_src = await page.evaluate("""
                     () => {
                         const v = document.querySelector('video source, video');
@@ -330,14 +336,11 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
                     logger.debug(f"r34gen: mp4 не перехвачен для {entry['page_url']}")
                     continue
 
-                # Берём данные из route (уже скачаны браузером)
+                # Данные уже скачаны браузером через route
                 _, best_data = _pick_best_quality(mp4_bodies)
+                best_url = video_src or next(iter(mp4_bodies.keys()))
 
-                # Для апгрейда используем video_src из DOM — там нормальный URL с _360.mp4
-                upgrade_base_url = video_src if video_src else next(iter(mp4_bodies.keys()))
-                best_url = upgrade_base_url
-
-                # Пробуем апгрейднуть от DOM URL
+                # Апгрейд от DOM URL (там есть _360.mp4/ с acctoken)
                 if video_src and not any(q in video_src for q in ['_720p', '_1080p']):
                     higher = await _try_higher_quality(context, video_src, entry["page_url"])
                     if higher:
