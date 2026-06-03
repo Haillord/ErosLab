@@ -73,7 +73,7 @@ NSFW_RATIO = float(os.environ.get("NSFW_RATIO", "0.6"))  # 60% XXX, 40% Mature
 TEST_CIVITAI_ONLY = False
 
 # Режим отладки: только rule34gen (True = только Rule34Gen для тестов)
-TEST_RULE34GEN_ONLY = True
+TEST_RULE34GEN_ONLY = False
 
 # Тумблеры отключения источников (ENV: "true" / "false")
 ENABLE_RULE34GEN = os.environ.get("ENABLE_RULE34GEN", "false").lower() in ("1", "true", "yes", "on")
