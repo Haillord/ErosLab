@@ -309,7 +309,7 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
             try:
                 await page.goto(entry["page_url"], timeout=25_000, wait_until="domcontentloaded")
 
-                # Читаем src из video тега ДО того как браузер начал скачивать
+                # Читаем src из video тега ДО скачивания
                 video_src = await page.evaluate("""
                     () => {
                         const v = document.querySelector('video source, video');
@@ -330,12 +330,16 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
                     logger.debug(f"r34gen: mp4 не перехвачен для {entry['page_url']}")
                     continue
 
-                # Сначала ищем лучшее качество среди уже перехваченных
-                best_url, best_data = _pick_best_quality(mp4_bodies)
+                # Берём данные из route (уже скачаны браузером)
+                _, best_data = _pick_best_quality(mp4_bodies)
 
-                # Если route не поймал 720p+ — запрашиваем отдельно
-                if not any(q in best_url for q in ['_720p', '_1080p']):
-                    higher = await _try_higher_quality(context, best_url, entry["page_url"])
+                # Для апгрейда используем video_src из DOM — там нормальный URL с _360.mp4
+                upgrade_base_url = video_src if video_src else next(iter(mp4_bodies.keys()))
+                best_url = upgrade_base_url
+
+                # Пробуем апгрейднуть от DOM URL
+                if video_src and not any(q in video_src for q in ['_720p', '_1080p']):
+                    higher = await _try_higher_quality(context, video_src, entry["page_url"])
                     if higher:
                         best_url, best_data = higher
                     else:
