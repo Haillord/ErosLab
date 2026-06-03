@@ -268,7 +268,7 @@ def main():
     logger.info("Шаг 1: Запрашиваем AI-видео с rule34.xxx...")
     # animated — стандартный тег Rule34 для видео/анимации
     all_items = fetch_rule34(
-        tags="ai_generated animated rating:explicit",
+        tags="ai_generated animated rating:explicit order:random",
         limit=100,
         content_type="mixed",
         media_type="mixed",
