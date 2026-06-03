@@ -346,14 +346,22 @@ async def _try_higher_quality(
     """Пробует 1080p → 720p → 480p, возвращает (url, data) или None."""
     import re
 
-    def replace_quality(u: str, q: str) -> str:
+    def replace_quality(u: str, q: str) -> str | None:
         path = u.split('?')[0]
         query = u[len(path):]  # сохраняем ?acctoken=...
-        new_path = re.sub(r'_\d+\.mp4', f'_{q}.mp4', path)
-        return new_path + query
+        # Пытаемся найти _360.mp4 или подобное
+        result = re.sub(r'_\d+\.mp4', f'_{q}.mp4', path)
+        if result == path:
+            # Паттерн не найден — вставляем качество перед .mp4
+            result = re.sub(r'\.mp4', f'_{q}.mp4', path)
+        if result == path:
+            return None  # .mp4 тоже не нашли
+        return result + query
 
     for quality in ["1080", "720", "480"]:
         test_url = replace_quality(url, quality)
+        if test_url is None:
+            continue
         if test_url == url:
             continue
         try:
@@ -418,14 +426,23 @@ async def fetch_rule34gen(limit: int = 20) -> list[dict]:
     all_raw: list[dict] = []
 
     for variation in VARIATIONS:
-        entries = _fetch_variation(variation, pages=20)
+        entries = _fetch_variation(variation, pages=3)
         all_raw.extend(entries)
 
     if not all_raw:
         logger.warning("r34gen: ничего не нашли на листингах")
         return []
 
-    logger.info(f"r34gen: всего карточек: {len(all_raw)}")
+    # Дедупликация по id
+    seen_ids: set[str] = set()
+    deduped: list[dict] = []
+    for e in all_raw:
+        eid = e.get("id", "")
+        if eid and eid not in seen_ids:
+            seen_ids.add(eid)
+            deduped.append(e)
+    all_raw = deduped
+    logger.info(f"r34gen: после дедупликации: {len(all_raw)}")
 
     # Скоринг: просмотры + лайки
     for e in all_raw:
