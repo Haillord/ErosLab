@@ -115,12 +115,6 @@ def _get(url: str, params: dict = None, retries: int = 3) -> Optional[requests.R
 # ── Парсинг листинга ───────────────────────────────────────────────────────────
 
 def _parse_listing(html: str) -> list[dict]:
-    """
-    Парсит HTML ответа AJAX API.
-    Структура: div.item.thumb.video_N > a.th.js-open-popup[href]
-                                        div.thumb_title
-                                        div.thumb_info
-    """
     soup = BeautifulSoup(html, "lxml")
     items = []
 
@@ -136,7 +130,6 @@ def _parse_listing(html: str) -> list[dict]:
             if href.startswith("/"):
                 href = BASE_URL + href
 
-            # ID из класса div (video_N) или из URL
             video_id = None
             for cls in block.get("class", []):
                 m = re.match(r"video_(\d+)$", cls)
@@ -147,7 +140,6 @@ def _parse_listing(html: str) -> list[dict]:
                 m = re.search(r"/video(?:s)?/(\d+)", href)
                 video_id = m.group(1) if m else re.sub(r"\W", "_", href[-15:])
 
-            # Заголовок
             title = ""
             title_tag = block.select_one("div.thumb_title")
             if title_tag:
@@ -155,7 +147,6 @@ def _parse_listing(html: str) -> list[dict]:
             if not title:
                 title = link.get("title", "")
 
-            # Лайки / просмотры из thumb_info
             likes = 0
             views = 0
             info_tag = block.select_one("div.thumb_info")
@@ -181,13 +172,88 @@ def _parse_listing(html: str) -> list[dict]:
     return items
 
 
+# ── Утилиты ───────────────────────────────────────────────────────────────────
+
+def _clean_tags(raw: list[str], title: str = "") -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for t in raw:
+        if t and t not in STOP_WORDS and t not in seen and len(t) <= 40:
+            seen.add(t)
+            result.append(t)
+    if title:
+        for word in re.findall(r"[a-zA-Z]{3,}", title.lower()):
+            if word not in STOP_WORDS and word not in seen:
+                result.append(word)
+                seen.add(word)
+                if len(result) >= 20:
+                    break
+    return result[:20]
+
+
+def _pick_best_quality(mp4_bodies: dict[str, bytes]) -> tuple[str, bytes]:
+    """Выбирает лучшее качество из уже перехваченных route-ом URL."""
+    for q in ["_1080p", "_720p", "_480p"]:
+        for url, data in mp4_bodies.items():
+            if q in url:
+                logger.info(f"r34gen: выбрано качество {q} из перехваченных route-ом")
+                return url, data
+    # Ничего с явным качеством — берём первый
+    url, data = next(iter(mp4_bodies.items()))
+    return url, data
+
+
+async def _try_higher_quality(
+    context, url: str, referer: str
+) -> tuple[str, bytes] | None:
+    """
+    Если route не перехватил высокое качество — запрашиваем отдельно.
+    URL паттерн: .../18752/18752.mp4?v-acctoken=...
+    Цель:        .../18752/18752_1080p.mp4?v-acctoken=...
+
+    Acctoken генерируется сервером под конкретный файл, поэтому
+    используем context.request.fetch — браузерный контекст с куками,
+    который получит редирект на правильный токен.
+    """
+    path, _, query = url.partition('?')
+
+    if not path.endswith('.mp4'):
+        return None
+
+    # Уже с качеством — апгрейдить нечего
+    if any(q in path for q in ['_1080p', '_720p', '_480p']):
+        return None
+
+    base_path = path[:-4]  # убираем .mp4
+
+    for quality in ["1080p", "720p", "480p"]:
+        test_url = f"{base_path}_{quality}.mp4?{query}"
+        try:
+            resp = await context.request.fetch(
+                test_url,
+                headers={
+                    "Referer": referer,
+                    "User-Agent": HEADERS["User-Agent"],
+                }
+            )
+            if resp.ok:
+                body = await resp.body()
+                if len(body) > 100_000:
+                    logger.info(f"r34gen: {quality} доступен ({len(body)} байт)")
+                    return test_url, body
+                else:
+                    logger.debug(f"r34gen: {quality} вернул слишком мало ({len(body)} байт)")
+            else:
+                logger.debug(f"r34gen: {quality} → HTTP {resp.status}")
+        except Exception as e:
+            logger.debug(f"r34gen: {quality} ошибка: {e}")
+
+    return None
+
+
 # ── Детали видео через Playwright ─────────────────────────────────────────────
 
 async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
-    """
-    Открывает страницы видео через Playwright и перехватывает mp4 с acctoken.
-    Скачивает mp4 через page.route() — перехват тела запроса с Sec-Fetch-Dest: video.
-    """
     try:
         from playwright.async_api import async_playwright
     except ImportError:
@@ -206,21 +272,19 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
             viewport={"width": 1280, "height": 720},
         )
 
-        # Передаём PHPSESSID в Playwright, если есть
         if R34G_PHPSESSID:
             await context.add_cookies([{
                 "name": "PHPSESSID", "value": R34G_PHPSESSID,
                 "domain": "rule34gen.com", "path": "/"
             }])
 
-        # Загружаем главную страницу чтобы получить актуальные куки (kt_acctoken и др.)
         init_page = await context.new_page()
         await init_page.goto(BASE_URL, timeout=15_000, wait_until="domcontentloaded")
         await init_page.close()
 
-        # Синхронизируем куки из браузера в requests-сессию
         pw_cookies = await context.cookies()
-        _session_initialized = True  # сессия уже инициализирована
+        global _session_initialized
+        _session_initialized = True
         for c in pw_cookies:
             _session.cookies.set(c["name"], c["value"], domain=c.get("domain", "rule34gen.com"))
         logger.info(f"r34gen: синхронизировано {len(pw_cookies)} кук из Playwright → requests")
@@ -229,13 +293,12 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
             mp4_bodies: dict[str, bytes] = {}
             page = await context.new_page()
 
-            # Перехватываем mp4 на уровне route — здесь Sec-Fetch-Dest: video уже стоит
-            async def capture_mp4(route, request):
+            async def capture_mp4(route, request, _bodies=mp4_bodies):
                 response = await route.fetch()
                 try:
                     body = await response.body()
                     if len(body) > 1000:
-                        mp4_bodies[request.url] = body
+                        _bodies[request.url] = body
                         logger.info(f"r34gen: route захватил {len(body)} байт: {request.url[:80]}")
                 except Exception as e:
                     logger.debug(f"r34gen: route body failed: {e}")
@@ -245,10 +308,9 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
 
             try:
                 await page.goto(entry["page_url"], timeout=25_000, wait_until="domcontentloaded")
-                await page.wait_for_timeout(5000)  # ждём пока video element загрузит файл
+                await page.wait_for_timeout(5000)
 
                 if not mp4_bodies:
-                    # Пробуем кликнуть по попапу если ничего не перехватили
                     thumb = await page.query_selector("a.th, a.js-open-popup")
                     if thumb:
                         await thumb.click()
@@ -258,25 +320,26 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
                     logger.debug(f"r34gen: mp4 не перехвачен для {entry['page_url']}")
                     continue
 
-                direct_url, video_data = next(iter(mp4_bodies.items()))
+                # Сначала ищем лучшее качество среди уже перехваченных
+                best_url, best_data = _pick_best_quality(mp4_bodies)
 
-                # Пробуем апгрейднуть качество
-                higher = await _try_higher_quality(context, direct_url, entry["page_url"])
-                if higher:
-                    direct_url, video_data = higher
-                else:
-                    logger.info(f"r34gen: только базовое качество ({len(video_data)} байт)")
+                # Если route не поймал 720p+ — запрашиваем отдельно
+                if not any(q in best_url for q in ['_720p', '_1080p']):
+                    higher = await _try_higher_quality(context, best_url, entry["page_url"])
+                    if higher:
+                        best_url, best_data = higher
+                    else:
+                        logger.info(f"r34gen: только базовое качество ({len(best_data)} байт)")
 
-                # Теги из попапа/страницы
                 tags = await _extract_tags_playwright(page, entry.get("title", ""))
 
                 results.append({
                     **entry,
-                    "url":   direct_url,
-                    "tags":  tags,
-                    "data":  video_data,  # сырые байты mp4, захваченные через route
+                    "url":  best_url,
+                    "tags": tags,
+                    "data": best_data,
                 })
-                logger.info(f"r34gen: ✅ {entry['id']} — {len(video_data)} байт")
+                logger.info(f"r34gen: ✅ {entry['id']} — {best_url.split('?')[0][-40:]} — {len(best_data)} байт")
 
             except Exception as e:
                 logger.warning(f"r34gen: ошибка {entry['page_url']}: {e}")
@@ -293,7 +356,6 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
 
 
 async def _extract_tags_playwright(page, title: str = "") -> list[str]:
-    """Извлекает теги через Playwright — ищет a.button внутри попапа/страницы."""
     raw: list[str] = []
 
     selectors = [
@@ -319,65 +381,6 @@ async def _extract_tags_playwright(page, title: str = "") -> list[str]:
                 break
 
     return _clean_tags(raw, title)
-
-
-# ── Утилиты ───────────────────────────────────────────────────────────────────
-
-def _clean_tags(raw: list[str], title: str = "") -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for t in raw:
-        if t and t not in STOP_WORDS and t not in seen and len(t) <= 40:
-            seen.add(t)
-            result.append(t)
-    if title:
-        for word in re.findall(r"[a-zA-Z]{3,}", title.lower()):
-            if word not in STOP_WORDS and word not in seen:
-                result.append(word)
-                seen.add(word)
-                if len(result) >= 20:
-                    break
-    return result[:20]
-
-
-async def _try_higher_quality(
-    context, url: str, referer: str
-) -> tuple[str, bytes] | None:
-    """Пробует 1080p → 720p → 480p, возвращает (url, data) или None."""
-    import re
-
-    def replace_quality(u: str, q: str) -> str | None:
-        path = u.split('?')[0]
-        query = u[len(path):]  # сохраняем ?acctoken=...
-        # Пытаемся найти _360.mp4 или подобное
-        result = re.sub(r'_\d+\.mp4', f'_{q}.mp4', path)
-        if result == path:
-            # Паттерн не найден — вставляем качество перед .mp4
-            result = re.sub(r'\.mp4', f'_{q}.mp4', path)
-        if result == path:
-            return None  # .mp4 тоже не нашли
-        return result + query
-
-    for quality in ["1080", "720", "480"]:
-        test_url = replace_quality(url, quality)
-        if test_url is None:
-            continue
-        if test_url == url:
-            continue
-        try:
-            resp = await context.request.fetch(
-                test_url,
-                headers={"Referer": referer, "User-Agent": HEADERS["User-Agent"]}
-            )
-            if resp.ok:
-                body = await resp.body()
-                if len(body) > 100_000:  # не заглушка
-                    logger.info(f"r34gen: качество {quality}p доступно, {len(body)} байт")
-                    return test_url, body
-        except Exception:
-            continue
-
-    return None  # не удалось апгрейдить качество
 
 
 # ── Сбор одной вариации ────────────────────────────────────────────────────────
@@ -407,9 +410,7 @@ def _fetch_variation(variation: dict, pages: int) -> list[dict]:
             break
 
         collected.extend(entries)
-
         logger.info(f"r34gen [{label}] стр.{page_num}: {len(entries)} карточек, всего: {len(collected)}")
-
         time.sleep(random.uniform(0.4, 0.8))
 
     return collected
@@ -418,11 +419,6 @@ def _fetch_variation(variation: dict, pages: int) -> list[dict]:
 # ── Основная функция ───────────────────────────────────────────────────────────
 
 async def fetch_rule34gen(limit: int = 20) -> list[dict]:
-    """
-    Парсит rule34gen.com.
-    1. AJAX API (requests) для листинга — быстро
-    2. Playwright для получения mp4 URL с acctoken и скачивания
-    """
     all_raw: list[dict] = []
 
     for variation in VARIATIONS:
@@ -449,7 +445,6 @@ async def fetch_rule34gen(limit: int = 20) -> list[dict]:
         e["_score"] = e.get("views", 0) + e.get("likes", 0) * 10
     all_raw.sort(key=lambda x: x["_score"], reverse=True)
 
-    # Фильтр по минскору
     if R34G_MIN_SCORE:
         all_raw = [e for e in all_raw if e.get("likes", 0) >= R34G_MIN_SCORE]
 
@@ -464,16 +459,16 @@ async def fetch_rule34gen(limit: int = 20) -> list[dict]:
         if not url or not url.startswith("http"):
             continue
 
-        # Фильтр: пропускаем видео с качеством ниже 480p
-        quality_match = re.search(r'_(\d{3})p?\.mp4', url)
-        if quality_match and int(quality_match.group(1)) < 480:
-            logger.debug(f"r34gen: пропускаем {quality_match.group(1)}p видео")
+        # Фильтр: только 480p и выше
+        quality_match = re.search(r'_(480p|720p|1080p)\.mp4', url)
+        if not quality_match:
+            logger.debug(f"r34gen: нет инфо о качестве в URL, пропускаем: {url.split('?')[0][-50:]}")
             continue
 
         items.append({
             "id":        entry["id"],
             "url":       url,
-            "data":      entry.get("data"),  # предзагруженные mp4 байты, может быть None
+            "data":      entry.get("data"),
             "tags":      entry.get("tags", []),
             "likes":     entry.get("likes", 0),
             "rating":    "xxx",
@@ -490,11 +485,6 @@ async def fetch_rule34gen(limit: int = 20) -> list[dict]:
 # ── Скачивание файла через сессию (для eroslab_bot.py) ─────────────────────────
 
 def download_file(url: str, timeout: int = 60) -> tuple[Optional[bytes], Optional[str]]:
-    """
-    Скачивает файл через авторизованную сессию rule34gen.
-    Возвращает (data, content_type).
-    Используется как fallback, если data из Playwright недоступен.
-    """
     _init_session()
     try:
         r = _session.get(url, timeout=timeout)
