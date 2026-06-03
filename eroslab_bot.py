@@ -105,6 +105,9 @@ BLACKLIST_TAGS = {
     "1boy", "solo_male", "male_focus", "male_pov",
     "handsome_muscular_man", "muscular_man", "handsome_man",
     "old_man", "young_man", "dilf", "twink", "femboy",
+    # Pixel art / low-res garbage
+    "pixel", "pixel_art", "pixelated", "pixel_animation",
+    "8-bit", "16-bit", "pixel_graphics",
     # Other
     "furry_male", "anthro",
     # Fart content
