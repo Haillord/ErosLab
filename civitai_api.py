@@ -173,6 +173,24 @@ def _fetch_civitai_variation(base_params: dict, headers: dict, seen_ids: set) ->
     return all_items
 
 
+def _is_nsfw_allowed(nsfw_level) -> bool:
+    """
+    Проверяет, разрешён ли NSFW уровень для текущего browsingLevel.
+    - browsingLevel=3 (SFM/Mature): пропускаем nsfwLevel >= 3
+    - browsingLevel=28 (NSFW): пропускаем nsfwLevel >= 8 (как и было)
+    """
+    browsing_level = get_civitai_browsing_level()
+    min_nsfw = 3 if browsing_level <= 3 else 8
+    if isinstance(nsfw_level, (int, float)):
+        return nsfw_level >= min_nsfw
+    if isinstance(nsfw_level, str):
+        try:
+            return int(nsfw_level) >= min_nsfw
+        except (TypeError, ValueError):
+            return nsfw_level.strip().lower() in {"x", "xxx"}
+    return False
+
+
 def _process_civitai_items(items: list[dict]) -> list[dict]:
     if not items:
         return []
@@ -199,10 +217,7 @@ def _process_civitai_items(items: list[dict]) -> list[dict]:
     for item in items:
         try:
             nsfw_level = item.get("nsfwLevel")
-            is_allowed_nsfw = _is_x_or_xxx(nsfw_level)
-            if not is_allowed_nsfw and False and _is_mature_or_higher(nsfw_level):
-                if random.random() < 0.6:
-                    is_allowed_nsfw = True
+            is_allowed_nsfw = _is_nsfw_allowed(nsfw_level)
             if not is_allowed_nsfw:
                 continue
 
