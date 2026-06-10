@@ -231,6 +231,18 @@ def _process_civitai_items(items: list[dict]) -> list[dict]:
     return erotic_items
 
 
+def get_civitai_browsing_level() -> int:
+    """
+    Возвращает browsingLevel для CivitAI из ENV.
+    По умолчанию 28 (NSFW). Для SFM режима используется 3 (Mature).
+    """
+    level = os.environ.get("CIVITAI_BROWSING_LEVEL", "28")
+    try:
+        return int(level)
+    except (TypeError, ValueError):
+        return 28
+
+
 def fetch_civitai(max_pages: int = 5):
     """
     Собирает топ-контент с CivitAI.
@@ -240,14 +252,16 @@ def fetch_civitai(max_pages: int = 5):
        в общий пул, сортируем по лайкам, возвращаем топ.
     2. Если ничего не нашли — fallback на Newest.
     """
+    browsing_level = get_civitai_browsing_level()
+    
     variations = [
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Day", "mediaType": "video"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Week", "mediaType": "video"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Month", "mediaType": "video"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Day"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Week"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions", "period": "Month"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Most Reactions"},
+        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Most Reactions", "period": "Day", "mediaType": "video"},
+        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Most Reactions", "period": "Week", "mediaType": "video"},
+        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Most Reactions", "period": "Month", "mediaType": "video"},
+        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Most Reactions", "period": "Day"},
+        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Most Reactions", "period": "Week"},
+        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Most Reactions", "period": "Month"},
+        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Most Reactions"},
     ]
 
     headers = {}
@@ -276,10 +290,10 @@ def fetch_civitai(max_pages: int = 5):
 
     logger.info("CivitAI Most Reactions: no suitable items, falling back to Newest")
     newest_variations = [
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Newest", "mediaType": "video"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Newest"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Newest", "period": "Week"},
-        {"browsingLevel": 28, "nsfw": "X", "sort": "Newest", "period": "Month"},
+        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Newest", "mediaType": "video"},
+        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Newest"},
+        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Newest", "period": "Week"},
+        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Newest", "period": "Month"},
     ]
 
     for base_params in newest_variations:

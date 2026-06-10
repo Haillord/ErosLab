@@ -108,6 +108,9 @@ BLACKLIST_TAGS = {
     "fart", "farting", "fart_fetish", "fart_edit",
 }
 
+# Male-only фильтр: отключается через SFM_ALLOW_MALE_ONLY=true (для SFM канала)
+SFM_ALLOW_MALE_ONLY = os.environ.get("SFM_ALLOW_MALE_ONLY", "false").lower() in ("1", "true", "yes", "on")
+
 # Паттерны только для явного male-only фокуса (без среза mixed male+female сцен).
 MALE_ONLY_PATTERNS = (
     r"(^|_)solo_male(_|$)",
@@ -225,10 +228,23 @@ def has_blacklisted(tags):
     normalized_tags = [_normalize_tag(t) for t in tags]
     blacklisted = set(normalized_tags) & BLACKLIST_TAGS
 
-    if not blacklisted:
-        for tag in normalized_tags:
-            if _has_male_only_pattern(tag):
-                blacklisted.add(tag)
+    # Male-only фильтр отключается для SFM канала
+    if not SFM_ALLOW_MALE_ONLY:
+        if not blacklisted:
+            for tag in normalized_tags:
+                if _has_male_only_pattern(tag):
+                    blacklisted.add(tag)
+    else:
+        # Удаляем male-only теги из черного списка для SFM
+        male_tags = {
+            "gay", "yaoi", "bara", "2boys", "3boys", "multiple_boys",
+            "male_only", "male_male", "gay_male", "bl", "boy_love",
+            "1boy", "solo_male", "male_focus", "male_pov",
+            "handsome_muscular_man", "muscular_man", "handsome_man",
+            "old_man", "young_man", "dilf", "twink", "femboy",
+            "furry_male", "anthro",
+        }
+        blacklisted -= male_tags
 
     if blacklisted:
         logger.debug(f"Blacklisted: {blacklisted}")
@@ -560,6 +576,58 @@ def compress_video_to_limit(input_data: bytes, max_bytes: int = 49 * 1024 * 1024
         return None
     except Exception as e:
         logger.error(f"compress: ошибка: {e}")
+        return None
+    finally:
+        if tmp_in and os.path.exists(tmp_in):
+            os.unlink(tmp_in)
+        if tmp_out and os.path.exists(tmp_out):
+            os.unlink(tmp_out)
+
+
+def convert_gif_to_mp4(gif_data: bytes) -> bytes | None:
+    """
+    Конвертирует GIF в MP4 (H.264 yuv420p) для совместимости с Telegram.
+    Возвращает MP4 данные или None при ошибке.
+    """
+    tmp_in = None
+    tmp_out = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.gif', delete=False) as tmp:
+            tmp.write(gif_data)
+            tmp_in = tmp.name
+
+        tmp_out = tmp_in + "_converted.mp4"
+
+        cmd = [
+            'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
+            '-i', tmp_in,
+            '-movflags', '+faststart',
+            '-pix_fmt', 'yuv420p',
+            '-vf', "scale='if(gt(min(iw\\,ih),1080),-2,iw)':'if(gt(min(iw\\,ih),1080),1080,ih)'",
+            '-f', 'mp4',
+            tmp_out
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, timeout=120)
+        if result.returncode != 0 or not os.path.exists(tmp_out):
+            logger.warning(f"GIF→MP4 conversion failed: {result.stderr.decode(errors='ignore')[:200]}")
+            return None
+
+        with open(tmp_out, 'rb') as f:
+            mp4_data = f.read()
+
+        if len(mp4_data) == 0:
+            logger.warning("GIF→MP4 conversion resulted in empty file")
+            return None
+
+        logger.info(f"GIF→MP4 converted: {len(gif_data)} → {len(mp4_data)} bytes")
+        return mp4_data
+
+    except subprocess.TimeoutExpired:
+        logger.warning("GIF→MP4 conversion timed out")
+        return None
+    except Exception as e:
+        logger.error(f"GIF→MP4 conversion error: {e}")
         return None
     finally:
         if tmp_in and os.path.exists(tmp_in):
@@ -1084,6 +1152,22 @@ async def main():
             and not is_gif
         )
 
+        # Конвертируем GIF → MP4 для совместимости с Telegram
+        if is_gif:
+            logger.info("Converting GIF to MP4 for Telegram compatibility")
+            mp4_data = convert_gif_to_mp4(data)
+            if mp4_data is None:
+                logger.warning("GIF→MP4 conversion failed, skipping")
+                run_metrics["skip_download_error"] = run_metrics.get("skip_download_error", 0) + 1
+                posted_ids.add(item["id"])
+                save_all()
+                continue
+            data = mp4_data
+            download_content_type = "video/mp4"
+            is_gif = False
+            is_video = True
+            logger.info(f"GIF converted to MP4: {len(data)} bytes")
+
         img_width = None
         img_height = None
         file_size_bytes = len(data)
@@ -1162,17 +1246,6 @@ async def main():
             posted_ids.add(item["id"])
             save_all()
             continue
-
-        if is_gif and should_add_watermark(item.get("url", "")):
-            try:
-                opacity = max(0.0, min(1.0, WATERMARK_IMAGE_OPACITY))
-                data = add_watermark_to_video(
-                    video_data=data,
-                    text=WATERMARK_IMAGE_TEXT,
-                    opacity=opacity,
-                )
-            except Exception as e:
-                logger.warning(f"GIF watermark apply failed, using original: {e}")
 
         break
     else:
@@ -1303,19 +1376,6 @@ async def main():
                 caption=caption,
                 parse_mode="HTML",
                 supports_streaming=True,
-                write_timeout=60,
-                read_timeout=60
-            )
-        elif _is_gif(item["url"]):
-            logger.info("Sending as GIF animation")
-            anim_io = BytesIO(data)
-            anim_io.name = "animation.gif"
-            await send_with_retry(
-                bot.send_animation,
-                chat_id=target_chat_id,
-                animation=anim_io,
-                caption=caption,
-                parse_mode="HTML",
                 write_timeout=60,
                 read_timeout=60
             )
