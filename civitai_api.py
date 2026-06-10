@@ -213,6 +213,8 @@ def _process_civitai_items(items: list[dict]) -> list[dict]:
         f"(items_with_reactions={items_with_positive_reactions}/{total_checked})"
     )
 
+    min_likes = int(os.environ.get("MIN_CIVITAI_LIKES", "50"))
+
     erotic_items = []
     for item in items:
         try:
@@ -224,7 +226,7 @@ def _process_civitai_items(items: list[dict]) -> list[dict]:
             # Теги и блэклист обрабатываются в eroslab_bot.py,
             # здесь мы просто собираем сырые данные.
             likes = _extract_civitai_likes(item)
-            if likes_filter_enabled and likes < 50:
+            if likes_filter_enabled and likes < min_likes:
                 continue
 
             erotic_items.append({

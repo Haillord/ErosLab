@@ -11,6 +11,7 @@ os.environ["BOT_MODE"] = "sfm"  # Маркер для основного бот�
 
 # Источники: только CivitAI
 os.environ["ENABLE_RULE34GEN"] = "false"
+os.environ["SOURCE_WEIGHTS"] = '{"civitai": 1}'
 
 # Канал для SFM (токен общий — TELEGRAM_BOT_TOKEN)
 sfm_channel = os.environ.get("TELEGRAM_CHANNEL_ID_SFM", "")
@@ -29,7 +30,7 @@ os.environ["WATERMARK_IMAGE_OPACITY"] = "0.25"
 os.environ["ENABLE_VIDEO_QOS"] = "false"
 
 # Male-only контент разрешён в SFM канале
-os.environ["SFM_ALLOW_MALE_ONLY"] = "False"
+os.environ["SFM_ALLOW_MALE_ONLY"] = "true"
 
 # Image pack отключён для SFM (только одиночные посты)
 os.environ["IMAGE_PACK_ENABLED"] = "false"
