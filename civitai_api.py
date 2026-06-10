@@ -175,15 +175,21 @@ def _fetch_civitai_variation(base_params: dict, headers: dict, seen_ids: set) ->
 
 def _is_nsfw_allowed(nsfw_level) -> bool:
     browsing_level = get_civitai_browsing_level()
-    min_nsfw = 2 if browsing_level <= 3 else 8
 
     if isinstance(nsfw_level, (int, float)):
-        return nsfw_level >= min_nsfw
+        if browsing_level == 8:
+            return nsfw_level == 8          # только R, без X/XXX
+        return nsfw_level >= 8              # обычный NSFW режим (X + XXX)
     if isinstance(nsfw_level, str):
         try:
-            return int(nsfw_level) >= min_nsfw
+            v = int(nsfw_level)
+            if browsing_level == 8:
+                return v == 8
+            return v >= 8
         except (TypeError, ValueError):
-            return nsfw_level.strip().lower() in {"mature", "x", "xxx"}
+            if browsing_level == 8:
+                return nsfw_level.strip().lower() == "r"
+            return nsfw_level.strip().lower() in {"x", "xxx"}
     return False
 
 
@@ -249,7 +255,7 @@ def get_civitai_browsing_level() -> int:
     Возвращает browsingLevel для CivitAI из ENV.
     По умолчанию 28 (NSFW). Для SFM режима используется 3 (Mature).
     """
-    level = os.environ.get("CIVITAI_BROWSING_LEVEL", "28")
+    level = os.environ.get("CIVITAI_BROWSING_LEVEL", "63")
     try:
         return int(level)
     except (TypeError, ValueError):
@@ -266,7 +272,7 @@ def fetch_civitai(max_pages: int = 5):
     2. Если ничего не нашли — fallback на Newest.
     """
     browsing_level = get_civitai_browsing_level()
-    nsfw_param = {} if browsing_level <= 3 else {"nsfw": "X"}
+    nsfw_param = {} if browsing_level <= 8 else {"nsfw": "X"}
 
     variations = [
         {"browsingLevel": browsing_level, **nsfw_param, "sort": "Most Reactions", "period": "Day", "mediaType": "video"},

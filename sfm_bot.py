@@ -18,8 +18,8 @@ sfm_channel = os.environ.get("TELEGRAM_CHANNEL_ID_SFM", "")
 if sfm_channel:
     os.environ["TELEGRAM_CHANNEL_ID"] = sfm_channel
 
-# CivitAI: browsingLevel 3 (Mature NSFW, без хардкора)
-os.environ["CIVITAI_BROWSING_LEVEL"] = "3"
+# CivitAI: browsingLevel 8 (R = sexy/mature, без X/XXX)
+os.environ["CIVITAI_BROWSING_LEVEL"] = "8"
 os.environ["MIN_CIVITAI_LIKES"] = "30"  # Меньше лайков для SFM контента
 
 # Watermark
