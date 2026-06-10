@@ -45,7 +45,8 @@ jobs:
           # ── Хранилище ──────────────────────────────────────────────────
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
-          # ── Telegram (SFM канал — токен общий TELEGRAM_BOT_TOKEN) ──────
+          # ── Telegram (общий бот, но SFM канал) ─────────────────────────
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID_SFM: ${{ secrets.TELEGRAM_CHANNEL_ID_SFM }}
           # ── CivitAI ────────────────────────────────────────────────────
           CIVITAI_API_KEY: ${{ secrets.CIVITAI_API_KEY }}
