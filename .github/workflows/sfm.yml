@@ -37,6 +37,7 @@ jobs:
 
       - name: Setup ffmpeg
         run: |
+          sudo apt-get update
           sudo apt-get install -y ffmpeg --no-install-recommends
 
       - name: Run SFM Bot
