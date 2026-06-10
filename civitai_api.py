@@ -174,20 +174,16 @@ def _fetch_civitai_variation(base_params: dict, headers: dict, seen_ids: set) ->
 
 
 def _is_nsfw_allowed(nsfw_level) -> bool:
-    """
-    Проверяет, разрешён ли NSFW уровень для текущего browsingLevel.
-    - browsingLevel=3 (SFM/Mature): пропускаем nsfwLevel >= 3
-    - browsingLevel=28 (NSFW): пропускаем nsfwLevel >= 8 (как и было)
-    """
     browsing_level = get_civitai_browsing_level()
-    min_nsfw = 3 if browsing_level <= 3 else 8
+    min_nsfw = 2 if browsing_level <= 3 else 8
+
     if isinstance(nsfw_level, (int, float)):
         return nsfw_level >= min_nsfw
     if isinstance(nsfw_level, str):
         try:
             return int(nsfw_level) >= min_nsfw
         except (TypeError, ValueError):
-            return nsfw_level.strip().lower() in {"x", "xxx"}
+            return nsfw_level.strip().lower() in {"mature", "x", "xxx"}
     return False
 
 
@@ -270,15 +266,16 @@ def fetch_civitai(max_pages: int = 5):
     2. Если ничего не нашли — fallback на Newest.
     """
     browsing_level = get_civitai_browsing_level()
-    
+    nsfw_param = {} if browsing_level <= 3 else {"nsfw": "X"}
+
     variations = [
-        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Most Reactions", "period": "Day", "mediaType": "video"},
-        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Most Reactions", "period": "Week", "mediaType": "video"},
-        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Most Reactions", "period": "Month", "mediaType": "video"},
-        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Most Reactions", "period": "Day"},
-        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Most Reactions", "period": "Week"},
-        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Most Reactions", "period": "Month"},
-        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Most Reactions"},
+        {"browsingLevel": browsing_level, **nsfw_param, "sort": "Most Reactions", "period": "Day", "mediaType": "video"},
+        {"browsingLevel": browsing_level, **nsfw_param, "sort": "Most Reactions", "period": "Week", "mediaType": "video"},
+        {"browsingLevel": browsing_level, **nsfw_param, "sort": "Most Reactions", "period": "Month", "mediaType": "video"},
+        {"browsingLevel": browsing_level, **nsfw_param, "sort": "Most Reactions", "period": "Day"},
+        {"browsingLevel": browsing_level, **nsfw_param, "sort": "Most Reactions", "period": "Week"},
+        {"browsingLevel": browsing_level, **nsfw_param, "sort": "Most Reactions", "period": "Month"},
+        {"browsingLevel": browsing_level, **nsfw_param, "sort": "Most Reactions"},
     ]
 
     headers = {}
@@ -307,10 +304,10 @@ def fetch_civitai(max_pages: int = 5):
 
     logger.info("CivitAI Most Reactions: no suitable items, falling back to Newest")
     newest_variations = [
-        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Newest", "mediaType": "video"},
-        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Newest"},
-        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Newest", "period": "Week"},
-        {"browsingLevel": browsing_level, "nsfw": "X", "sort": "Newest", "period": "Month"},
+        {"browsingLevel": browsing_level, **nsfw_param, "sort": "Newest", "mediaType": "video"},
+        {"browsingLevel": browsing_level, **nsfw_param, "sort": "Newest"},
+        {"browsingLevel": browsing_level, **nsfw_param, "sort": "Newest", "period": "Week"},
+        {"browsingLevel": browsing_level, **nsfw_param, "sort": "Newest", "period": "Month"},
     ]
 
     for base_params in newest_variations:
