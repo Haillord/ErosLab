@@ -67,7 +67,7 @@ def strip_metadata(image_data: bytes) -> bytes:
 
 def strip_video_metadata(video_data: bytes) -> bytes:
     """
-    Полностью удаляет метаданные из видео через ffmpeg.
+    Полностью удаляет метаданные из видео через ffmpeg + mutagen.
     Удаляет теги вроде ©too (encoding tool) и другие.
     """
     import subprocess
@@ -94,6 +94,18 @@ def strip_video_metadata(video_data: bytes) -> bytes:
         result = subprocess.run(cmd, capture_output=True, timeout=60)
         if result.returncode != 0:
             return video_data
+        
+        # Дополнительная очистка через mutagen для удаления оставшихся тегов
+        try:
+            from mutagen.mp4 import MP4
+            video = MP4(tmp_out)
+            if video.tags:
+                video.tags.clear()
+                video.save()
+        except ImportError:
+            pass  # mutagen не установлен, пропускаем
+        except Exception:
+            pass  # Ошибка mutagen, продолжаем с результатом ffmpeg
         
         with open(tmp_out, 'rb') as f:
             clean_data = f.read()
