@@ -36,6 +36,7 @@ from utils_state import (
 from utils_telegram_media import (
     send_with_retry as _shared_send_with_retry,
     fit_photo_size_for_telegram as _shared_fit_photo_size_for_telegram,
+    strip_video_metadata as _shared_strip_video_metadata,
 )
 from utils_tags import (
     clean_tags as _shared_clean_tags,
@@ -587,6 +588,7 @@ def convert_gif_to_mp4(gif_data: bytes) -> bytes | None:
         cmd = [
             'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
             '-i', tmp_in,
+            '-map_metadata', '-1',  # Удаляем метаданные
             '-movflags', '+faststart',
             '-pix_fmt', 'yuv420p',
             '-vf', "scale='if(gt(min(iw\\,ih),1080),-2,iw)':'if(gt(min(iw\\,ih),1080),1080,ih)'",
@@ -1353,7 +1355,9 @@ async def main():
     try:
         if is_video:
             logger.info("Sending as video")
-            video_io = BytesIO(data)
+            # Очищаем метаданные видео
+            clean_data = _shared_strip_video_metadata(data)
+            video_io = BytesIO(clean_data)
             video_io.name = "video.mp4"
             await send_with_retry(
                 bot.send_video,
