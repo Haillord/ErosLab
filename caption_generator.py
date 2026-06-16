@@ -30,7 +30,7 @@ NSFW_TRIGGER_TAGS = {
 
 TECHNICAL_TAGS = {
     "3d", "3d_(artwork)", "3d_animation", "3d_model", "ai_generated",
-    "tagme", "animated", "video", "gif", "source_filmmaker", "sfm",
+    "tagme", "animated", "video", "gif", "source_filmmaker",
     "blender", "koikatsu", "honey_select", "daz3d", "mmd",
     "high_quality", "best_quality", "masterpiece", "absurdres",
     "highres", "score_9", "score_8", "score_7", "rating_explicit",
@@ -235,7 +235,7 @@ def generate_wallpaper_caption(
             parts.append(f'<a href="https://t.me/eroslabai">😏 Горячий контент🔞</a>')
         elif watermark and "@eroslabai" in watermark:
             # Это пост в основном канале → ссылаемся на обои
-            parts.append(f'<a href="https://t.me/eroslabwallpaper">🤍 SFM & Wallpapers</a>')
+            parts.append(f'<a href="https://t.me/eroslabwallpaper">🤍 Wallpapers</a>')
 
     parts.append(footer)
 

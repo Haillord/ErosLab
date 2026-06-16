@@ -253,7 +253,7 @@ def _process_civitai_items(items: list[dict]) -> list[dict]:
 def get_civitai_browsing_level() -> int:
     """
     Возвращает browsingLevel для CivitAI из ENV.
-    По умолчанию 28 (NSFW). Для SFM режима используется 3 (Mature).
+    По умолчанию 28 (NSFW).
     """
     level = os.environ.get("CIVITAI_BROWSING_LEVEL", "63")
     try:

@@ -108,8 +108,6 @@ BLACKLIST_TAGS = {
     "fart", "farting", "fart_fetish", "fart_edit",
 }
 
-# Male-only фильтр: отключается через SFM_ALLOW_MALE_ONLY=true (для SFM канала)
-SFM_ALLOW_MALE_ONLY = os.environ.get("SFM_ALLOW_MALE_ONLY", "false").lower() in ("1", "true", "yes", "on")
 
 # Паттерны только для явного male-only фокуса (без среза mixed male+female сцен).
 MALE_ONLY_PATTERNS = (
@@ -228,23 +226,11 @@ def has_blacklisted(tags):
     normalized_tags = [_normalize_tag(t) for t in tags]
     blacklisted = set(normalized_tags) & BLACKLIST_TAGS
 
-    # Male-only фильтр отключается для SFM канала
-    if not SFM_ALLOW_MALE_ONLY:
-        if not blacklisted:
-            for tag in normalized_tags:
-                if _has_male_only_pattern(tag):
-                    blacklisted.add(tag)
-    else:
-        # Удаляем male-only теги из черного списка для SFM
-        male_tags = {
-            "gay", "yaoi", "bara", "2boys", "3boys", "multiple_boys",
-            "male_only", "male_male", "gay_male", "bl", "boy_love",
-            "1boy", "solo_male", "male_focus", "male_pov",
-            "handsome_muscular_man", "muscular_man", "handsome_man",
-            "old_man", "young_man", "dilf", "twink", "femboy",
-            "furry_male", "anthro",
-        }
-        blacklisted -= male_tags
+    # Male-only фильтр
+    if not blacklisted:
+        for tag in normalized_tags:
+            if _has_male_only_pattern(tag):
+                blacklisted.add(tag)
 
     if blacklisted:
         logger.debug(f"Blacklisted: {blacklisted}")
@@ -929,7 +915,7 @@ def detect_content_type_by_tags(item):
     }
     three_d_tags = {
         "3d", "3d_(artwork)", "3d_video", "3d_animation", "3d_model",
-        "blender", "source_filmmaker", "sfm", "daz3d", "koikatsu",
+        "blender", "source_filmmaker", "daz3d", "koikatsu",
         "honey_select", "mmd", "3d_render"
     }
 
