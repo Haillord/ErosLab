@@ -40,16 +40,48 @@ async def send_with_retry(func, *args, retries=3, logger: logging.Logger | None 
             await asyncio.sleep(2)
 
 
+def strip_metadata(image_data: bytes) -> bytes:
+    """
+    Полностью удаляет EXIF и другие метаданные из изображения.
+    Возвращает чистое изображение без метаданных.
+    """
+    try:
+        img = Image.open(BytesIO(image_data))
+        
+        # Конвертируем в RGB (удаляем альфа-канал если есть)
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        
+        # Создаем новое изображение без метаданных
+        data = list(img.getdata())
+        clean_img = Image.new(img.mode, img.size)
+        clean_img.putdata(data)
+        
+        # Сохраняем без метаданных
+        output = BytesIO()
+        clean_img.save(output, format="JPEG", quality=95, optimize=True)
+        return output.getvalue()
+    except Exception as e:
+        return image_data
+
+
 def fit_photo_size_for_telegram(
     image_data: bytes,
     logger: logging.Logger | None = None,
     max_size: int = 10 * 1024 * 1024,
 ) -> bytes:
-    if not image_data or len(image_data) <= max_size:
+    if not image_data:
         return image_data
 
     try:
-        img = Image.open(BytesIO(image_data))
+        # Всегда очищаем метаданные
+        clean_data = strip_metadata(image_data)
+        
+        # Если размер уже в норме - возвращаем очищенное
+        if len(clean_data) <= max_size:
+            return clean_data
+        
+        img = Image.open(BytesIO(clean_data))
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
 
