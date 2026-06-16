@@ -228,8 +228,8 @@ def generate_wallpaper_caption(
     if tech_block:
         parts.append(tech_block)
 
-    # Кросс промо между каналами с вероятностью ~20%
-    if random.random() < 0.2:
+    # Кросс промо между каналами с вероятностью ~80%
+    if random.random() < 0.8:
         if watermark and "@eroslabwallpaper" in watermark:
             # Это пост в канале обоев → ссылаемся на основной канал
             parts.append(f'<a href="https://t.me/eroslabai">😏 Горячий контент🔞</a>')
