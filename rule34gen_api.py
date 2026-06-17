@@ -222,70 +222,34 @@ async def _try_higher_quality(
 
     logger.info(f"r34gen: base_path={base_path[-50:]}")
 
-    # Пробуем: сначала без суффикса (сервер сам редиректит на лучшее),
-    # потом явные качества
-    candidates = [
-        ("auto",  f"{base_path}.mp4/"),
-        ("1080p", f"{base_path}_1080p.mp4/"),
-        ("720p",  f"{base_path}_720p.mp4/"),
-        ("480p",  f"{base_path}_480p.mp4/"),
-    ]
+    # Пробуем качества от лучшего к худшему (но не ниже 720p).
+    # Сначала с acctoken от 360p, потом без.
+    for quality in ["1080p", "720p"]:
+        for with_query, label_suffix in [(True, "acctoken"), (False, "no_token")]:
+            test_url = f"{base_path}_{quality}.mp4/"
+            if with_query and query:
+                test_url = f"{test_url}?{query}"
+            logger.info(f"r34gen: пробуем {quality} ({label_suffix}): {test_url[:100]}")
+            try:
+                resp = await context.request.fetch(
+                    test_url,
+                    headers={
+                        "Referer": referer,
+                        "User-Agent": HEADERS["User-Agent"],
+                    }
+                )
+                logger.info(f"r34gen: {quality} ({label_suffix}) → HTTP {resp.status}")
+                if resp.ok:
+                    body = await resp.body()
+                    if len(body) > 100_000:
+                        logger.info(f"r34gen: ✅ {quality} доступен ({len(body)} байт)")
+                        return test_url, body
+                    else:
+                        logger.info(f"r34gen: {quality} ({label_suffix}) слишком мало байт ({len(body)}), скип")
+            except Exception as e:
+                logger.info(f"r34gen: {quality} ({label_suffix}) ошибка: {e}")
 
-    for label, test_path in candidates:
-        test_url = f"{test_path}?{query}" if query else test_path
-        logger.info(f"r34gen: пробуем {label}: {test_url[:100]}")
-        try:
-            resp = await context.request.fetch(
-                test_url,
-                headers={
-                    "Referer": referer,
-                    "User-Agent": HEADERS["User-Agent"],
-                }
-            )
-            logger.info(f"r34gen: {label} → HTTP {resp.status}, url={resp.url[-50:]}")
-            if resp.ok:
-                body = await resp.body()
-                logger.info(f"r34gen: {label} тело {len(body)} байт")
-                if len(body) > 100_000:
-                    return test_url, body
-        except Exception as e:
-            logger.info(f"r34gen: {label} ошибка: {e}")
-
-    return None
-
-    # Убираем текущее качество (_360, _480p, _720p, _1080p)
-    base_path = re.sub(r'_(360|480p?|720p?|1080p?)\.mp4$', '', path)
-    if base_path == path:
-        # Суффикса качества нет — просто убираем .mp4
-        base_path = path[:-4]
-
-    logger.info(f"r34gen: base_path={base_path[-50:]}")
-
-    for quality in ["1080p", "720p", "480p"]:
-        # Слэш в конце оставляем как в оригинале (сервер может требовать)
-        test_url = f"{base_path}_{quality}.mp4/"
-        if query:
-            test_url = f"{test_url}?{query}"
-        logger.info(f"r34gen: пробуем {quality}: {test_url[:100]}")
-        try:
-            resp = await context.request.fetch(
-                test_url,
-                headers={
-                    "Referer": referer,
-                    "User-Agent": HEADERS["User-Agent"],
-                }
-            )
-            logger.info(f"r34gen: {quality} → HTTP {resp.status}")
-            if resp.ok:
-                body = await resp.body()
-                if len(body) > 100_000:
-                    logger.info(f"r34gen: ✅ {quality} доступен ({len(body)} байт)")
-                    return test_url, body
-                else:
-                    logger.info(f"r34gen: {quality} слишком мало байт ({len(body)}), скип")
-        except Exception as e:
-            logger.info(f"r34gen: {quality} ошибка: {e}")
-
+    logger.info(f"r34gen: качество выше 360p недоступно, пропускаем видео")
     return None
 
 
@@ -373,12 +337,13 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
                 best_url = video_src or next(iter(mp4_bodies.keys()))
 
                 # Апгрейд от DOM URL (там есть _360.mp4/ с acctoken)
-                if video_src and not any(q in video_src for q in ['_720p', '_1080p']):
+                if video_src and not any(q in video_src for q in ['_720p', '_1080p', '_480p']):
                     higher = await _try_higher_quality(context, video_src, entry["page_url"])
                     if higher:
                         best_url, best_data = higher
                     else:
-                        logger.info(f"r34gen: только базовое качество ({len(best_data)} байт)")
+                        logger.info(f"r34gen: качество не выше 360p, пропускаем видео")
+                        continue
 
                 tags = await _extract_tags_playwright(page, entry.get("title", ""))
 
@@ -508,8 +473,8 @@ async def fetch_rule34gen(limit: int = 20) -> list[dict]:
         if not url or not url.startswith("http"):
             continue
 
-        # Фильтр: только 480p и выше
-        quality_match = re.search(r'_(480p|720p|1080p)\.mp4', url)
+        # Фильтр: только 480p и выше (учитываем слеш после .mp4 из acctoken)
+        quality_match = re.search(r'_(480p|720p|1080p)\.mp4/?', url)
         if not quality_match:
             logger.debug(f"r34gen: нет инфо о качестве в URL, пропускаем: {url.split('?')[0][-50:]}")
             continue
