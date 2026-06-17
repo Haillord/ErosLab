@@ -195,7 +195,7 @@ def get_next_content_type():
 def get_next_media_type():
     """Строгое распределение: 85% video, 15% image."""
     global content_state
-    media_type = "video" if random.random() < 0.85 else "image"
+    media_type = "video" if 1 == 1 else "image"
     content_state["last_media"] = media_type
     save_json(CONTENT_STATE_FILE, content_state)
     return media_type
@@ -712,7 +712,7 @@ def _is_photo_item(item: dict) -> bool:
 
 
 def _pick_by_content_type(fresh):
-    content_type = "video" if random.random() < 0.85 else "image"
+    content_type = "video" if 1 == 1 else "image"
     logger.info(f"Content type selection: {content_type}")
 
     if content_type == 'video':
@@ -739,7 +739,7 @@ def _select_item_from_fresh(source: str, fresh: list[dict]):
     if source == "rule34":
         selected = _pick_by_content_type(fresh)
     else:
-        content_type = "video" if random.random() < 0.85 else "image"
+        content_type = "video" if 1 == 1 else "image"
         logger.info(f"Content type selection (civitai): {content_type}")
 
         if content_type == 'image':
@@ -1072,7 +1072,7 @@ async def main():
     random.shuffle(video_items)
     random.shuffle(photo_items)
 
-    if video_items and random.random() < 0.85:
+    if video_items and 1 == 1:
         attempts_pool = (video_items + photo_items)[:MAX_ATTEMPTS]
         logger.info(
             f"Attempts pool: video-first "
