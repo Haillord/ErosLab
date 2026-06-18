@@ -44,6 +44,9 @@ jobs:
           rm -rf ffmpeg-*-static ffmpeg-release-amd64-static.tar.xz
           ffprobe -version
 
+      - name: Install fonts for drawtext filter
+        run: sudo apt-get install -y fonts-dejavu-core --no-install-recommends -qq
+
       - name: Fetch AI videos
         env:
           R34_USER_ID: ${{ secrets.R34_USER_ID }}

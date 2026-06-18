@@ -320,21 +320,83 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
                 """)
                 logger.info(f"r34gen: video src из DOM: {video_src}")
 
+                # Ищем ссылки на скачивание с разными качествами в HTML
+                download_links = await page.evaluate("""
+                    () => {
+                        const links = [];
+                        // Ищем все ссылки с download=true или в секции download
+                        const allLinks = document.querySelectorAll('a[href*="download"], a[href*="get_file"]');
+                        allLinks.forEach(link => {
+                            const href = link.href;
+                            const text = link.textContent.trim();
+                            if (href.includes('.mp4') || href.includes('download=true')) {
+                                links.push({ url: href, text: text });
+                            }
+                        });
+                        return links;
+                    }
+                """)
+                logger.info(f"r34gen: найдено {len(download_links)} ссылок на скачивание")
+
+                # Инициализируем переменные
+                best_url = video_src
+                best_data = None
+
+                # Если есть ссылки на скачивание, выбираем лучшее качество
+                if download_links:
+                    # Сортируем по качеству (1080p > 720p > 480p > 360p)
+                    quality_order = {"1080p": 4, "720p": 3, "480p": 2, "360": 1, "360p": 1}
+                    best_link = None
+                    best_quality = 0
+
+                    for link in download_links:
+                        url = link["url"]
+                        text = link["text"].lower()
+                        for q, priority in quality_order.items():
+                            if q in text or q in url:
+                                if priority > best_quality:
+                                    best_quality = priority
+                                    best_link = url
+                                    logger.info(f"r34gen: найдено качество {q}: {url[:80]}")
+                                    break
+
+                    if best_link:
+                        logger.info(f"r34gen: загружаем лучшее качество из ссылок: {best_link[:80]}")
+                        try:
+                            resp = await context.request.fetch(
+                                best_link,
+                                headers={
+                                    "Referer": entry["page_url"],
+                                    "User-Agent": HEADERS["User-Agent"],
+                                }
+                            )
+                            if resp.ok:
+                                body = await resp.body()
+                                if len(body) > 100_000:
+                                    mp4_bodies[best_link] = body
+                                    logger.info(f"r34gen: загружено {len(body)} байт через download link")
+                                    best_url = best_link
+                                    best_data = body
+                        except Exception as e:
+                            logger.warning(f"r34gen: ошибка загрузки download link: {e}")
+
                 await page.wait_for_timeout(5000)
 
-                if not mp4_bodies:
+                # Если данные еще не загружены через download link, пробуем через route
+                if not best_data and not mp4_bodies:
                     thumb = await page.query_selector("a.th, a.js-open-popup")
                     if thumb:
                         await thumb.click()
                         await page.wait_for_timeout(4000)
 
-                if not mp4_bodies:
+                if not best_data and not mp4_bodies:
                     logger.debug(f"r34gen: mp4 не перехвачен для {entry['page_url']}")
                     continue
 
-                # Данные уже скачаны браузером через route
-                _, best_data = _pick_best_quality(mp4_bodies)
-                best_url = video_src or next(iter(mp4_bodies.keys()))
+                # Данные скачаны либо через download link, либо через route
+                if not best_data:
+                    _, best_data = _pick_best_quality(mp4_bodies)
+                    best_url = video_src or next(iter(mp4_bodies.keys()))
 
                 # Апгрейд от DOM URL (там есть _360.mp4/ с acctoken)
                 if video_src and not any(q in video_src for q in ['_720p', '_1080p', '_480p']):
@@ -342,8 +404,8 @@ async def _fetch_video_details_playwright(entries: list[dict]) -> list[dict]:
                     if higher:
                         best_url, best_data = higher
                     else:
-                        logger.info(f"r34gen: качество не выше 360p, пропускаем видео")
-                        continue
+                        logger.info(f"r34gen: качество не выше 360p, используем 360p")
+                        # Не пропускаем видео, используем 360p
 
                 tags = await _extract_tags_playwright(page, entry.get("title", ""))
 
@@ -473,8 +535,8 @@ async def fetch_rule34gen(limit: int = 20) -> list[dict]:
         if not url or not url.startswith("http"):
             continue
 
-        # Фильтр: только 480p и выше (учитываем слеш после .mp4 из acctoken)
-        quality_match = re.search(r'_(480p|720p|1080p)\.mp4/?', url)
+        # Фильтр: 360p и выше (учитываем слеш после .mp4 из acctoken)
+        quality_match = re.search(r'_(360|480p|720p|1080p)\.mp4/?', url)
         if not quality_match:
             logger.debug(f"r34gen: нет инфо о качестве в URL, пропускаем: {url.split('?')[0][-50:]}")
             continue

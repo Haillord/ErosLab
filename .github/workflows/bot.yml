@@ -48,6 +48,9 @@ jobs:
           rm -rf ffmpeg-*-static ffmpeg-release-amd64-static.tar.xz
           ffmpeg -version
 
+      - name: Install fonts for drawtext filter
+        run: sudo apt-get install -y fonts-dejavu-core --no-install-recommends -qq
+
       - name: Run ErosLab Bot (CivitAI)
         env:
           # ── Хранилище ──────────────────────────────────────────────────
