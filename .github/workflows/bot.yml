@@ -6,7 +6,7 @@ on:
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: write
     
@@ -41,7 +41,12 @@ jobs:
       - name: Setup yt-dlp + ffmpeg
         run: |
           pip install yt-dlp
-          sudo apt-get install -y ffmpeg --no-install-recommends
+          # Static ffmpeg (быстрее, чем apt-get)
+          wget -q https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+          tar -xf ffmpeg-release-amd64-static.tar.xz
+          sudo cp ffmpeg-*-static/ffmpeg ffmpeg-*-static/ffprobe /usr/local/bin/
+          rm -rf ffmpeg-*-static ffmpeg-release-amd64-static.tar.xz
+          ffmpeg -version
 
       - name: Run ErosLab Bot (CivitAI)
         env:
