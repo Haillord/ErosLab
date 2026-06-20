@@ -218,8 +218,7 @@ def generate_wallpaper_caption(
 
     # Футер
     safe_watermark = _escape_html(watermark)
-    clickable = _escape_html(str(suggestion or "💬 Предложи обои"))
-    footer = f"{clickable} · {safe_watermark}"
+    footer = f"{suggestion} · {safe_watermark}"
 
     # Собираем итоговый пост
     parts = [title]

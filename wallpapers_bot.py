@@ -561,8 +561,8 @@ async def publish_item_to_channel(bot: Bot, item: dict):
             width=width,
             height=height,
             date=item.get("createdAt"),
-            suggestion="💬 Предложи обои: @Haillord",
-            watermark="📢 @eroslabwallpaper",
+            suggestion='<a href="https://t.me/Haillord">💬 Предложка</a>',
+            watermark="📢 @eroslaab",
         )
 
         await send_with_retry(
