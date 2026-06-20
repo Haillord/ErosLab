@@ -40,15 +40,15 @@ jobs:
 
       - name: Setup yt-dlp + ffmpeg
         run: |
-          # Static ffmpeg (быстрее, чем apt-get)
-          wget -q --user-agent="Mozilla/5.0" https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
-          tar -xf ffmpeg-release-amd64-static.tar.xz
-          sudo cp ffmpeg-*-static/ffmpeg ffmpeg-*-static/ffprobe /usr/local/bin/
-          rm -rf ffmpeg-*-static ffmpeg-release-amd64-static.tar.xz
+          # Static ffmpeg from GitHub Releases (надёжнее, чем johnvansickle)
+          wget -q https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
+          tar -xf ffmpeg-master-latest-linux64-gpl.tar.xz
+          sudo cp ffmpeg-master-latest-linux64-gpl/bin/ffmpeg ffmpeg-master-latest-linux64-gpl/bin/ffprobe /usr/local/bin/
+          rm -rf ffmpeg-master-latest-linux64-gpl ffmpeg-master-latest-linux64-gpl.tar.xz
           ffmpeg -version
 
-      - name: Install fonts for drawtext filter
-        run: sudo apt-get install -y fonts-dejavu-core --no-install-recommends -qq
+      - name: Install fonts + fontconfig for drawtext filter
+        run: sudo apt-get install -y fontconfig fonts-dejavu-core --no-install-recommends -qq
 
       - name: Run ErosLab Bot (CivitAI)
         env:

@@ -38,14 +38,14 @@ jobs:
 
       - name: Install ffmpeg (for ffprobe)
         run: |
-          wget -q --user-agent="Mozilla/5.0" https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
-          tar -xf ffmpeg-release-amd64-static.tar.xz
-          sudo cp ffmpeg-*-static/ffmpeg ffmpeg-*-static/ffprobe /usr/local/bin/
-          rm -rf ffmpeg-*-static ffmpeg-release-amd64-static.tar.xz
+          wget -q https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
+          tar -xf ffmpeg-master-latest-linux64-gpl.tar.xz
+          sudo cp ffmpeg-master-latest-linux64-gpl/bin/ffmpeg ffmpeg-master-latest-linux64-gpl/bin/ffprobe /usr/local/bin/
+          rm -rf ffmpeg-master-latest-linux64-gpl ffmpeg-master-latest-linux64-gpl.tar.xz
           ffprobe -version
 
-      - name: Install fonts for drawtext filter
-        run: sudo apt-get install -y fonts-dejavu-core --no-install-recommends -qq
+      - name: Install fonts + fontconfig for drawtext filter
+        run: sudo apt-get install -y fontconfig fonts-dejavu-core --no-install-recommends -qq
 
       - name: Fetch AI videos
         env:

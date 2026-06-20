@@ -56,9 +56,12 @@ def add_watermark(image_data: bytes, text: str = "@eroslabai",
             font = ImageFont.truetype("arial.ttf", font_size)
         except Exception:
             try:
-                font = ImageFont.truetype("DejaVuSans.ttf", font_size)
+                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
             except Exception:
-                font = ImageFont.load_default()
+                try:
+                    font = ImageFont.truetype("DejaVuSans.ttf", font_size)
+                except Exception:
+                    font = ImageFont.load_default()
 
         # Получаем размер текста
         text_bbox = draw.textbbox((0, 0), text, font=font)
@@ -161,6 +164,7 @@ def add_watermark_to_video(video_data: bytes, text: str = "@eroslabai",
             f"drawtext=text='{safe_text}':"
             f"fontcolor=white@{opacity:.2f}:"
             f"fontsize={font_size}:"
+            f"fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
             f"x=w-tw-{margin}:"
             f"y=h-th-{margin}:"
             "shadowcolor=black@0.5:"
