@@ -38,7 +38,7 @@ jobs:
 
       - name: Install ffmpeg (for ffprobe)
         run: |
-          wget -q https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+          wget -q --user-agent="Mozilla/5.0" https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
           tar -xf ffmpeg-release-amd64-static.tar.xz
           sudo cp ffmpeg-*-static/ffmpeg ffmpeg-*-static/ffprobe /usr/local/bin/
           rm -rf ffmpeg-*-static ffmpeg-release-amd64-static.tar.xz
