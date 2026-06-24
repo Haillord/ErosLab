@@ -160,6 +160,8 @@ def generate_wallpaper_caption(
     date=None,
     suggestion="💬 Предложи обои: @Haillord",
     watermark="📢 @eroslabwallpaper",
+    source=None,
+    post_id=None,
 ):
     """
     Генерирует подпись для канала с обоями.
@@ -226,6 +228,18 @@ def generate_wallpaper_caption(
         parts.append(tags_block)
     if tech_block:
         parts.append(tech_block)
+
+    # Ссылка на источник (Steam Workshop, Wallhaven и т.д.)
+    if source and post_id:
+        if source == "steam_workshop":
+            source_link = f'<a href="https://steamcommunity.com/sharedfiles/filedetails/?id={post_id}">🎮 Steam</a>'
+            parts.append(source_link)
+        elif source == "wallhaven":
+            source_link = f'<a href="https://wallhaven.cc/w/{post_id.replace("wallhaven_", "")}">🖼 Wallhaven</a>'
+            parts.append(source_link)
+        elif source == "civitai":
+            source_link = f'<a href="https://civitai.com/images/{post_id.replace("civitai_", "")}">✨ CivitAI</a>'
+            parts.append(source_link)
 
     # Кросс промо между каналами с вероятностью ~80%
     if random.random() < 0.8:

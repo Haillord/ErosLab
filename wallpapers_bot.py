@@ -584,6 +584,8 @@ async def publish_item_to_channel(bot: Bot, item: dict):
             date=item.get("createdAt"),
             suggestion='<a href="https://t.me/Haillord">💬 Предложка</a>',
             watermark="📢 @eroslaab",
+            source=item.get("source"),
+            post_id=item.get("post_id"),
         )
 
         if is_video:

@@ -103,25 +103,51 @@ def _extract_preview_url(item: dict, prefer_video: bool = True) -> tuple:
     preview_url = None
     mime_type = "image/jpeg"
     
-    # Steam Workshop возвращает превью в поле preview_url
-    # Также может быть список превью в previews
-    
     # Сначала проверяем video_preview если есть
     if prefer_video:
         video_preview = item.get("video_preview_url") or item.get("preview_video_url")
         if video_preview:
             return video_preview, "video/mp4"
     
-    # Затем пробуем получить высококачественное превью
-    preview_url = item.get("preview_url")
+    # Steam Workshop возвращает превью в разных форматах
+    # Пробуем получить высококачественное превью из списка previews
+    previews = item.get("previews", [])
+    if previews and isinstance(previews, list):
+        # Ищем превью с максимальным разрешением
+        best_preview = None
+        max_size = 0
+        
+        for preview in previews:
+            if not isinstance(preview, dict):
+                continue
+            
+            url = preview.get("url")
+            if not url:
+                continue
+            
+            # Steam URL может содержать размер в имени файла, например:
+            # 192x192, 616x353, 1920x1080 и т.д.
+            # Ищем максимальный размер
+            import re
+            size_match = re.search(r'(\d+)x(\d+)', url)
+            if size_match:
+                width = int(size_match.group(1))
+                height = int(size_match.group(2))
+                size = width * height
+                if size > max_size:
+                    max_size = size
+                    best_preview = url
+            else:
+                # Если размер не указан, берем как есть
+                if not best_preview:
+                    best_preview = url
+        
+        if best_preview:
+            preview_url = best_preview
     
-    # Если есть список превью, берем первое
+    # Если не нашли в previews, пробуем preview_url
     if not preview_url:
-        previews = item.get("previews", [])
-        if previews and isinstance(previews, list) and len(previews) > 0:
-            first_preview = previews[0]
-            if isinstance(first_preview, dict):
-                preview_url = first_preview.get("url")
+        preview_url = item.get("preview_url")
     
     if preview_url:
         # Определяем MIME по расширению
