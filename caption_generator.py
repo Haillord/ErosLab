@@ -90,7 +90,6 @@ VISION_MODELS = [
 
 WALLPAPER_TITLES = (
     "✦ WALLPAPER OF THE DAY ✦",
-    "✦ FRESH WALLPAPER DROP ✦",
     "✦ NEW WALLPAPER PICK ✦",
 )
 
@@ -179,8 +178,8 @@ def generate_wallpaper_caption(
         💬 Предложи обои: @Haillord · 📢 @eroslabwallpaper
     """
 
-    # Заголовок
-    title = random.choice(WALLPAPER_TITLES)
+    # Заголовок отключен
+    title = ""
 
     # Теги: очищаем и берём до 5 штук для читаемости
     safe_tags = _clean_caption_tags(_safe_tags(tags))
@@ -223,7 +222,9 @@ def generate_wallpaper_caption(
     footer = f"{suggestion} · {safe_watermark}"
 
     # Собираем итоговый пост
-    parts = [title]
+    parts = []
+    if title:
+        parts.append(title)
     if tags_block:
         parts.append(tags_block)
     if tech_block:
