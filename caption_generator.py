@@ -232,7 +232,7 @@ def generate_wallpaper_caption(
     # Ссылка на источник (Steam Workshop, Wallhaven и т.д.)
     if source and post_id:
         if source == "steam_workshop":
-            source_link = f'<a href="https://steamcommunity.com/sharedfiles/filedetails/?id={post_id}">🎮 Steam</a>'
+            source_link = f'<a href="https://steamcommunity.com/sharedfiles/filedetails/?id={post_id}">🎮 Steam Wallpaper Engine</a>'
             parts.append(source_link)
         elif source == "wallhaven":
             source_link = f'<a href="https://wallhaven.cc/w/{post_id.replace("wallhaven_", "")}">🖼 Wallhaven</a>'
