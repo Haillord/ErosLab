@@ -81,9 +81,9 @@ def _is_safe_content(item: dict) -> bool:
         tags = []
     
     # NSFW теги в Steam Workshop
+    # Пропускаем 12+/sexy/эротику, блокируем только откровенное порно
     nsfw_keywords = {
-        "nudity", "sexual content", "adult", "porn", "hentai",
-        "nsfw", "explicit", "mature", "erotic"
+        "porn", "hentai", "explicit", "sexual content", "nudity"
     }
     
     for tag in tags:
@@ -251,7 +251,7 @@ def fetch_steam_workshop(max_pages: int = 10):
     # Query types для сортировки по популярности
     # 0 = RANKED_BY_VOTE, 1 = RANKED_BY_PUBLICATION_DATE, 2 = RANKED_BY_LAST_UPDATED_DATE
     # 3 = RANKED_BY_TOTAL_UNIQUE_SUBSCRIPTIONS, 4 = RANKED_BY_TIMES_SUBSCRIBED, 5 = RANKED_BY_FAVORITES
-    query_types = [3, 4, 5]  # Приоритет: подписчики, фавориты
+    query_types = [3, 5]  # Приоритет: подписчики, избранное
     
     # Временные диапазоны для фильтрации
     time_ranges = ["DAY", "WEEK", "MONTH", "ALL_TIME"]
