@@ -346,10 +346,10 @@ def fetch_steam_workshop(max_pages: int = 10):
             # Если набрали достаточно результатов, прерываем все циклы
             if len(all_items) >= MAX_RESULTS:
                 break
-            
-            except Exception as e:
-                logger.error(f"Steam Workshop page {page} error: {e}")
-                continue
+        
+        except Exception as e:
+            logger.error(f"Steam Workshop page {page} error: {e}")
+            continue
         
         # Если нашли достаточно результатов, прерываем
         if len(all_items) >= MAX_RESULTS:
