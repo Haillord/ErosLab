@@ -342,7 +342,7 @@ def fetch_steam_workshop(max_pages: int = 10):
 def fetch_steam_workshop_by_ids(publishedfileids: list):
     """
     Получает детальную информацию о конкретных workshop items по их ID.
-    Использует GetPublishedFileDetails API.
+    Использует GetPublishedFileDetails API (требует POST).
     
     Args:
         publishedfileids: список ID workshop items
@@ -359,19 +359,15 @@ def fetch_steam_workshop_by_ids(publishedfileids: list):
     
     url = "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
     
-    # Steam API принимает ID как publishedfileids[0], publishedfileids[1], и т.д.
-    params = {
+    # Steam API требует POST с JSON body
+    payload = {
         "key": STEAM_API_KEY,
-        "itemcount": len(publishedfileids),
+        "publishedfileids": publishedfileids
     }
     
-    for i, fileid in enumerate(publishedfileids):
-        params[f"publishedfileids[{i}]"] = fileid
-    
     try:
-        r = _request_with_backoff(url, params=params, headers={})
-        if r is None:
-            return []
+        r = requests.post(url, json=payload, timeout=30)
+        r.raise_for_status()
         
         data = r.json()
         items = data.get("response", {}).get("publishedfiledetails", [])
