@@ -453,18 +453,19 @@ def fetch_and_pick():
     if ENABLE_STEAM_WORKSHOP:
         sources.append(fetch_steam_workshop)
     sources.append(fetch_wallhaven)
-    random.shuffle(sources)
+    
+    # Выбираем один случайный источник за запуск
+    source = random.choice(sources)
+    logger.info(f"Selected source: {source.__name__}")
     
     items = []
-    for source in sources:
-        try:
-            source_items = source()
-            if source_items:
-                items.extend(source_items)
-                logger.info(f"Got {len(source_items)} items from {source.__name__}")
-        except Exception as e:
-            logger.warning(f"Source {source.__name__} failed: {e}")
-            continue
+    try:
+        source_items = source()
+        if source_items:
+            items.extend(source_items)
+            logger.info(f"Got {len(source_items)} items from {source.__name__}")
+    except Exception as e:
+        logger.warning(f"Source {source.__name__} failed: {e}")
 
     if not items:
         logger.warning("No items found from any source")
