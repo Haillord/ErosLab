@@ -63,39 +63,14 @@ def _request_with_backoff(url, params, headers, max_retries=3):
 
 def _is_safe_content(item: dict) -> bool:
     """
-    Проверяет, является ли контент безопасным (без NSFW).
-    Steam Workshop использует content descriptors для маркировки контента.
+    Проверяет, что контент доступен публично и не забанен.
+    NSFW не фильтруется.
     """
-    # Если NSFW разрешен - пропускаем фильтрацию по тегам
-    if ALLOW_NSFW:
-        # Все равно проверяем visibility и banned статус
-        if item.get("visibility") != 0:  # 0 = public
-            return False
-        if item.get("banned") == 1 or item.get("banned") is True:
-            return False
-        return True
-    
-    # Проверяем теги контента (content descriptors)
-    tags = item.get("tags", [])
-    if not isinstance(tags, list):
-        tags = []
-    
-    # NSFW теги в Steam Workshop
-    # Пропускаем 12+/sexy/эротику, блокируем только откровенное порно
-    nsfw_keywords = {
-        "porn", "hentai", "explicit", "sexual content", "nudity"
-    }
-    
-    for tag in tags:
-        tag_name = tag.get("name", "").lower()
-        if any(keyword in tag_name for keyword in nsfw_keywords):
-            return False
-    
-    # Проверяем visibility - только public контент
+    # Только public контент
     if item.get("visibility") != 0:  # 0 = public
         return False
     
-    # Проверяем banned/rejected статус
+    # Не забанен
     if item.get("banned") == 1 or item.get("banned") is True:
         return False
     
