@@ -245,7 +245,7 @@ def generate_wallpaper_caption(
     if random.random() < 0.8:
         if watermark and "@eroslabwallpaper" in watermark:
             # Это пост в канале обоев → ссылаемся на основной канал
-            parts.append(f'<a href="https://t.me/+P3yEVmH-EK82NDky">� Hot 🔞</a>')
+            parts.append(f'<a href="https://t.me/+P3yEVmH-EK82NDky">🔥 Hot 🔞</a>')
         elif watermark and "@eroslabai" in watermark:
             # Это пост в основном канале → ссылаемся на обои
             parts.append(f'<a href="https://t.me/eroslabwallpaper">🤍 Wallpapers</a>')
@@ -467,7 +467,7 @@ def _format_date(date_value):
 
 
 def _escape_html(text):
-    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return str(text).replace("&", "&").replace("<", "<").replace(">", ">")
 
 
 def _word_count(text):
