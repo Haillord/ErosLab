@@ -113,16 +113,23 @@ def _extract_preview_url(item: dict, prefer_video: bool = True) -> tuple:
     preview_url = None
     mime_type = "image/jpeg"
     
-    # Сначала проверяем video_preview если есть
+    # Сначала проверяем video_preview если есть (несколько вариантов полей)
     if prefer_video:
-        video_preview = item.get("video_preview_url") or item.get("preview_video_url")
+        video_preview = (
+            item.get("video_preview_url") or 
+            item.get("preview_video_url") or
+            item.get("video_url") or
+            item.get("youtube_preview_url")
+        )
         if video_preview:
             return video_preview, "video/mp4"
     
     # Пробуем получить URL на полный файл (file_url)
     file_url = item.get("file_url")
     if file_url:
-        # Проверяем что это изображение
+        # Проверяем что это изображение или видео
+        if file_url.lower().endswith(('.mp4', '.webm', '.gif')):
+            return file_url, "video/mp4" if file_url.lower().endswith(('.mp4', '.webm')) else "image/gif"
         if file_url.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
             return file_url, "image/jpeg" if file_url.lower().endswith(('.jpg', '.jpeg')) else "image/png"
     
@@ -130,6 +137,15 @@ def _extract_preview_url(item: dict, prefer_video: bool = True) -> tuple:
     # Пробуем получить высококачественное превью из списка previews
     previews = item.get("previews", [])
     if previews and isinstance(previews, list):
+        # Сначала ищем видео превью в списке
+        if prefer_video:
+            for preview in previews:
+                if not isinstance(preview, dict):
+                    continue
+                url = preview.get("url")
+                if url and url.lower().endswith(('.mp4', '.webm', '.gif')):
+                    return url, "video/mp4" if url.lower().endswith(('.mp4', '.webm')) else "image/gif"
+        
         # Ищем превью с максимальным разрешением
         best_preview = None
         max_size = 0
