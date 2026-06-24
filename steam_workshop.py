@@ -227,8 +227,6 @@ def fetch_steam_workshop(max_pages: int = 10):
             "query_type": query_type,
             "page": page,
             "num_per_page": 50,
-            "return_details": True,
-            "return_previews": True,
         }
         
         try:

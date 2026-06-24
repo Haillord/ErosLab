@@ -245,7 +245,7 @@ def generate_wallpaper_caption(
     if random.random() < 0.8:
         if watermark and "@eroslabwallpaper" in watermark:
             # Это пост в канале обоев → ссылаемся на основной канал
-            parts.append(f'<a href="https://t.me/eroslabai">😏 Горячий контент🔞</a>')
+            parts.append(f'<a href="https://t.me/+P3yEVmH-EK82NDky">� Hot 🔞</a>')
         elif watermark and "@eroslabai" in watermark:
             # Это пост в основном канале → ссылаемся на обои
             parts.append(f'<a href="https://t.me/eroslabwallpaper">🤍 Wallpapers</a>')
