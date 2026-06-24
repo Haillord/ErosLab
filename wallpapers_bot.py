@@ -15,6 +15,7 @@ from gist_storage import load_all_state, save_all_state
 from PIL import Image
 from telegram import Bot
 from caption_generator import generate_wallpaper_caption
+from steam_workshop import fetch_steam_workshop
 from utils_state import (
     load_json as _shared_load_json,
     save_json as _shared_save_json,
@@ -38,11 +39,13 @@ from utils_tags import (
 
 # ==================== НАСТРОЙКИ ====================
 ENABLE_CIVITAI = False  # ✅ Поставь False чтобы отключить CivitAI полностью
+ENABLE_STEAM_WORKSHOP = True  # ✅ Поставь False чтобы отключить Steam Workshop
 
 TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN_WALLPAPERS", "")
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID_WALLPAPERS", "")
 CIVITAI_API_KEY     = os.environ.get("CIVITAI_API_KEY", "")
 WALLHAVEN_API_KEY   = os.environ.get("WALLHAVEN_API_KEY", "")
+STEAM_API_KEY       = os.environ.get("STEAM_API_KEY", "")
 
 MIN_LIKES        = 5
 MIN_IMAGE_SIZE   = 720
@@ -140,7 +143,9 @@ def get_preferred_orientation() -> str:
 
 def check_media_size(data, url, preferred_orientation: str = None):
     try:
-        if not url.lower().endswith((".mp4", ".webm", ".gif")):
+        is_video = url.lower().endswith((".mp4", ".webm", ".gif"))
+        
+        if not is_video:
             img = Image.open(BytesIO(data))
             width, height = img.size
             aspect = width / height
@@ -161,7 +166,17 @@ def check_media_size(data, url, preferred_orientation: str = None):
                     logger.info(f"Preferred landscape but got portrait {width}x{height}, still accepted")
 
             return True
-        return False
+        else:
+            # Для видео просто проверяем размер файла
+            # Telegram поддерживает видео до 50MB для ботов
+            max_video_size = 50 * 1024 * 1024  # 50MB
+            if len(data) > max_video_size:
+                logger.warning(f"Video too large: {len(data) / 1024 / 1024:.2f}MB")
+                return False
+            if len(data) < 100 * 1024:  # Минимум 100KB
+                logger.warning(f"Video too small: {len(data)} bytes")
+                return False
+            return True
     except Exception as e:
         logger.error(f"Error checking media size: {e}")
         return False
@@ -435,6 +450,8 @@ def fetch_and_pick():
     sources = []
     if ENABLE_CIVITAI:
         sources.append(fetch_civitai)
+    if ENABLE_STEAM_WORKSHOP:
+        sources.append(fetch_steam_workshop)
     sources.append(fetch_wallhaven)
     random.shuffle(sources)
     
@@ -461,10 +478,13 @@ def fetch_and_pick():
         logger.info("No fresh items")
         return None
 
+    # Разделяем на фото и видео
     fresh_photos = [i for i in fresh if not i["mime"].startswith("video/")]
+    fresh_videos = [i for i in fresh if i["mime"].startswith("video/")]
 
-    if not fresh_photos:
-        logger.info("No suitable photos found")
+    # Приоритет фото, но если нет - берем видео
+    if not fresh_photos and not fresh_videos:
+        logger.info("No suitable photos or videos found")
         return None
 
     def _try_pick(candidates, strict_orientation: str = None):
@@ -505,11 +525,13 @@ def fetch_and_pick():
                 continue
         return None, None, None
 
-    result, img_hash, image_data = _try_pick(fresh_photos, strict_orientation=preferred_orientation)
+    # Сначала пробуем фото с предпочтительной ориентацией
+    candidates = fresh_photos if fresh_photos else fresh_videos
+    result, img_hash, image_data = _try_pick(candidates, strict_orientation=preferred_orientation)
 
     if result is None:
         logger.info(f"No {preferred_orientation} found, trying any orientation")
-        result, img_hash, image_data = _try_pick(fresh_photos, strict_orientation=None)
+        result, img_hash, image_data = _try_pick(candidates, strict_orientation=None)
 
     if result:
         result["_img_hash"] = img_hash
@@ -527,19 +549,23 @@ async def publish_item_to_channel(bot: Bot, item: dict):
             r.raise_for_status()
             image_data = r.content
 
-        # Ресайз если изображение слишком большое по пикселям
-        img = Image.open(BytesIO(image_data))
-        w, h = img.size
-        if img.mode in ('RGBA', 'P', 'LA'):
-            img = img.convert('RGB')
-        max_px = 3840
-        if max(w, h) > max_px:
-            scale = max_px / max(w, h)
-            img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
-            out = BytesIO()
-            img.save(out, format="JPEG", quality=88)
-            image_data = out.getvalue()
-            logger.info(f"Resized {w}x{h} -> {int(w*scale)}x{int(h*scale)}")
+        mime_type = item.get("mime", "")
+        is_video = mime_type.startswith("video/")
+        
+        if not is_video:
+            # Ресайз если изображение слишком большое по пикселям
+            img = Image.open(BytesIO(image_data))
+            w, h = img.size
+            if img.mode in ('RGBA', 'P', 'LA'):
+                img = img.convert('RGB')
+            max_px = 3840
+            if max(w, h) > max_px:
+                scale = max_px / max(w, h)
+                img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
+                out = BytesIO()
+                img.save(out, format="JPEG", quality=88)
+                image_data = out.getvalue()
+                logger.info(f"Resized {w}x{h} -> {int(w*scale)}x{int(h*scale)}")
 
         if not check_media_size(image_data, item.get("url")):
             return False
@@ -549,31 +575,47 @@ async def publish_item_to_channel(bot: Bot, item: dict):
             logger.warning(f"Duplicate hash at publish stage, skip: {item['id']}")
             return False
 
-        image_data = _fit_photo_size_for_telegram(image_data)
-        photo_io = BytesIO(image_data)
-        photo_io.name = "wallpaper.jpg"
-
-        width, height = Image.open(BytesIO(image_data)).size
-
         caption = generate_wallpaper_caption(
             tags=item.get("tags", []),
             likes=item.get("likes", 0),
-            width=width,
-            height=height,
+            width=0 if is_video else Image.open(BytesIO(image_data)).size[0],
+            height=0 if is_video else Image.open(BytesIO(image_data)).size[1],
             date=item.get("createdAt"),
             suggestion='<a href="https://t.me/Haillord">💬 Предложка</a>',
             watermark="📢 @eroslaab",
         )
 
-        await send_with_retry(
-            bot.send_photo,
-            chat_id=TELEGRAM_CHANNEL_ID,
-            photo=photo_io,
-            caption=caption,
-            parse_mode="HTML",
-            write_timeout=60,
-            read_timeout=60,
-        )
+        if is_video:
+            # Публикуем видео
+            video_io = BytesIO(image_data)
+            video_io.name = "wallpaper.mp4"
+            
+            await send_with_retry(
+                bot.send_video,
+                chat_id=TELEGRAM_CHANNEL_ID,
+                video=video_io,
+                caption=caption,
+                parse_mode="HTML",
+                write_timeout=60,
+                read_timeout=60,
+            )
+            logger.info(f"Published video {item['id']}")
+        else:
+            # Публикуем фото
+            image_data = _fit_photo_size_for_telegram(image_data)
+            photo_io = BytesIO(image_data)
+            photo_io.name = "wallpaper.jpg"
+
+            await send_with_retry(
+                bot.send_photo,
+                chat_id=TELEGRAM_CHANNEL_ID,
+                photo=photo_io,
+                caption=caption,
+                parse_mode="HTML",
+                write_timeout=60,
+                read_timeout=60,
+            )
+            logger.info(f"Published photo {item['id']}")
 
         posted_ids.add(item["id"])
         posted_hashes.add(img_hash)
