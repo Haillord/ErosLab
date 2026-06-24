@@ -226,7 +226,7 @@ def fetch_steam_workshop(max_pages: int = 10):
     
     url = "https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/"
     
-    all_items = []
+    all_file_ids = []
     
     # Только сортировка по подписчикам (самая популярная)
     query_type = 3  # RANKED_BY_TOTAL_UNIQUE_SUBSCRIPTIONS
@@ -257,45 +257,11 @@ def fetch_steam_workshop(max_pages: int = 10):
             
             logger.info(f"Steam Workshop page {page}: got {len(items)} items (total: {total})")
             
-            # Логируем первый элемент для отладки
-            if items:
-                logger.info(f"Sample item data: {items[0]}")
-            
+            # Собираем ID для детальной загрузки
             for item in items:
-                # Проверяем безопасность контента
-                if not _is_safe_content(item):
-                    logger.debug(f"Item {item.get('publishedfileid')} failed safety check: visibility={item.get('visibility')}, banned={item.get('banned')}")
-                    continue
-                
-                # Получаем количество подписок (может быть 0, это нормально)
-                subscriptions = item.get("subscriptions", 0)
-                
-                # Извлекаем превью
-                preview_url, mime_type = _extract_preview_url(item, prefer_video=True)
-                if not preview_url:
-                    logger.debug(f"No preview URL for item {item.get('publishedfileid')}, title={item.get('title')}")
-                    continue
-                
-                # Извлекаем теги
-                tags = _extract_tags(item)
-                
-                # Формируем item в совместимом формате
-                workshop_item = {
-                    "id": f"steam_{item['publishedfileid']}",
-                    "url": preview_url,
-                    "tags": tags,
-                    "likes": subscriptions,
-                    "rating": "safe",
-                    "post_id": item.get("publishedfileid"),
-                    "mime": mime_type,
-                    "createdAt": item.get("time_created"),
-                    "source": "steam_workshop",
-                    "title": item.get("title", ""),
-                    "author": item.get("creator", ""),
-                    "file_size": item.get("file_size", 0),
-                }
-                
-                all_items.append(workshop_item)
+                file_id = item.get("publishedfileid")
+                if file_id:
+                    all_file_ids.append(file_id)
             
             # Проверяем, есть ли еще страницы
             if len(items) < params["num_per_page"]:
@@ -305,10 +271,60 @@ def fetch_steam_workshop(max_pages: int = 10):
             logger.error(f"Steam Workshop page {page} error: {e}")
             continue
         
-        # Если набрали MAX_RESULTS, останавливаемся
-        if len(all_items) >= MAX_RESULTS:
-            logger.info(f"Collected {len(all_items)} items, stopping early")
+        # Если набрали достаточно ID, останавливаемся
+        if len(all_file_ids) >= MAX_RESULTS:
+            logger.info(f"Collected {len(all_file_ids)} file IDs, stopping early")
             break
+    
+    if not all_file_ids:
+        logger.warning("No file IDs collected from QueryFiles")
+        return []
+    
+    # Загружаем детальную информацию пачками по 100 ID
+    all_items = []
+    batch_size = 100
+    
+    for i in range(0, len(all_file_ids), batch_size):
+        batch_ids = all_file_ids[i:i + batch_size]
+        logger.info(f"Fetching details for batch {i//batch_size + 1}: {len(batch_ids)} items")
+        
+        details = fetch_steam_workshop_by_ids(batch_ids)
+        
+        for item in details:
+            # Проверяем безопасность контента
+            if not _is_safe_content(item):
+                logger.debug(f"Item {item.get('publishedfileid')} failed safety check: visibility={item.get('visibility')}, banned={item.get('banned')}")
+                continue
+            
+            # Получаем количество подписок (может быть 0, это нормально)
+            subscriptions = item.get("subscriptions", 0)
+            
+            # Извлекаем превью
+            preview_url, mime_type = _extract_preview_url(item, prefer_video=True)
+            if not preview_url:
+                logger.debug(f"No preview URL for item {item.get('publishedfileid')}, title={item.get('title')}")
+                continue
+            
+            # Извлекаем теги
+            tags = _extract_tags(item)
+            
+            # Формируем item в совместимом формате
+            workshop_item = {
+                "id": f"steam_{item['publishedfileid']}",
+                "url": preview_url,
+                "tags": tags,
+                "likes": subscriptions,
+                "rating": "safe",
+                "post_id": item.get("publishedfileid"),
+                "mime": mime_type,
+                "createdAt": item.get("time_created"),
+                "source": "steam_workshop",
+                "title": item.get("title", ""),
+                "author": item.get("creator", ""),
+                "file_size": item.get("file_size", 0),
+            }
+            
+            all_items.append(workshop_item)
     
     # Сортируем по подписчикам
     all_items.sort(key=lambda x: x["likes"], reverse=True)
