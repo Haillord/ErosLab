@@ -343,6 +343,19 @@ def fetch_steam_workshop(max_pages: int = 30):
                     if subscriptions < MIN_SUBSCRIPTIONS:
                         continue
                     
+                    # Проверяем, есть ли тег "Video" — для видео обои нужны детальные данные
+                    tags = item.get("tags", [])
+                    is_video = any(tag.get("tag", "").lower() == "video" for tag in tags if isinstance(tag, dict))
+                    
+                    # Если это видео обои, получаем детальную информацию с превью
+                    if is_video:
+                        try:
+                            detailed_items = fetch_steam_workshop_by_ids([item["publishedfileid"]])
+                            if detailed_items:
+                                item = detailed_items[0]  # Используем детальные данные
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch details for video item {item['publishedfileid']}: {e}")
+                    
                     # Извлекаем превью
                     preview_url, mime_type = _extract_preview_url(item, prefer_video=True)
                     if not preview_url:
