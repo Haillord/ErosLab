@@ -338,20 +338,16 @@ def fetch_steam_workshop(max_pages: int = 10):
                     if len(items) < params["num_per_page"]:
                         break
                 
-                # Если набрали достаточно результатов для этого time_range, прерываем
-                if len(all_items) >= MAX_RESULTS:
-                    logger.info(f"Collected {len(all_items)} items, stopping early")
-                    break
+                except Exception as e:
+                    logger.error(f"Steam Workshop page {page} error: {e}")
+                    continue
             
-            # Если набрали достаточно результатов, прерываем все циклы
+            # Если набрали достаточно результатов для этого time_range, прерываем
             if len(all_items) >= MAX_RESULTS:
+                logger.info(f"Collected {len(all_items)} items, stopping early")
                 break
         
-        except Exception as e:
-            logger.error(f"Steam Workshop page {page} error: {e}")
-            continue
-        
-        # Если нашли достаточно результатов, прерываем
+        # Если набрали достаточно результатов, прерываем все циклы
         if len(all_items) >= MAX_RESULTS:
             break
     
