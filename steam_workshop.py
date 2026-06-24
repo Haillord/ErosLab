@@ -20,6 +20,7 @@ STEAM_API_KEY = os.environ.get("STEAM_API_KEY", "")
 # Настройки фильтрации
 MIN_SUBSCRIPTIONS = int(os.environ.get("STEAM_MIN_SUBSCRIPTIONS", "100"))
 MAX_RESULTS = int(os.environ.get("STEAM_MAX_RESULTS", "50"))
+ALLOW_NSFW = os.environ.get("STEAM_ALLOW_NSFW", "false").lower() in ("1", "true", "yes", "on")
 
 
 def _request_with_backoff(url, params, headers, max_retries=3):
@@ -65,6 +66,15 @@ def _is_safe_content(item: dict) -> bool:
     Проверяет, является ли контент безопасным (без NSFW).
     Steam Workshop использует content descriptors для маркировки контента.
     """
+    # Если NSFW разрешен - пропускаем фильтрацию по тегам
+    if ALLOW_NSFW:
+        # Все равно проверяем visibility и banned статус
+        if item.get("visibility") != 0:  # 0 = public
+            return False
+        if item.get("banned") == 1 or item.get("banned") is True:
+            return False
+        return True
+    
     # Проверяем теги контента (content descriptors)
     tags = item.get("tags", [])
     if not isinstance(tags, list):
@@ -108,6 +118,13 @@ def _extract_preview_url(item: dict, prefer_video: bool = True) -> tuple:
         video_preview = item.get("video_preview_url") or item.get("preview_video_url")
         if video_preview:
             return video_preview, "video/mp4"
+    
+    # Пробуем получить URL на полный файл (file_url)
+    file_url = item.get("file_url")
+    if file_url:
+        # Проверяем что это изображение
+        if file_url.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
+            return file_url, "image/jpeg" if file_url.lower().endswith(('.jpg', '.jpeg')) else "image/png"
     
     # Steam Workshop возвращает превью в разных форматах
     # Пробуем получить высококачественное превью из списка previews
@@ -248,6 +265,11 @@ def fetch_steam_workshop(max_pages: int = 5):
                 
                 logger.info(f"Steam Workshop page {page}: got {len(items)} items (total: {total})")
                 
+                # Логируем первый item для отладки
+                if items and page == 1:
+                    logger.debug(f"Sample item keys: {list(items[0].keys())}")
+                    logger.debug(f"Sample item: {items[0]}")
+                
                 for item in items:
                     # Проверяем безопасность контента
                     if not _is_safe_content(item):
@@ -261,6 +283,7 @@ def fetch_steam_workshop(max_pages: int = 5):
                     # Извлекаем превью
                     preview_url, mime_type = _extract_preview_url(item, prefer_video=True)
                     if not preview_url:
+                        logger.debug(f"No preview URL for item {item.get('publishedfileid')}")
                         continue
                     
                     # Извлекаем теги

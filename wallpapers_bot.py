@@ -39,7 +39,7 @@ from utils_tags import (
 
 # ==================== НАСТРОЙКИ ====================
 ENABLE_CIVITAI = False  # ✅ Поставь False чтобы отключить CivitAI полностью
-ENABLE_STEAM_WORKSHOP = True  # ✅ Поставь False чтобы отключить Steam Workshop
+ENABLE_STEAM_WORKSHOP = True  # ✅ Steam Workshop (превью 192x192, полные обои по ссылке)
 
 TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN_WALLPAPERS", "")
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID_WALLPAPERS", "")
@@ -141,9 +141,13 @@ def get_preferred_orientation() -> str:
     logger.info(f"Orientation: last={last_type}, preferred={preferred}")
     return preferred
 
-def check_media_size(data, url, preferred_orientation: str = None):
+def check_media_size(data, url, preferred_orientation: str = None, source=None):
     try:
         is_video = url.lower().endswith((".mp4", ".webm", ".gif"))
+        
+        # Для Steam Workshop пропускаем проверку размера (превью 192x192, полные обои по ссылке)
+        if source == "steam_workshop":
+            return True
         
         if not is_video:
             img = Image.open(BytesIO(data))
@@ -500,7 +504,7 @@ def fetch_and_pick():
                     logger.info(f"Skip duplicate hash: {candidate['id']}")
                     continue
 
-                if not check_media_size(image_data, candidate.get("url"), strict_orientation):
+                if not check_media_size(image_data, candidate.get("url"), strict_orientation, candidate.get("source")):
                     continue
 
                 if strict_orientation:
@@ -568,7 +572,7 @@ async def publish_item_to_channel(bot: Bot, item: dict):
                 image_data = out.getvalue()
                 logger.info(f"Resized {w}x{h} -> {int(w*scale)}x{int(h*scale)}")
 
-        if not check_media_size(image_data, item.get("url")):
+        if not check_media_size(image_data, item.get("url"), source=item.get("source")):
             return False
 
         img_hash = item.get("_img_hash") or compute_image_hash(image_data)
