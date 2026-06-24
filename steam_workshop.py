@@ -226,9 +226,10 @@ def fetch_steam_workshop(max_pages: int = 10):
     
     Стратегия:
     1. QueryFiles с сортировкой по подписчикам (RANKED_BY_TOTAL_UNIQUE_SUBSCRIPTIONS)
-    2. Фильтруем NSFW контент
-    3. Сортируем по количеству подписок
-    4. Возвращаем топ результаты
+    2. Фильтруем по времени: Day, Week, Month, All Time
+    3. Фильтруем NSFW контент
+    4. Сортируем по количеству подписок
+    5. Возвращаем топ результаты
     
     Args:
         max_pages: количество страниц для парсинга
@@ -252,81 +253,100 @@ def fetch_steam_workshop(max_pages: int = 10):
     # 3 = RANKED_BY_TOTAL_UNIQUE_SUBSCRIPTIONS, 4 = RANKED_BY_TIMES_SUBSCRIBED, 5 = RANKED_BY_FAVORITES
     query_types = [3, 4, 5]  # Приоритет: подписчики, фавориты
     
-    for query_type in query_types:
-        for page in range(1, max_pages + 1):
-            params = {
-                "key": STEAM_API_KEY,
-                "appid": WALLPAPER_ENGINE_APPID,
-                "query_type": query_type,
-                "page": page,
-                "num_per_page": 50,
-                "return_details": True,
-                "return_previews": True,
-            }
+    # Временные диапазоны для фильтрации
+    time_ranges = ["DAY", "WEEK", "MONTH", "ALL_TIME"]
+    
+    for time_range in time_ranges:
+        logger.info(f"Fetching Steam Workshop with time range: {time_range}")
+        
+        for query_type in query_types:
+            for page in range(1, max_pages + 1):
+                params = {
+                    "key": STEAM_API_KEY,
+                    "appid": WALLPAPER_ENGINE_APPID,
+                    "query_type": query_type,
+                    "page": page,
+                    "num_per_page": 50,
+                    "return_details": True,
+                    "return_previews": True,
+                }
+                
+                # Добавляем временной фильтр если не ALL_TIME
+                if time_range != "ALL_TIME":
+                    params["date_range"] = time_range
+                
+                try:
+                    r = _request_with_backoff(url, params=params, headers={})
+                    if r is None:
+                        logger.warning(f"Steam Workshop page {page}: no response")
+                        continue
+                    
+                    data = r.json()
+                    response = data.get("response", {})
+                    items = response.get("publishedfiledetails", [])
+                    total = response.get("total", 0)
+                    
+                    if not items:
+                        logger.info(f"Steam Workshop page {page}: no items")
+                        break
+                    
+                    logger.info(f"Steam Workshop page {page}: got {len(items)} items (total: {total})")
+                    
+                    # Логируем первый item для отладки
+                    if items and page == 1:
+                        logger.debug(f"Sample item keys: {list(items[0].keys())}")
+                    
+                    for item in items:
+                        # Проверяем безопасность контента
+                        if not _is_safe_content(item):
+                            continue
+                        
+                        # Фильтруем по минимальному количеству подписок
+                        subscriptions = item.get("subscriptions", 0)
+                        if subscriptions < MIN_SUBSCRIPTIONS:
+                            continue
+                        
+                        # Извлекаем превью
+                        preview_url, mime_type = _extract_preview_url(item, prefer_video=True)
+                        if not preview_url:
+                            logger.debug(f"No preview URL for item {item.get('publishedfileid')}")
+                            continue
+                        
+                        # Извлекаем теги
+                        tags = _extract_tags(item)
+                        
+                        # Формируем item в совместимом формате
+                        workshop_item = {
+                            "id": f"steam_{item['publishedfileid']}",
+                            "url": preview_url,
+                            "tags": tags,
+                            "likes": subscriptions,  # Используем подписчики как "лайки"
+                            "rating": "safe",  # Мы уже отфильтровали NSFW
+                            "post_id": item.get("publishedfileid"),
+                            "mime": mime_type,
+                            "createdAt": item.get("time_created"),
+                            "source": "steam_workshop",
+                            "title": item.get("title", ""),
+                            "author": item.get("creator", ""),
+                            "file_size": item.get("file_size", 0),
+                            "time_range": time_range,  # Добавляем временной диапазон
+                        }
+                        
+                        all_items.append(workshop_item)
+                    
+                    # Проверяем, есть ли еще страницы
+                    if len(items) < params["num_per_page"]:
+                        break
+                
+                # Если набрали достаточно результатов для этого time_range, прерываем
+                if len(all_items) >= MAX_RESULTS:
+                    logger.info(f"Collected {len(all_items)} items, stopping early")
+                    break
             
-            try:
-                r = _request_with_backoff(url, params=params, headers={})
-                if r is None:
-                    logger.warning(f"Steam Workshop page {page}: no response")
-                    continue
-                
-                data = r.json()
-                response = data.get("response", {})
-                items = response.get("publishedfiledetails", [])
-                total = response.get("total", 0)
-                
-                if not items:
-                    logger.info(f"Steam Workshop page {page}: no items")
-                    break
-                
-                logger.info(f"Steam Workshop page {page}: got {len(items)} items (total: {total})")
-                
-                # Логируем первый item для отладки
-                if items and page == 1:
-                    logger.debug(f"Sample item keys: {list(items[0].keys())}")
-                    logger.debug(f"Sample item: {items[0]}")
-                
-                for item in items:
-                    # Проверяем безопасность контента
-                    if not _is_safe_content(item):
-                        continue
-                    
-                    # Фильтруем по минимальному количеству подписок
-                    subscriptions = item.get("subscriptions", 0)
-                    if subscriptions < MIN_SUBSCRIPTIONS:
-                        continue
-                    
-                    # Извлекаем превью
-                    preview_url, mime_type = _extract_preview_url(item, prefer_video=True)
-                    if not preview_url:
-                        logger.debug(f"No preview URL for item {item.get('publishedfileid')}")
-                        continue
-                    
-                    # Извлекаем теги
-                    tags = _extract_tags(item)
-                    
-                    # Формируем item в совместимом формате
-                    workshop_item = {
-                        "id": f"steam_{item['publishedfileid']}",
-                        "url": preview_url,
-                        "tags": tags,
-                        "likes": subscriptions,  # Используем подписчики как "лайки"
-                        "rating": "safe",  # Мы уже отфильтровали NSFW
-                        "post_id": item.get("publishedfileid"),
-                        "mime": mime_type,
-                        "createdAt": item.get("time_created"),
-                        "source": "steam_workshop",
-                        "title": item.get("title", ""),
-                        "author": item.get("creator", ""),
-                        "file_size": item.get("file_size", 0),
-                    }
-                    
-                    all_items.append(workshop_item)
-                
-                # Проверяем, есть ли еще страницы
-                if len(items) < params["num_per_page"]:
-                    break
-                    
+            # Если набрали достаточно результатов, прерываем все циклы
+            if len(all_items) >= MAX_RESULTS:
+                break
+            
             except Exception as e:
                 logger.error(f"Steam Workshop page {page} error: {e}")
                 continue
