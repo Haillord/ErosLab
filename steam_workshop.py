@@ -63,13 +63,9 @@ def _request_with_backoff(url, params, headers, max_retries=3):
 
 def _is_safe_content(item: dict) -> bool:
     """
-    Проверяет, что контент доступен публично и не забанен.
+    Проверяет, что контент не забанен.
     NSFW не фильтруется.
     """
-    # Только public контент
-    if item.get("visibility") != 0:  # 0 = public
-        return False
-    
     # Не забанен
     if item.get("banned") == 1 or item.get("banned") is True:
         return False
@@ -156,6 +152,21 @@ def _extract_preview_url(item: dict, prefer_video: bool = True) -> tuple:
     # Если не нашли в previews, пробуем preview_url
     if not preview_url:
         preview_url = item.get("preview_url")
+    
+    # Fallback: пробуем извлечь из preview_file если есть
+    if not preview_url:
+        preview_file = item.get("preview_file")
+        if preview_file:
+            # preview_file может быть числом (UGCHandle) или строкой
+            if isinstance(preview_file, str):
+                preview_url = preview_file
+    
+    # Fallback: конструируем URL из publishedfileid
+    if not preview_url:
+        publishedfileid = item.get("publishedfileid")
+        if publishedfileid:
+            # Steam CDN format для превью
+            preview_url = f"https://steamuserimages-a.akamaihd.net/ugc/{publishedfileid}/"
     
     if preview_url:
         # Определяем MIME по расширению
@@ -246,20 +257,23 @@ def fetch_steam_workshop(max_pages: int = 10):
             
             logger.info(f"Steam Workshop page {page}: got {len(items)} items (total: {total})")
             
+            # Логируем первый элемент для отладки
+            if items:
+                logger.info(f"Sample item data: {items[0]}")
+            
             for item in items:
                 # Проверяем безопасность контента
                 if not _is_safe_content(item):
+                    logger.debug(f"Item {item.get('publishedfileid')} failed safety check: visibility={item.get('visibility')}, banned={item.get('banned')}")
                     continue
                 
-                # Пропускаем только если 0 подписок
+                # Получаем количество подписок (может быть 0, это нормально)
                 subscriptions = item.get("subscriptions", 0)
-                if subscriptions == 0:
-                    continue
                 
                 # Извлекаем превью
                 preview_url, mime_type = _extract_preview_url(item, prefer_video=True)
                 if not preview_url:
-                    logger.debug(f"No preview URL for item {item.get('publishedfileid')}")
+                    logger.debug(f"No preview URL for item {item.get('publishedfileid')}, title={item.get('title')}")
                     continue
                 
                 # Извлекаем теги
