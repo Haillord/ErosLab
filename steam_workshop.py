@@ -18,8 +18,8 @@ WALLPAPER_ENGINE_APPID = 431960
 STEAM_API_KEY = os.environ.get("STEAM_API_KEY", "")
 
 # Настройки фильтрации
-MIN_SUBSCRIPTIONS = int(os.environ.get("STEAM_MIN_SUBSCRIPTIONS", "100"))
-MAX_RESULTS = int(os.environ.get("STEAM_MAX_RESULTS", "50"))
+MIN_SUBSCRIPTIONS = int(os.environ.get("STEAM_MIN_SUBSCRIPTIONS", "50"))
+MAX_RESULTS = int(os.environ.get("STEAM_MAX_RESULTS", "100"))
 ALLOW_NSFW = os.environ.get("STEAM_ALLOW_NSFW", "false").lower() in ("1", "true", "yes", "on")
 
 
@@ -220,7 +220,7 @@ def _extract_tags(item: dict) -> list:
     return tags[:15]  # Ограничиваем количество тегов
 
 
-def fetch_steam_workshop(max_pages: int = 5):
+def fetch_steam_workshop(max_pages: int = 10):
     """
     Парсит популярные обои из Steam Workshop Wallpaper Engine.
     
