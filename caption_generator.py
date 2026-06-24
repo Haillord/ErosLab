@@ -253,7 +253,7 @@ def generate_wallpaper_caption(
 
     parts.append(footer)
 
-    return "\n\n".join(parts)
+    return "\n".join(parts)  # Одиночный перенос строки для меньшего расстояния
 
 
 # ==================== ОСТАЛЬНЫЕ ФУНКЦИИ (без изменений) ====================
