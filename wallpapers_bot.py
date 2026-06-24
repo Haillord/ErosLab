@@ -39,7 +39,7 @@ from utils_tags import (
 
 # ==================== НАСТРОЙКИ ====================
 ENABLE_CIVITAI = False  # ✅ Поставь False чтобы отключить CivitAI полностью
-ENABLE_STEAM_WORKSHOP = True  # ✅ Steam Workshop (превью 192x192, полные обои по ссылке)
+ENABLE_STEAM_WORKSHOP = True  # ✅ Steam Workshop (использует cursor для глубокой пагинации)
 
 TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN_WALLPAPERS", "")
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID_WALLPAPERS", "")

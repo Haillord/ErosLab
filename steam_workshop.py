@@ -273,13 +273,16 @@ def fetch_steam_workshop(max_pages: int = 30):
     for query_type in query_types:
         logger.info(f"Fetching with query_type={query_type}")
         
-        for page in range(1, max_pages + 1):
+        cursor = "*"  # Начальный курсор для пагинации
+        page_count = 0
+        
+        while cursor and page_count < max_pages:
             params = {
                 "key": STEAM_API_KEY,
                 "appid": WALLPAPER_ENGINE_APPID,
                 "query_type": query_type,
-                "page": page,
-                "num_per_page": 50,
+                "cursor": cursor,
+                "numperpage": 50,
                 "return_details": True,
                 "return_previews": True,
             }
@@ -287,22 +290,26 @@ def fetch_steam_workshop(max_pages: int = 30):
             try:
                 r = _request_with_backoff(url, params=params, headers={})
                 if r is None:
-                    logger.warning(f"Steam Workshop page {page}: no response")
-                    continue
+                    logger.warning(f"Steam Workshop cursor request failed")
+                    break
                 
                 data = r.json()
                 response = data.get("response", {})
                 items = response.get("publishedfiledetails", [])
                 total = response.get("total", 0)
                 
+                # Получаем следующий курсор для пагинации
+                cursor = response.get("next_cursor")
+                
                 if not items:
-                    logger.info(f"Steam Workshop page {page}: no items")
+                    logger.info(f"Steam Workshop: no items for cursor request")
                     break
                 
-                logger.info(f"Steam Workshop page {page}: got {len(items)} items (total: {total})")
+                page_count += 1
+                logger.info(f"Steam Workshop page {page_count}: got {len(items)} items (total: {total})")
                 
                 # Логируем первый item для отладки
-                if items and page == 1:
+                if items and page_count == 1:
                     logger.debug(f"Sample item keys: {list(items[0].keys())}")
                 
                 for item in items:
@@ -341,14 +348,10 @@ def fetch_steam_workshop(max_pages: int = 30):
                     }
                     
                     all_items.append(workshop_item)
-                
-                # Проверяем, есть ли еще страницы
-                if len(items) < params["num_per_page"]:
-                    break
             
             except Exception as e:
-                logger.error(f"Steam Workshop page {page} error: {e}")
-                continue
+                logger.error(f"Steam Workshop cursor request error: {e}")
+                break
         
         # Если набрали достаточно результатов, прерываем
         if len(all_items) >= MAX_RESULTS:
