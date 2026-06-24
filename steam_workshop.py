@@ -8,6 +8,7 @@ import logging
 import os
 import time
 import requests
+import json
 
 logger = logging.getLogger("ErosLab.SteamWorkshop")
 
@@ -327,9 +328,10 @@ def fetch_steam_workshop(max_pages: int = 30):
                 page_count += 1
                 logger.info(f"Steam Workshop page {page_count}: got {len(items)} items (total: {total})")
                 
-                # Логируем первый item для отладки
+                # Логируем первый item для отладки (подробно)
                 if items and page_count == 1:
                     logger.debug(f"Sample item keys: {list(items[0].keys())}")
+                    logger.debug(f"Sample item: {json.dumps(items[0], indent=2, default=str)[:1000]}")
                 
                 for item in items:
                     # Проверяем безопасность контента
