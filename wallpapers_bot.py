@@ -587,7 +587,7 @@ async def publish_item_to_channel(bot: Bot, item: dict):
             height=0 if is_video else Image.open(BytesIO(image_data)).size[1],
             date=item.get("createdAt"),
             suggestion='<a href="https://t.me/Haillord">💬 Предложка</a>',
-            watermark="📢 @eroslaab",
+            watermark="📢 @eroslaab",  # Обновлено с @eroslabwallpaper на @eroslaab
             source=item.get("source"),
             post_id=item.get("post_id"),
         )

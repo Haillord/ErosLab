@@ -63,8 +63,11 @@ def _request_with_backoff(url, params, headers, max_retries=3):
 
 def _is_safe_content(item: dict) -> bool:
     """
-    Проверяет, является ли контент безопасным (без NSFW).
+    Проверяет, является ли контент безопасным (16+ sexy, без 18+ порно).
     Steam Workshop использует content descriptors для маркировки контента.
+    
+    Пропускаем: mild nudity, suggestive, sexy (но не явное)
+    Блокируем: explicit nudity, sexual content, porn, hentai, adult
     """
     # Если NSFW разрешен - пропускаем фильтрацию по тегам
     if ALLOW_NSFW:
@@ -80,16 +83,32 @@ def _is_safe_content(item: dict) -> bool:
     if not isinstance(tags, list):
         tags = []
     
-    # NSFW теги в Steam Workshop
-    nsfw_keywords = {
-        "nudity", "sexual content", "adult", "porn", "hentai",
-        "nsfw", "explicit", "mature", "erotic"
+    # Строго блокируемые теги (18+ порно)
+    blocked_keywords = {
+        "porn", "hentai", "explicit", "adult only", "hardcore",
+        "sexual violence", "non-consensual", "rape", "incest"
     }
     
-    for tag in tags:
-        tag_name = tag.get("name", "").lower()
-        if any(keyword in tag_name for keyword in nsfw_keywords):
+    # Теги которые блокируем только если есть "explicit" или "sexual"
+    # (mild nudity, suggestive, sexy - OK)
+    conditional_blocked = {
+        "nudity", "sexual content", "erotic", "mature"
+    }
+    
+    tag_names = [tag.get("name", "").lower() for tag in tags if isinstance(tag, dict)]
+    tag_string = " ".join(tag_names)
+    
+    # Строго блокируем
+    for keyword in blocked_keywords:
+        if keyword in tag_string:
             return False
+    
+    # Условно блокируем - только если есть explicit/sexual
+    for keyword in conditional_blocked:
+        if keyword in tag_string:
+            # Если есть "explicit" или "sexual" - блокируем
+            if "explicit" in tag_string or "sexual" in tag_string:
+                return False
     
     # Проверяем visibility - только public контент
     if item.get("visibility") != 0:  # 0 = public
