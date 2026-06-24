@@ -330,8 +330,8 @@ def fetch_steam_workshop(max_pages: int = 30):
                 
                 # Логируем первый item для отладки (подробно)
                 if items and page_count == 1:
-                    logger.debug(f"Sample item keys: {list(items[0].keys())}")
-                    logger.debug(f"Sample item: {json.dumps(items[0], indent=2, default=str)[:1000]}")
+                    logger.info(f"Sample item keys: {list(items[0].keys())}")
+                    logger.info(f"Sample item: {json.dumps(items[0], indent=2, default=str)[:1500]}")
                 
                 for item in items:
                     # Проверяем безопасность контента
