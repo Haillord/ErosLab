@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-<img src="https://readme-typing-svg.demolab.com?font=Share+Tech+Mono&size=22&pause=2000&color=FF2244&center=true&vCenter=true&width=700&height=45&duration=40&lines=ErosLab+Bot+Ecosystem+%F0%9F%94%9E;Serverless+24%2F7+on+GitHub+Actions;4+sources+%E2%80%A2+smart+fallback;AI+captions+via+Groq+%26+Vision;Smart+filtering+%26+no+duplicates;Free+hosting+%E2%80%A2+Full+autonomy">
+<img src="https://readme-typing-svg.demolab.com?font=Share+Tech+Mono&size=22&pause=2000&color=FF2244&center=true&vCenter=true&width=700&height=45&duration=40&lines=ErosLab+Bot+Ecosystem+%F0%9F%94%9E;Serverless+24%2F7+on+GitHub+Actions;3+sources+%E2%80%A2+smart+fallback;AI+captions+via+Groq+%26+Vision;Smart+filtering+%26+no+duplicates;Free+hosting+%E2%80%A2+Full+autonomy">
 </p>
 
 <p align="center">
@@ -18,8 +18,8 @@
 
 <div align="center">
 
-[![](https://img.shields.io/badge/🔞_Основной_канал-FF2244?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/eroslabai)
-[![](https://img.shields.io/badge/🤍_Обои-white?style=for-the-badge&logo=telegram&logoColor=black)](https://t.me/eroslabwallpaper)
+[![](https://img.shields.io/badge/🔞_Основной_канал-FF2244?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/+P3yEVmH-EK82NDky)
+[![](https://img.shields.io/badge/🤍_Обои-white?style=for-the-badge&logo=telegram&logoColor=black)](https://t.me/eroslaab)
 
 </div>
 
@@ -48,7 +48,7 @@
 ### ⚙️ Инфраструктура
 - **Serverless** — GitHub Actions, 0 руб/месяц
 - **Gist как БД** — состояние без коммитов в репо
-- **4 источника** — CivitAI, Rule34 API, Rule34Video, Rule34Gen
+- **3 источника** — CivitAI, Rule34 API, Rule34Gen
 - **Fallback-цепочка** — если источник упал, берёт следующий по весу
 </td>
 <td width="50%" valign="top">
@@ -101,7 +101,6 @@
   <img src="https://img.shields.io/badge/python--telegram--bot-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white"/>
   <br>
   <img src="https://img.shields.io/badge/Playwright-45ba4b?style=for-the-badge&logo=playwright&logoColor=white"/>
-  <img src="https://img.shields.io/badge/yt--dlp-FF0000?style=for-the-badge&logo=youtube&logoColor=white"/>
 </p>
 
 <br>
@@ -119,10 +118,8 @@ ErosLab/
 ├── ⚙️  gist_storage.py          — хранилище состояния в Gist
 ├── 🧠  caption_generator.py     — AI генератор подписей
 ├── 🖼️  watermark.py             — водяные знаки (фото + видео)
-├── 🎬  make_slideshow.py        — сборка слайдшоу из обоев
 │
 ├── 🔎  rule34_api.py            — парсер Rule34 (API)
-├── 🔎  rule34video_api.py       — парсер Rule34Video
 ├── 🔎  rule34gen_api.py         — парсер Rule34Gen (через Playwright)
 ├── 🔎  civitai_api.py           — парсер CivitAI
 │
@@ -208,7 +205,7 @@ Content is selected, filtered, captioned and published **automatically**.
 ### ⚙️ Infrastructure
 - **Serverless** — GitHub Actions, $0/month
 - **Gist as DB** — state without repo commits
-- **4 sources** — CivitAI, Rule34 API, Rule34Video, Rule34Gen
+- **3 sources** — CivitAI, Rule34 API, Rule34Gen
 - **Fallback chain** — if a source fails, picks next by weight
 </td>
 <td width="50%" valign="top">
@@ -261,7 +258,6 @@ Content is selected, filtered, captioned and published **automatically**.
   <img src="https://img.shields.io/badge/python--telegram--bot-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white"/>
   <br>
   <img src="https://img.shields.io/badge/Playwright-45ba4b?style=for-the-badge&logo=playwright&logoColor=white"/>
-  <img src="https://img.shields.io/badge/yt--dlp-FF0000?style=for-the-badge&logo=youtube&logoColor=white"/>
 </p>
 
 <br>
@@ -279,10 +275,8 @@ ErosLab/
 ├── ⚙️  gist_storage.py          — state storage in Gist
 ├── 🧠  caption_generator.py     — AI caption generator
 ├── 🖼️  watermark.py             — watermarks (photo + video)
-├── 🎬  make_slideshow.py        — wallpaper slideshow builder
 │
 ├── 🔎  rule34_api.py            — Rule34 API parser
-├── 🔎  rule34video_api.py       — Rule34Video parser
 ├── 🔎  rule34gen_api.py         — Rule34Gen parser (Playwright)
 ├── 🔎  civitai_api.py           — CivitAI parser
 │

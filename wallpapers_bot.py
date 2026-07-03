@@ -15,7 +15,6 @@ from gist_storage import load_all_state, save_all_state
 from PIL import Image
 from telegram import Bot
 from caption_generator import generate_wallpaper_caption
-from steam_workshop import fetch_steam_workshop
 from utils_state import (
     load_json as _shared_load_json,
     save_json as _shared_save_json,
@@ -39,13 +38,11 @@ from utils_tags import (
 
 # ==================== НАСТРОЙКИ ====================
 ENABLE_CIVITAI = False  # ✅ Поставь False чтобы отключить CivitAI полностью
-ENABLE_STEAM_WORKSHOP = False  # ❌ ОТКЛЮЧЕНО
 
 TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN_WALLPAPERS", "")
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID_WALLPAPERS", "")
 CIVITAI_API_KEY     = os.environ.get("CIVITAI_API_KEY", "")
 WALLHAVEN_API_KEY   = os.environ.get("WALLHAVEN_API_KEY", "")
-STEAM_API_KEY       = os.environ.get("STEAM_API_KEY", "")
 
 MIN_LIKES        = 5
 MIN_IMAGE_SIZE   = 720
@@ -451,12 +448,9 @@ def fetch_civitai(max_pages: int = 5):
 def fetch_and_pick():
     preferred_orientation = get_preferred_orientation()
     
-    sources = []
+    sources = [fetch_wallhaven]
     if ENABLE_CIVITAI:
         sources.append(fetch_civitai)
-    if ENABLE_STEAM_WORKSHOP:
-        sources.append(fetch_steam_workshop)
-    sources.append(fetch_wallhaven)
     
     # Выбираем один случайный источник за запуск
     source = random.choice(sources)

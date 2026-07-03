@@ -48,7 +48,5 @@ jobs:
           TELEGRAM_CHANNEL_ID_WALLPAPERS: ${{ secrets.TELEGRAM_CHANNEL_ID_WALLPAPERS }}
           ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
           CIVITAI_API_KEY: ${{ secrets.CIVITAI_API_KEY }}
-          STEAM_API_KEY: ${{ secrets.STEAM_API_KEY }}
-          STEAM_ALLOW_NSFW: "false"
           STATS_TZ: "Europe/Moscow"
         run: python wallpapers_bot.py
