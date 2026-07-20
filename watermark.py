@@ -20,7 +20,7 @@ def _escape_ffmpeg_drawtext_text(value: str) -> str:
     return text
 
 
-def add_watermark(image_data: bytes, text: str = "@eroslabai",
+def add_watermark(image_data: bytes, text: str = "@eroslaab",
                   opacity: float = 0.3, font_size_ratio: float = 0.04) -> bytes:
     """
     Накладывает водяной знак на изображение.
@@ -103,7 +103,7 @@ def add_watermark(image_data: bytes, text: str = "@eroslabai",
         return image_data  # Возвращаем оригинал при ошибке
 
 
-def add_watermark_to_video(video_data: bytes, text: str = "@eroslabai",
+def add_watermark_to_video(video_data: bytes, text: str = "@eroslaab",
                           opacity: float = 0.3, font_size_ratio: float = 0.04) -> bytes:
     """
     Накладывает водяной знак на видео.
