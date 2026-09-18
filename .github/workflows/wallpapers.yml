@@ -2,7 +2,7 @@ name: ErosLab Wallpapers Bot
 
 on:
   schedule:
-    - cron: '37 */2 * * *'
+    - cron: '12 */2 * * *'
   workflow_dispatch:
 
 concurrency:
