@@ -71,8 +71,8 @@ IMAGE_PACK_SPLIT_POSTS = os.environ.get("IMAGE_PACK_SPLIT_POSTS", "false").lower
 NSFW_RATIO = float(os.environ.get("NSFW_RATIO", "0.6"))  # 60% XXX, 40% Mature
 
 # Минимальный интервал между постами (в минутах). cron дёргает часто,
-# а бот сам постит не чаще этого интервала. 120 = раз в 2 часа.
-POST_COOLDOWN_MIN = int(os.environ.get("POST_COOLDOWN_MIN", "120"))
+# а бот сам постит не чаще этого интервала. 60 = раз в час.
+POST_COOLDOWN_MIN = int(os.environ.get("POST_COOLDOWN_MIN", "60"))
 
 # Временно отключить Rule34 (True = только CivitAI для тестов)
 TEST_CIVITAI_ONLY = False
