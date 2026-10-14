@@ -37,7 +37,7 @@ from utils_tags import (
 
 
 # ==================== НАСТРОЙКИ ====================
-ENABLE_WALLHAVEN = False  # ⏸ Временно выключен для теста Steam (верни True чтобы включить)
+ENABLE_WALLHAVEN = True   # ✅ Wallhaven источник
 ENABLE_CIVITAI   = False  # ✅ Поставь False чтобы отключить CivitAI полностью
 ENABLE_STEAM     = True   # ✅ Включить Wallpaper Engine (Steam Workshop) как источник
 
@@ -49,7 +49,11 @@ STEAM_API_KEY       = os.environ.get("STEAM_API_KEY", "")
 
 # ── Steam Wallpaper Engine (Workshop) ──────────────────────────────
 STEAM_APP_ID         = "431960"   # App ID Wallpaper Engine
-STEAM_MIN_PREVIEW_PX = 720        # Мин. размер превью (отсекает 192x192 и мелкий мусор)
+STEAM_MIN_PREVIEW_PX = 512        # Мин. размер превью (отсекает мелкий мусор < 512px)
+
+# Возрастной рейтинг WE (тег). "Questionable" = секси, но без порно
+STEAM_ALL_AGE_RATINGS = {"Everyone", "Questionable", "Mature"}
+STEAM_AGE_RATINGS     = {"Questionable"}   # пустой set() = без фильтра
 
 MIN_LIKES        = 5
 MIN_IMAGE_SIZE   = 720
@@ -144,6 +148,19 @@ def get_preferred_orientation() -> str:
     content_state["last_type"] = preferred
     logger.info(f"Orientation: last={last_type}, preferred={preferred}")
     return preferred
+
+def get_next_source(sources):
+    """Строгое чередование источников по кругу: wallhaven -> steam -> wallhaven -> ..."""
+    source_names = [s.__name__ for s in sources]
+    last_source = content_state.get("last_source")
+    if last_source not in source_names:
+        chosen = sources[0]
+    else:
+        idx = source_names.index(last_source)
+        chosen = sources[(idx + 1) % len(sources)]
+    content_state["last_source"] = chosen.__name__
+    logger.info(f"Source rotation: last={last_source}, chosen={chosen.__name__}")
+    return chosen
 
 def check_media_size(data, url, preferred_orientation: str = None, source=None):
     try:
@@ -531,6 +548,12 @@ def fetch_steam_workshop(max_pages: int = 2):
                                 norm_tags.append(str(t))
                         norm_tags = [t for t in norm_tags if t][:10]
 
+                        # Возрастной фильтр: пропускаем только разрешённые рейтинги
+                        if STEAM_AGE_RATINGS:
+                            age_tags = {t for t in norm_tags if t in STEAM_ALL_AGE_RATINGS}
+                            if not (age_tags & STEAM_AGE_RATINGS):
+                                continue
+
                         likes = _to_int(pf.get("lifetime_subscriptions"), 0)
                         if likes < MIN_LIKES:
                             continue
@@ -584,9 +607,9 @@ def fetch_and_pick():
     if not sources:
         logger.error("Нет активных источников обоев")
         return None
-    
-    # Выбираем один случайный источник за запуск
-    source = random.choice(sources)
+
+    # Выбираем один источник за запуск — строго по очереди (round-robin)
+    source = get_next_source(sources)
     logger.info(f"Selected source: {source.__name__}")
     
     items = []
