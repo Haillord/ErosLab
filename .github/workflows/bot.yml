@@ -1,7 +1,7 @@
 name: ErosLab Bot
 on:
   schedule:
-    - cron: '23 1-23/2 * * *'
+    - cron: '*/30 * * * *'  # каждые 30 мин (очередь); бот сам постит раз в 2 часа
   workflow_dispatch:
 jobs:
   post:
