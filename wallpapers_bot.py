@@ -37,12 +37,19 @@ from utils_tags import (
 
 
 # ==================== НАСТРОЙКИ ====================
-ENABLE_CIVITAI = False  # ✅ Поставь False чтобы отключить CivitAI полностью
+ENABLE_WALLHAVEN = False  # ⏸ Временно выключен для теста Steam (верни True чтобы включить)
+ENABLE_CIVITAI   = False  # ✅ Поставь False чтобы отключить CivitAI полностью
+ENABLE_STEAM     = True   # ✅ Включить Wallpaper Engine (Steam Workshop) как источник
 
 TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN_WALLPAPERS", "")
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID_WALLPAPERS", "")
 CIVITAI_API_KEY     = os.environ.get("CIVITAI_API_KEY", "")
 WALLHAVEN_API_KEY   = os.environ.get("WALLHAVEN_API_KEY", "")
+STEAM_API_KEY       = os.environ.get("STEAM_API_KEY", "")
+
+# ── Steam Wallpaper Engine (Workshop) ──────────────────────────────
+STEAM_APP_ID         = "431960"   # App ID Wallpaper Engine
+STEAM_MIN_PREVIEW_PX = 720        # Мин. размер превью (отсекает 192x192 и мелкий мусор)
 
 MIN_LIKES        = 5
 MIN_IMAGE_SIZE   = 720
@@ -142,8 +149,21 @@ def check_media_size(data, url, preferred_orientation: str = None, source=None):
     try:
         is_video = url.lower().endswith((".mp4", ".webm", ".gif"))
         
-        # Для Steam Workshop пропускаем проверку размера (превью 192x192, полные обои по ссылке)
+        # Для Steam Workshop превью может быть мелким (192x192) — проверяем реальный размер,
+        # чтобы не отправлять превьюшку вместо качественной картинки
         if source == "steam_workshop":
+            img = Image.open(BytesIO(data))
+            width, height = img.size
+            aspect = width / height
+
+            if max(width, height) < STEAM_MIN_PREVIEW_PX:
+                logger.warning(f"Steam preview too small: {width}x{height} (min {STEAM_MIN_PREVIEW_PX}px)")
+                return False
+
+            if not (MIN_ASPECT_RATIO_MIN <= aspect <= MIN_ASPECT_RATIO_MAX):
+                logger.warning(f"Steam bad aspect ratio: {width}x{height} ratio={aspect:.2f}")
+                return False
+
             return True
         
         if not is_video:
@@ -445,12 +465,125 @@ def fetch_civitai(max_pages: int = 5):
     return []
 
 
+# ==================== STEAM WALLPAPER ENGINE API ====================
+def fetch_steam_workshop(max_pages: int = 2):
+    """
+    Тянем топ-обои Wallpaper Engine через IPublishedFileService/QueryFiles.
+    Нужен бесплатный Steam Web API ключ (STEAM_API_KEY).
+    Возвращаем превью-картинки авторов (обычно 1024x1024 и выше).
+    """
+    if not STEAM_API_KEY:
+        logger.warning("STEAM_API_KEY not set, skipping Wallpaper Engine source")
+        return []
+
+    # query_type: 9 = RankedByTotalUniqueSubscriptions, 3 = RankedByTrend
+    query_types = [9, 3]
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://steamcommunity.com/"}
+
+    for query_type in query_types:
+        good_items = []
+        seen_ids = set()
+        cursor = "*"
+
+        for _ in range(max_pages):
+            params = {
+                "query_type": query_type,
+                "appid": STEAM_APP_ID,
+                "numperpage": 50,
+                "return_tags": "true",
+                "return_details": "true",
+                "cursor": cursor,
+                "key": STEAM_API_KEY,
+            }
+            try:
+                r = _request_with_backoff(
+                    "https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/",
+                    params=params,
+                    headers=headers,
+                )
+                if r is None:
+                    break
+
+                data = r.json()
+                response = data.get("response", {})
+                files = response.get("publishedfiledetails", [])
+                if not files:
+                    break
+
+                for pf in files:
+                    try:
+                        pf_id = pf.get("publishedfileid")
+                        if not pf_id:
+                            continue
+
+                        str_id = str(pf_id)
+                        if str_id in seen_ids:
+                            continue
+                        seen_ids.add(str_id)
+
+                        tags = pf.get("tags") or []
+                        # tags приходят как ["Anime", "Nature", ...] или как объекты
+                        norm_tags = []
+                        for t in tags:
+                            if isinstance(t, dict):
+                                norm_tags.append(t.get("tag", ""))
+                            else:
+                                norm_tags.append(str(t))
+                        norm_tags = [t for t in norm_tags if t][:10]
+
+                        likes = _to_int(pf.get("lifetime_subscriptions"), 0)
+                        if likes < MIN_LIKES:
+                            continue
+
+                        preview_url = pf.get("preview_url", "")
+                        if not preview_url:
+                            continue
+
+                        good_items.append({
+                            "id":        f"steam_{str_id}",
+                            "url":       preview_url,
+                            "tags":      norm_tags,
+                            "likes":     likes,
+                            "rating":    "safe",
+                            "post_id":   str_id,
+                            "mime":      "image/jpeg",   # превью Workshop — всегда картинка
+                            "createdAt": pf.get("time_created"),
+                            "source":    "steam_workshop",
+                        })
+                    except Exception as e:
+                        logger.error(f"Error processing Steam item: {e}")
+                        continue
+
+                logger.info(f"Steam (query_type={query_type}) page: got {len(files)} raw, {len(good_items)} good")
+                cursor = response.get("next_cursor")
+                if not cursor:
+                    break
+
+            except Exception as e:
+                logger.warning(f"Steam QueryFiles (query_type={query_type}) failed: {e}")
+                break
+
+        if good_items:
+            logger.info(f"Found {len(good_items)} wallpapers from Steam Workshop (query_type={query_type})")
+            return good_items
+
+    return []
+
+
 def fetch_and_pick():
     preferred_orientation = get_preferred_orientation()
     
-    sources = [fetch_wallhaven]
+    sources = []
+    if ENABLE_WALLHAVEN:
+        sources.append(fetch_wallhaven)
     if ENABLE_CIVITAI:
         sources.append(fetch_civitai)
+    if ENABLE_STEAM and STEAM_API_KEY:
+        sources.append(fetch_steam_workshop)
+
+    if not sources:
+        logger.error("Нет активных источников обоев")
+        return None
     
     # Выбираем один случайный источник за запуск
     source = random.choice(sources)

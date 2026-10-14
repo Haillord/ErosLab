@@ -334,6 +334,7 @@ ErosLab/
 | `TELEGRAM_BOT_TOKEN_WALLPAPERS` | Wallpapers bot token | ✅ |
 | `TELEGRAM_CHANNEL_ID_WALLPAPERS` | ID or @username of SFW channel | ✅ |
 | `WALLHAVEN_API_KEY` | Wallhaven access | ✅ |
+| `STEAM_API_KEY` | Steam Web API key (Wallpaper Engine source, get at steamcommunity.com/dev/apikey) | ⚡ opt. |
 
 </details>
 
