@@ -70,10 +70,6 @@ IMAGE_PACK_CANDIDATE_POOL = max(IMAGE_PACK_SIZE, int(os.environ.get("IMAGE_PACK_
 IMAGE_PACK_SPLIT_POSTS = os.environ.get("IMAGE_PACK_SPLIT_POSTS", "false").lower() in ("1", "true", "yes", "on")
 NSFW_RATIO = float(os.environ.get("NSFW_RATIO", "0.6"))  # 60% XXX, 40% Mature
 
-# Минимальный интервал между постами (в минутах). cron дёргает часто,
-# а бот сам постит не чаще этого интервала. 60 = раз в час.
-POST_COOLDOWN_MIN = int(os.environ.get("POST_COOLDOWN_MIN", "60"))
-
 # Временно отключить Rule34 (True = только CivitAI для тестов)
 TEST_CIVITAI_ONLY = False
 
@@ -1022,7 +1018,6 @@ async def main():
         "skip_low_video_quality": 0,
         "skip_duplicate_hash": 0,
         "send_errors": 0,
-        "skip_cooldown": 0,
     }
     stats_flushed = False
 
@@ -1033,19 +1028,6 @@ async def main():
         run_metrics["runtime_sec"] = round(time.time() - run_started, 2)
         record_run_stats(run_metrics)
         stats_flushed = True
-
-    # Кулдаун: постим не чаще раза в POST_COOLDOWN_MIN минут
-    last_post_ts = content_state.get("last_post_ts", 0)
-    if last_post_ts:
-        elapsed_min = (time.time() - last_post_ts) / 60
-        if elapsed_min < POST_COOLDOWN_MIN:
-            logger.info(
-                f"Cooldown: last post {elapsed_min:.0f} min ago "
-                f"(< {POST_COOLDOWN_MIN} min), skipping this run"
-            )
-            run_metrics["skip_cooldown"] = 1
-            flush_stats_once()
-            return
 
     if not TELEGRAM_BOT_TOKEN:
         logger.error("No TELEGRAM_BOT_TOKEN found!")
@@ -1441,8 +1423,6 @@ async def main():
             + (f" (image pack size={len(image_pack)})" if use_image_pack else "")
         )
         run_metrics["posted"] += 1
-        content_state["last_post_ts"] = time.time()
-        save_json(CONTENT_STATE_FILE, content_state)
         flush_stats_once()
 
     except Exception as e:
